@@ -6,6 +6,10 @@ local state = {
   job_id = nil,
 }
 
+local function preview_width()
+  return math.max(40, math.min(120, math.floor(vim.o.columns * 0.48)))
+end
+
 local function is_valid_buffer()
   return state.bufnr ~= nil and vim.api.nvim_buf_is_valid(state.bufnr)
 end
@@ -15,9 +19,44 @@ local function is_valid_window()
 end
 
 local function create_window()
-  vim.cmd("botright split")
-  vim.cmd("resize 16")
+  vim.cmd("botright vertical split")
+  vim.cmd("vertical resize " .. preview_width())
   state.winid = vim.api.nvim_get_current_win()
+end
+
+local function command_uses_ansi_browse(command)
+  if type(command) ~= "table" or command[2] ~= "browse" then
+    return false
+  end
+
+  for index, value in ipairs(command) do
+    if value == "--output" and command[index + 1] == "ansi" then
+      return true
+    end
+  end
+
+  return false
+end
+
+local function command_has_columns(command)
+  for _, value in ipairs(command) do
+    if value == "--columns" then
+      return true
+    end
+  end
+
+  return false
+end
+
+local function command_for_window(command)
+  if not command_uses_ansi_browse(command) or command_has_columns(command) then
+    return command
+  end
+
+  local adjusted = vim.list_extend({}, command)
+  table.insert(adjusted, "--columns")
+  table.insert(adjusted, tostring(math.max(20, vim.api.nvim_win_get_width(state.winid) - 2)))
+  return adjusted
 end
 
 local function ensure_window()
@@ -34,6 +73,7 @@ end
 
 function M.open(command)
   ensure_window()
+  command = command_for_window(command)
 
   local previous_bufnr = state.bufnr
   state.bufnr = vim.api.nvim_create_buf(false, true)
