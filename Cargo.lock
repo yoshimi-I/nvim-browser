@@ -888,8 +888,15 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "clap",
- "comrak",
  "image",
+ "nvbrowser-core",
+]
+
+[[package]]
+name = "nvbrowser-core"
+version = "0.1.0"
+dependencies = [
+ "comrak",
  "serde",
  "serde_json",
 ]

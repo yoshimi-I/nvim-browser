@@ -3,7 +3,7 @@ use std::{fs, io::Cursor, path::PathBuf};
 use base64::{engine::general_purpose, Engine};
 use clap::{Parser, Subcommand};
 use image::ImageFormat;
-use nvbrowser::{inspect_target, kitty_image_escape, render_markdown_document};
+use nvbrowser_core::{inspect_target, kitty_image_escape, render_markdown_document};
 
 #[derive(Debug, Parser)]
 #[command(name = "nvbrowser")]

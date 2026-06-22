@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use comrak::{markdown_to_html, Options};
 use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -48,22 +47,11 @@ pub fn target_kind(input: &str) -> TargetKind {
     }
 }
 
-pub fn render_markdown_document(markdown: &str) -> String {
-    let body = markdown_to_html(markdown, &Options::default());
-    format!(
-        "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n</head>\n<body>\n{body}</body>\n</html>\n"
-    )
-}
-
 pub fn inspect_target(input: &str) -> InspectResult {
     InspectResult {
         input: input.to_string(),
         kind: target_kind(input),
     }
-}
-
-pub fn kitty_image_escape(base64_png: &str) -> String {
-    format!("\x1b_Ga=T,f=100,m=0;{base64_png}\x1b\\")
 }
 
 pub fn supports_direct_terminal_image(path: &str) -> bool {
@@ -107,31 +95,11 @@ mod tests {
     }
 
     #[test]
-    fn render_markdown_document_wraps_body_in_html() {
-        let html = render_markdown_document("# Title\n\nHello **Neovim**.");
-
-        assert!(html.contains("<!doctype html>"));
-        assert!(html.contains("<h1>Title</h1>"));
-        assert!(html.contains("<strong>Neovim</strong>"));
-    }
-
-    #[test]
     fn inspect_target_serializes_to_json() {
         let json = inspect_target("README.md").to_json();
 
         assert!(json.contains("\"input\":\"README.md\""));
         assert!(json.contains("\"kind\":\"markdown_file\""));
-    }
-
-    #[test]
-    fn kitty_image_escape_wraps_base64_png_payload() {
-        let escape = kitty_image_escape("iVBORw0KGgo=");
-
-        assert!(escape.starts_with("\x1b_G"));
-        assert!(escape.contains("a=T"));
-        assert!(escape.contains("f=100"));
-        assert!(escape.contains(";iVBORw0KGgo="));
-        assert!(escape.ends_with("\x1b\\"));
     }
 
     #[test]

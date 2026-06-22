@@ -1,0 +1,10 @@
+[package]
+name = "nvbrowser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+base64 = "0.22"
+clap = { version = "4", features = ["derive"] }
+image = "0.25"
+nvbrowser-core = { path = "../nvbrowser-core" }

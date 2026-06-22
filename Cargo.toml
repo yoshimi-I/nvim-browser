@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/nvbrowser"]
+members = ["crates/nvbrowser-core", "crates/nvbrowser-cli"]
 resolver = "2"
 
 [workspace.package]

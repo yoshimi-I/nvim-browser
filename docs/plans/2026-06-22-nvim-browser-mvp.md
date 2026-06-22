@@ -4,7 +4,7 @@
 
 **Goal:** Build the first OSS skeleton for a Neovim-native browser runtime that can open web URLs, local Markdown, and image files inside Ghostty/Neovim.
 
-**Architecture:** The project is a monorepo with a Rust backend binary (`nvbrowser`) and a Lua Neovim plugin. The backend owns target classification, Markdown-to-HTML conversion, browser session state, and future Chromium/CDP rendering. The Lua plugin exposes commands and delegates rendering to the backend through a terminal-backed preview surface.
+**Architecture:** The project is a monorepo with a Rust backend library (`nvbrowser-core`), a thin CLI (`nvbrowser`), and a Lua Neovim plugin. The backend owns target classification, Markdown-to-HTML conversion, browser session state, and future Chromium/CDP rendering. The Lua plugin exposes commands and delegates rendering to the backend through a terminal-backed preview surface.
 
 **Tech Stack:** Rust 2021, `clap`, `serde`, `comrak`, `mime_guess`, Neovim Lua, GitHub Actions.
 

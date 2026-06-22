@@ -32,15 +32,18 @@ Planned next steps:
 Ghostty
 └─ Neovim
    ├─ Lua plugin
-   │  ├─ :NBrowserOpen
-   │  ├─ :NBrowserPreview
-   │  └─ :NBrowserInspect
+   │  ├─ commands.lua
+   │  ├─ backend.lua
+   │  └─ terminal.lua
    └─ Rust backend
-      ├─ target/session model
-      ├─ Markdown and file renderers
-      ├─ future Chromium/CDP adapter
-      └─ future Kitty graphics output
+      ├─ nvbrowser-core
+      │  ├─ target
+      │  ├─ markdown
+      │  └─ terminal/kitty
+      └─ nvbrowser-cli
 ```
+
+See [docs/architecture.md](docs/architecture.md) for module boundaries.
 
 ## Requirements
 
