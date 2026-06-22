@@ -108,6 +108,18 @@ local function kitty_delete_escape()
   return "\x1b_Ga=d,d=i,i=" .. state.image_id .. "\x1b\\"
 end
 
+local function terminal_escape(payload)
+  if vim.env.TMUX == nil or payload == nil or payload == "" then
+    return payload
+  end
+
+  return "\x1bPtmux;" .. payload:gsub("\x1b", "\x1b\x1b") .. "\x1b\\"
+end
+
+local function send_terminal_escape(payload)
+  vim.api.nvim_chan_send(vim.v.stderr, terminal_escape(payload))
+end
+
 local function cursor_position_escape(winid)
   local row, column = unpack(vim.fn.win_screenpos(winid))
   return ("\x1b[%d;%dH"):format(row, column)
@@ -122,8 +134,9 @@ local function emit_terminal_graphics(payload, winid)
   end
 
   vim.cmd("redraw")
-  vim.api.nvim_chan_send(vim.v.stderr, kitty_delete_escape())
-  vim.api.nvim_chan_send(vim.v.stderr, cursor_position_escape(winid) .. payload)
+  send_terminal_escape(kitty_delete_escape())
+  vim.api.nvim_chan_send(vim.v.stderr, cursor_position_escape(winid))
+  send_terminal_escape(payload)
 end
 
 local function preview_lines(message, target)
@@ -162,7 +175,7 @@ function M.open(command)
   state.generation = state.generation + 1
   state.last_payload = nil
   state.last_target = command[3]
-  pcall(vim.api.nvim_chan_send, vim.v.stderr, kitty_delete_escape())
+  pcall(send_terminal_escape, kitty_delete_escape())
 
   local previous_bufnr = state.bufnr
   state.bufnr = vim.api.nvim_create_buf(false, true)
@@ -256,7 +269,7 @@ function M.close()
   if state.job_id ~= nil then
     pcall(vim.fn.jobstop, state.job_id)
   end
-  pcall(vim.api.nvim_chan_send, vim.v.stderr, kitty_delete_escape())
+  pcall(send_terminal_escape, kitty_delete_escape())
   if is_valid_window() then
     vim.api.nvim_win_close(state.winid, true)
   end
@@ -272,7 +285,7 @@ end
 
 function M.toggle()
   if is_valid_window() then
-    pcall(vim.api.nvim_chan_send, vim.v.stderr, kitty_delete_escape())
+    pcall(send_terminal_escape, kitty_delete_escape())
     vim.api.nvim_win_close(state.winid, true)
     state.winid = nil
     return false

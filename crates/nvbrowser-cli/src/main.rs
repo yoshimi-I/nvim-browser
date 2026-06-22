@@ -6,7 +6,7 @@ use image::{imageops::FilterType, DynamicImage, GenericImageView, ImageFormat, R
 use nvbrowser_core::{
     inspect_target, kitty_image_escape, render_markdown_document,
     renderer::chromium::{render_url_png, ChromiumOptions},
-    FrameArtifact, KittyImagePlacement, KittyImageTransfer, Viewport,
+    FrameArtifact, KittyImageTransfer, Viewport,
 };
 
 #[derive(Debug, Parser)]
@@ -122,11 +122,7 @@ fn kitty_browse_escape(
         return transfer.escape();
     };
 
-    format!(
-        "{}{}",
-        transfer.upload_escape(),
-        KittyImagePlacement::new(1, 1, columns.max(1), rows.max(1)).escape()
-    )
+    transfer.placed_escape(1, columns, rows)
 }
 
 fn image_to_ansi_halfblocks(image: &DynamicImage, columns: u32) -> String {
@@ -185,10 +181,11 @@ mod tests {
             Some(24),
         );
 
-        assert!(escape.contains("a=t,i=1"));
-        assert!(!escape.contains("a=T,i=1"));
+        assert!(escape.contains("a=T,i=1"));
+        assert!(!escape.contains("a=t,i=1"));
         assert!(escape.contains("s=800,v=600"));
-        assert!(escape.contains("a=p,i=1,p=1,c=80,r=24"));
+        assert!(escape.contains("p=1,c=80,r=24"));
+        assert!(!escape.contains("a=p"));
     }
 
     #[test]
