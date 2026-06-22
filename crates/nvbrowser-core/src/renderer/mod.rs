@@ -1,3 +1,5 @@
+pub mod chromium;
+
 use serde::Serialize;
 
 use crate::session::{FrameMetadata, PageId, SessionId, Viewport};

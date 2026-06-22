@@ -13,6 +13,10 @@ function M.command_for(binary, action, target)
     return { binary, "inspect", target }
   end
 
+  if target:match("^https?://") then
+    return { binary, "browse", target }
+  end
+
   local extension = extension_for(target)
   if extension == "md" or extension == "markdown" then
     return { binary, "render-md", target }

@@ -15,6 +15,7 @@ This repository is an early MVP scaffold. Today it includes:
 - target classification for URLs, Markdown, HTML, and images
 - Markdown-to-HTML rendering
 - image output through Kitty graphics protocol
+- one-shot Chromium URL screenshot preview through Kitty graphics protocol
 - Neovim commands for opening and inspecting targets
 - persistent Neovim preview surface reuse
 - CLI integration tests for backend command contracts
@@ -23,7 +24,6 @@ This repository is an early MVP scaffold. Today it includes:
 Planned next steps:
 
 - Chromium/CDP renderer backend
-- Chromium/CDP page screenshots displayed through Kitty graphics protocol
 - tile-based page screenshots inside a Neovim preview split
 - scroll/input bridge from Neovim to the browser session
 - image, SVG, PDF, Mermaid, and KaTeX preview through the same browser runtime
@@ -75,7 +75,11 @@ Try the backend:
 cargo run -p nvbrowser -- inspect https://example.com
 cargo run -p nvbrowser -- render-md README.md
 cargo run -p nvbrowser -- show-image path/to/image.png
+cargo run -p nvbrowser -- browse https://example.com
 ```
+
+The `browse` command requires Chrome or Chromium. Set `NVBROWSER_CHROME` when
+auto-detection cannot find the browser binary.
 
 Try the plugin from this checkout:
 
@@ -87,6 +91,7 @@ Then run:
 
 ```vim
 :NBrowserInspect https://example.com
+:NBrowserOpen https://example.com
 :NBrowserPreview
 :NBrowserToggle
 ```
