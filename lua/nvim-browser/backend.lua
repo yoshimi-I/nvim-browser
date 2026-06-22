@@ -14,6 +14,10 @@ function M.command_for(binary, action, target)
   end
 
   if target:match("^https?://") then
+    if vim.env.ZELLIJ ~= nil then
+      return { binary, "browse", target, "--output", "ansi" }
+    end
+
     return { binary, "browse", target, "--output", "kitty" }
   end
 

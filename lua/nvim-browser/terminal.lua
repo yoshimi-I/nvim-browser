@@ -54,6 +54,10 @@ local function command_uses_kitty_browse(command)
   return command_uses_browse_output(command, "kitty")
 end
 
+local function command_uses_captured_browse(command)
+  return command_uses_ansi_browse(command) or command_uses_kitty_browse(command)
+end
+
 local function command_has_columns(command)
   return vim.tbl_contains(command, "--columns")
 end
@@ -190,11 +194,12 @@ function M.open(command)
   vim.bo[state.bufnr].buftype = "nofile"
   vim.bo[state.bufnr].swapfile = false
 
-  if command_uses_kitty_browse(command) then
+  if command_uses_captured_browse(command) then
     local bufnr = state.bufnr
     local winid = state.winid
     local generation = state.generation
     local target = command[3]
+    local uses_kitty = command_uses_kitty_browse(command)
     vim.bo[state.bufnr].modifiable = true
     vim.api.nvim_buf_set_lines(
       state.bufnr,
@@ -224,22 +229,28 @@ function M.open(command)
           end
 
           local payload = code == 0 and table.concat(chunks) or nil
-          state.last_payload = payload
+          state.last_payload = uses_kitty and payload or nil
 
           vim.bo[bufnr].modifiable = true
-          vim.api.nvim_buf_set_lines(
-            bufnr,
-            0,
-            -1,
-            false,
-            preview_lines(
-              code == 0 and "Browser preview" or ("Browser preview failed: exit " .. code),
-              target
+          if code == 0 and not uses_kitty then
+            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {})
+            local channel = vim.api.nvim_open_term(bufnr, {})
+            vim.api.nvim_chan_send(channel, payload or "")
+          else
+            vim.api.nvim_buf_set_lines(
+              bufnr,
+              0,
+              -1,
+              false,
+              preview_lines(
+                code == 0 and "Browser preview" or ("Browser preview failed: exit " .. code),
+                target
+              )
             )
-          )
+          end
           vim.bo[bufnr].modifiable = false
 
-          if code == 0 then
+          if code == 0 and uses_kitty then
             emit_terminal_graphics(payload, is_valid_window_id(state.winid) and state.winid or winid)
           end
         end)
