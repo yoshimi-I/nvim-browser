@@ -27,6 +27,13 @@ impl KittyImageTransfer {
             self.image_id, self.width_px, self.height_px, self.base64_png
         )
     }
+
+    pub fn upload_escape(&self) -> String {
+        format!(
+            "\x1b_Ga=t,i={},f=100,s={},v={},m=0;{}\x1b\\",
+            self.image_id, self.width_px, self.height_px, self.base64_png
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,6 +125,16 @@ mod tests {
         assert_eq!(
             transfer.escape(),
             "\x1b_Ga=T,i=42,f=100,s=800,v=600,m=0;iVBORw0KGgo=\x1b\\"
+        );
+    }
+
+    #[test]
+    fn image_transfer_can_upload_without_displaying() {
+        let transfer = KittyImageTransfer::new(42, 800, 600, "iVBORw0KGgo=");
+
+        assert_eq!(
+            transfer.upload_escape(),
+            "\x1b_Ga=t,i=42,f=100,s=800,v=600,m=0;iVBORw0KGgo=\x1b\\"
         );
     }
 

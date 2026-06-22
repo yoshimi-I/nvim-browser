@@ -6,7 +6,7 @@ use image::{imageops::FilterType, DynamicImage, GenericImageView, ImageFormat, R
 use nvbrowser_core::{
     inspect_target, kitty_image_escape, render_markdown_document,
     renderer::chromium::{render_url_png, ChromiumOptions},
-    FrameArtifact, KittyImageTransfer, Viewport,
+    FrameArtifact, KittyImagePlacement, KittyImageTransfer, Viewport,
 };
 
 #[derive(Debug, Parser)]
@@ -42,6 +42,8 @@ enum Command {
         output: ImageOutput,
         #[arg(long, default_value_t = 100)]
         columns: u32,
+        #[arg(long)]
+        rows: Option<u32>,
     },
 }
 
@@ -86,6 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             height,
             output,
             columns,
+            rows,
         } => {
             let viewport = Viewport::new(width, height);
             let frame = render_url_png(&url, viewport, ChromiumOptions::detect())?;
@@ -95,11 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             match output {
                 ImageOutput::Kitty => {
                     let encoded = general_purpose::STANDARD.encode(png);
-                    print!(
-                        "{}",
-                        KittyImageTransfer::new(1, viewport.width, viewport.height, encoded)
-                            .escape()
-                    );
+                    print!("{}", kitty_browse_escape(encoded, viewport, columns, rows));
                 }
                 ImageOutput::Ansi => {
                     let image = image::load_from_memory_with_format(&png, ImageFormat::Png)?;
@@ -110,6 +109,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn kitty_browse_escape(
+    encoded_png: String,
+    viewport: Viewport,
+    columns: u32,
+    rows: Option<u32>,
+) -> String {
+    let transfer = KittyImageTransfer::new(1, viewport.width, viewport.height, encoded_png);
+    let Some(rows) = rows else {
+        return transfer.escape();
+    };
+
+    format!(
+        "{}{}",
+        transfer.upload_escape(),
+        KittyImagePlacement::new(1, 1, columns.max(1), rows.max(1)).escape()
+    )
 }
 
 fn image_to_ansi_halfblocks(image: &DynamicImage, columns: u32) -> String {
@@ -153,4 +170,37 @@ fn rgba_to_rgb(pixel: Rgba<u8>) -> (u8, u8, u8) {
         (g as f32 * alpha) as u8,
         (b as f32 * alpha) as u8,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kitty_browse_escape_includes_placement_when_rows_are_provided() {
+        let escape = kitty_browse_escape(
+            "iVBORw0KGgo=".to_string(),
+            Viewport::new(800, 600),
+            80,
+            Some(24),
+        );
+
+        assert!(escape.contains("a=t,i=1"));
+        assert!(!escape.contains("a=T,i=1"));
+        assert!(escape.contains("s=800,v=600"));
+        assert!(escape.contains("a=p,i=1,p=1,c=80,r=24"));
+    }
+
+    #[test]
+    fn kitty_browse_escape_preserves_legacy_transfer_without_rows() {
+        let escape = kitty_browse_escape(
+            "iVBORw0KGgo=".to_string(),
+            Viewport::new(800, 600),
+            80,
+            None,
+        );
+
+        assert!(escape.contains("a=T,i=1"));
+        assert!(!escape.contains("a=p"));
+    }
 }

@@ -14,7 +14,7 @@ function M.command_for(binary, action, target)
   end
 
   if target:match("^https?://") then
-    return { binary, "browse", target, "--output", "ansi" }
+    return { binary, "browse", target, "--output", "kitty" }
   end
 
   local extension = extension_for(target)
