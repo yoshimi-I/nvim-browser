@@ -11,6 +11,7 @@ end
 
 M.options = {
   binary = default_binary(),
+  graphics = "auto",
 }
 
 function M.setup(opts)

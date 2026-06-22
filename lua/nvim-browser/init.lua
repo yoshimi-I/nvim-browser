@@ -19,13 +19,13 @@ end
 function M.inspect(target)
   target = resolve_target(target)
   state.last_target = target
-  terminal.open(backend.command_for(M.config.binary, "inspect", target))
+  terminal.open(backend.command_for(M.config.binary, "inspect", target, M.config))
 end
 
 function M.open(target)
   target = resolve_target(target)
   state.last_target = target
-  terminal.open(backend.command_for(M.config.binary, "open", target))
+  terminal.open(backend.command_for(M.config.binary, "open", target, M.config))
 end
 
 function M.preview()
