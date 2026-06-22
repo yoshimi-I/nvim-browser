@@ -53,6 +53,25 @@ fn show_image_outputs_kitty_escape() {
         .stdout(predicate::str::ends_with("\x1b\\"));
 }
 
+#[test]
+fn show_image_outputs_ansi_halfblocks() {
+    let directory = tempdir().expect("tempdir should be created");
+    let image_path = directory.path().join("pixel.png");
+    std::fs::write(&image_path, tiny_png()).expect("image fixture should be written");
+
+    let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+    command
+        .arg("show-image")
+        .arg(image_path)
+        .args(["--output", "ansi", "--columns", "1"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\x1b[38;2;"))
+        .stdout(predicate::str::contains("▀"))
+        .stdout(predicate::str::ends_with("\x1b[0m\n"));
+}
+
 fn tiny_png() -> Vec<u8> {
     const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, PNG)
