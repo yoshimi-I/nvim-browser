@@ -32,6 +32,18 @@ function M.preview()
   M.open(vim.fn.expand("%:p"))
 end
 
+function M.focus()
+  return terminal.focus()
+end
+
+function M.close()
+  terminal.close()
+end
+
+function M.toggle()
+  return terminal.toggle()
+end
+
 function M.last_target()
   return state.last_target
 end

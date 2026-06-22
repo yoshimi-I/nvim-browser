@@ -24,11 +24,16 @@ doc/                Vim help documentation.
 The CLI crate should stay thin. It parses arguments, calls `nvbrowser-core`,
 and writes stdout/stderr. Browser behavior belongs in `nvbrowser-core`.
 
+The Kitty terminal module provides escape builders for one-shot image transfer
+as well as stable image IDs, placement IDs, placement dimensions, and deletion.
+Persistent preview code should use those primitives to replace frames instead
+of creating unrelated terminal output streams.
+
 ## Neovim Boundaries
 
 - `config.lua`: user options and defaults.
 - `backend.lua`: converts plugin actions into backend commands.
-- `terminal.lua`: owns split and terminal-buffer behavior.
+- `terminal.lua`: owns persistent split and terminal-buffer behavior.
 - `commands.lua`: registers user-facing Ex commands.
 - `init.lua`: public Lua API and state coordination.
 

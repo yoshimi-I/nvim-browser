@@ -16,6 +16,8 @@ This repository is an early MVP scaffold. Today it includes:
 - Markdown-to-HTML rendering
 - image output through Kitty graphics protocol
 - Neovim commands for opening and inspecting targets
+- persistent Neovim preview surface reuse
+- CLI integration tests for backend command contracts
 - initial OSS packaging and CI
 
 Planned next steps:
@@ -39,6 +41,8 @@ Ghostty
       ├─ nvbrowser-core
       │  ├─ target
       │  ├─ markdown
+      │  ├─ session
+      │  ├─ renderer
       │  └─ terminal/kitty
       └─ nvbrowser-cli
 ```
@@ -84,6 +88,7 @@ Then run:
 ```vim
 :NBrowserInspect https://example.com
 :NBrowserPreview
+:NBrowserToggle
 ```
 
 ## License

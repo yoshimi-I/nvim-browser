@@ -32,4 +32,16 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserInspect [target]
         Print the backend's JSON classification for a target.
 
+                                                        *:NBrowserFocus*
+:NBrowserFocus
+        Focus the current browser preview surface when it is open.
+
+                                                        *:NBrowserClose*
+:NBrowserClose
+        Close the current browser preview surface.
+
+                                                        *:NBrowserToggle*
+:NBrowserToggle
+        Hide or restore the current browser preview surface when possible.
+
  vim:tw=78:ts=8:noet:ft=help:norl:

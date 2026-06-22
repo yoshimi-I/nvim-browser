@@ -14,4 +14,7 @@ pub use session::{
     BrowserSession, FrameId, FrameMetadata, LoadingState, PageId, PageState, SessionId, Viewport,
 };
 pub use target::{inspect_target, supports_direct_terminal_image, InspectResult, TargetKind};
-pub use terminal::kitty::kitty_image_escape;
+pub use terminal::kitty::{
+    kitty_image_escape, KittyImageDelete, KittyImagePlacement, KittyImageTransfer,
+    KittyPlacementDelete,
+};

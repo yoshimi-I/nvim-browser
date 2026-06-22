@@ -8,3 +8,8 @@ base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 image = "0.25"
 nvbrowser-core = { path = "../nvbrowser-core" }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"

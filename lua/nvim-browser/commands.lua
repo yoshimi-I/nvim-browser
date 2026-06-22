@@ -18,6 +18,18 @@ function M.register(browser)
     nargs = "?",
     complete = "file",
   })
+
+  vim.api.nvim_create_user_command("NBrowserFocus", function()
+    browser.focus()
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserClose", function()
+    browser.close()
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserToggle", function()
+    browser.toggle()
+  end, {})
 end
 
 return M
