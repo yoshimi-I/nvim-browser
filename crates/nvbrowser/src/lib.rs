@@ -62,6 +62,21 @@ pub fn inspect_target(input: &str) -> InspectResult {
     }
 }
 
+pub fn kitty_image_escape(base64_png: &str) -> String {
+    format!("\x1b_Ga=T,f=100,m=0;{base64_png}\x1b\\")
+}
+
+pub fn supports_direct_terminal_image(path: &str) -> bool {
+    matches!(
+        Path::new(path)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| extension.to_ascii_lowercase())
+            .as_deref(),
+        Some("png" | "jpg" | "jpeg" | "gif" | "webp")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,5 +121,23 @@ mod tests {
 
         assert!(json.contains("\"input\":\"README.md\""));
         assert!(json.contains("\"kind\":\"markdown_file\""));
+    }
+
+    #[test]
+    fn kitty_image_escape_wraps_base64_png_payload() {
+        let escape = kitty_image_escape("iVBORw0KGgo=");
+
+        assert!(escape.starts_with("\x1b_G"));
+        assert!(escape.contains("a=T"));
+        assert!(escape.contains("f=100"));
+        assert!(escape.contains(";iVBORw0KGgo="));
+        assert!(escape.ends_with("\x1b\\"));
+    }
+
+    #[test]
+    fn direct_terminal_images_are_limited_to_raster_formats() {
+        assert!(supports_direct_terminal_image("screenshot.png"));
+        assert!(supports_direct_terminal_image("photo.jpeg"));
+        assert!(!supports_direct_terminal_image("diagram.svg"));
     }
 }

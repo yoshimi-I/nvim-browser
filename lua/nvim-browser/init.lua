@@ -22,6 +22,10 @@ local function open_terminal(command)
   vim.cmd("startinsert")
 end
 
+local function is_image_extension(extension)
+  return vim.tbl_contains({ "png", "jpg", "jpeg", "gif", "webp" }, extension)
+end
+
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", {
     binary = default_binary(),
@@ -41,6 +45,11 @@ function M.open(target)
   local extension = vim.fn.fnamemodify(target, ":e"):lower()
   if extension == "md" or extension == "markdown" then
     open_terminal({ M.config.binary, "render-md", target })
+    return
+  end
+
+  if is_image_extension(extension) then
+    open_terminal({ M.config.binary, "show-image", target })
     return
   end
 

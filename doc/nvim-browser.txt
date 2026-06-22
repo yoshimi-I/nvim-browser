@@ -20,7 +20,9 @@ COMMANDS                                           *nvim-browser-commands*
                                                         *:NBrowserOpen*
 :NBrowserOpen [target]
         Open a URL or file target in the browser preview surface. Markdown files
-        are rendered as HTML through the Rust backend.
+        are rendered as HTML through the Rust backend. Image files are emitted
+        with Kitty graphics protocol escape sequences for terminals such as
+        Ghostty.
 
                                                         *:NBrowserPreview*
 :NBrowserPreview
