@@ -401,6 +401,15 @@ function M.register(browser, opts)
     nargs = "+",
   })
 
+  vim.api.nvim_create_user_command("NBrowserSelectHint", function(opts)
+    local label, choice = parse_hint_text(opts.args)
+    if label == nil or choice == nil or not browser.select_hint(label, choice) then
+      warn_hint_input_unavailable()
+    end
+  end, {
+    nargs = "+",
+  })
+
   vim.api.nvim_create_user_command("NBrowserTypeHere", function(opts)
     if opts.args == nil or opts.args == "" or not browser.type_here(opts.args) then
       warn_cursor_text_unavailable()
@@ -451,6 +460,25 @@ function M.register(browser, opts)
       return
     end
     if not browser.type_hint(label, text, { submit = true }) then
+      warn_hint_input_unavailable()
+    end
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserSelectHintMode", function()
+    local hints = browser.hints()
+    if #hints == 0 then
+      warn_no_hints()
+      return
+    end
+    local label = input("nvim-browser hint: ")
+    if label == nil or label == "" then
+      return
+    end
+    local choice = input("nvim-browser option: ")
+    if choice == nil or choice == "" then
+      return
+    end
+    if not browser.select_hint(label, choice) then
       warn_hint_input_unavailable()
     end
   end, {})

@@ -89,12 +89,20 @@ assert(
   "global keymaps should include a hinted submit mapping"
 )
 assert(
+  configured.keymaps.mappings.select_hint_mode == "o",
+  "global keymaps should include a hinted select mapping"
+)
+assert(
   configured.preview_keymaps.mappings.type_hint_mode == "t",
   "preview-local keymaps should include a hinted input mapping"
 )
 assert(
   configured.preview_keymaps.mappings.submit_hint_mode == "s",
   "preview-local keymaps should include a hinted submit mapping"
+)
+assert(
+  configured.preview_keymaps.mappings.select_hint_mode == "o",
+  "preview-local keymaps should include a hinted select mapping"
 )
 local remapped = config.setup({
   live_refresh = {
@@ -135,6 +143,10 @@ assert(
 assert(
   remapped.preview_keymaps.mappings.find_previous == "N",
   "preview-local partial remaps should retain find-previous"
+)
+assert(
+  remapped.preview_keymaps.mappings.select_hint_mode == "o",
+  "preview-local partial remaps should retain hinted select mapping"
 )
 assert(
   remapped.preview_keymaps.mappings.stop == "<Esc>",

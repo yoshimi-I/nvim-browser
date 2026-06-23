@@ -251,6 +251,12 @@ COMMANDS                                           *nvim-browser-commands*
 	Focus a browser hint by backend hint id, type text, press Enter, and
 	capture fresh frames through the active browser session.
 
+							*:NBrowserSelectHint*
+:NBrowserSelectHint {id-or-label} {choice}
+	Select an option in a hinted <select> element and capture a fresh frame.
+	Numeric choices use 1-based option indexes. Other choices match option
+	values first, then normalized visible option text case-insensitively.
+
 							*:NBrowserTypeHere*
 :NBrowserTypeHere {text}
 	Map the preview cursor to viewport pixels, click/focus that browser point,
@@ -271,6 +277,11 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserSubmitHintMode
 	Prompt for a browser hint label and text, type into the matching element,
 	press Enter, and capture fresh frames through the active browser session.
+
+							*:NBrowserSelectHintMode*
+:NBrowserSelectHintMode
+	Prompt for a browser hint label and option choice, select the matching
+	<option> in a hinted <select> element, and capture a fresh frame.
 
 							*:NBrowserHintMode*
 :NBrowserHintMode
@@ -369,6 +380,7 @@ Default normal-mode mappings:
 <leader>bf  hint mode
 <leader>bt  type into hinted field
 <leader>bs  type into hinted field and submit
+<leader>bo  select hinted option
 <
 Existing mappings are left untouched. Choose another prefix or mapping key if
 one is already in use.
@@ -389,6 +401,7 @@ N  repeat find backward
 f  hint mode
 t  type into hinted field
 s  type into hinted field and submit
+o  select hinted option
 i  type into focused element
 p  paste register into focused element
 y  yank browser selection into register
@@ -426,6 +439,7 @@ require("nvim-browser").setup({
       page_up = "<PageUp>",
       find_next = "n",
       find_previous = "N",
+      select_hint_mode = "o",
       wheel_down = "<ScrollWheelDown>",
       wheel_up = "<ScrollWheelUp>",
     },

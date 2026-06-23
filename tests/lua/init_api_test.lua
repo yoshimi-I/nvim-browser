@@ -18,6 +18,8 @@ assert(type(browser.type_point) == "function", "type_point API should exist")
 assert(type(browser.type_here) == "function", "type_here API should exist")
 assert(type(browser.type_hint) == "function", "type_hint API should exist")
 assert(type(browser.type_hint_mode) == "function", "type_hint_mode API should exist")
+assert(type(browser.select_hint) == "function", "select_hint API should exist")
+assert(type(browser.select_hint_mode) == "function", "select_hint_mode API should exist")
 assert(type(browser.input_text_mode) == "function", "focused input text mode API should exist")
 assert(type(browser.paste_register) == "function", "register paste API should exist")
 assert(type(browser.yank_selection) == "function", "browser selection yank API should exist")
@@ -58,6 +60,7 @@ local original_terminal_click_mouse = terminal.click_mouse
 local original_terminal_wheel_point = terminal.wheel_point
 local original_terminal_wheel_mouse = terminal.wheel_mouse
 local original_terminal_type_hint = terminal.type_hint
+local original_terminal_select_hint = terminal.select_hint
 local original_terminal_hover_point = terminal.hover_point
 local original_terminal_hover_here = terminal.hover_here
 local original_terminal_hover_hint = terminal.hover_hint
@@ -227,6 +230,18 @@ assert(browser.type_hint("s", "hello world", { submit = true }) == true, "type_h
 assert(typed_hint.label == "s", "type_hint should pass hint label to terminal")
 assert(typed_hint.text == "hello world", "type_hint should pass text to terminal")
 assert(typed_hint.submit == true, "type_hint should pass submit option to terminal")
+
+local selected_hint = nil
+terminal.select_hint = function(label, choice)
+  selected_hint = {
+    label = label,
+    choice = choice,
+  }
+  return true
+end
+assert(browser.select_hint("s", "Canada") == true, "select_hint should delegate to terminal")
+assert(selected_hint.label == "s", "select_hint should pass hint label to terminal")
+assert(selected_hint.choice == "Canada", "select_hint should pass option choice to terminal")
 
 local hovered_point = nil
 terminal.hover_point = function(x, y)
@@ -430,11 +445,38 @@ end, { submit = true }) == true, "type_hint_mode should support submit mode")
 assert(typed_hint.submit == true, "submit mode should reach terminal.type_hint")
 
 browser.hints = function()
+  return { { id = 2, hint_label = "s" } }
+end
+selected_hint = nil
+local select_prompts = {}
+local select_responses = { "s", "Canada" }
+terminal.select_hint = function(label, choice)
+  selected_hint = {
+    label = label,
+    choice = choice,
+  }
+  return true
+end
+assert(browser.select_hint_mode(function(prompt)
+  table.insert(select_prompts, prompt)
+  return table.remove(select_responses, 1)
+end) == true, "select_hint_mode should select the prompted option")
+assert(
+  table.concat(select_prompts, "|") == "nvim-browser hint: |nvim-browser option: ",
+  "select_hint_mode should prompt for hint then option"
+)
+assert(selected_hint.label == "s", "select_hint_mode should pass the prompted hint label")
+assert(selected_hint.choice == "Canada", "select_hint_mode should pass the prompted option choice")
+
+browser.hints = function()
   return {}
 end
 assert(browser.type_hint_mode(function()
   error("input should not be called without hints")
 end) == false, "type_hint_mode should return false without active hints")
+assert(browser.select_hint_mode(function()
+  error("input should not be called without hints")
+end) == false, "select_hint_mode should return false without active hints")
 
 browser.hints = function()
   return { { id = 2, hint_label = "s" } }
@@ -442,16 +484,28 @@ end
 assert(browser.type_hint_mode(function()
   return ""
 end) == false, "type_hint_mode should cancel on empty hint label")
+assert(browser.select_hint_mode(function()
+  return ""
+end) == false, "select_hint_mode should cancel on empty hint label")
 
 local empty_text_responses = { "s", "" }
 assert(browser.type_hint_mode(function()
   return table.remove(empty_text_responses, 1)
 end) == false, "type_hint_mode should cancel on empty text")
 
+local empty_choice_responses = { "s", "" }
+assert(browser.select_hint_mode(function()
+  return table.remove(empty_choice_responses, 1)
+end) == false, "select_hint_mode should cancel on empty option choice")
+
 terminal.type_hint = function()
   return false
 end
 assert(browser.type_hint("s", "hello") == false, "type_hint should propagate terminal failure")
+terminal.select_hint = function()
+  return false
+end
+assert(browser.select_hint("s", "Canada") == false, "select_hint should propagate terminal failure")
 
 browser.click_hint = original_click_hint
 browser.follow_hint = original_follow_hint
@@ -462,6 +516,7 @@ terminal.click_mouse = original_terminal_click_mouse
 terminal.wheel_point = original_terminal_wheel_point
 terminal.wheel_mouse = original_terminal_wheel_mouse
 terminal.type_hint = original_terminal_type_hint
+terminal.select_hint = original_terminal_select_hint
 terminal.hover_point = original_terminal_hover_point
 terminal.hover_here = original_terminal_hover_here
 terminal.hover_hint = original_terminal_hover_hint

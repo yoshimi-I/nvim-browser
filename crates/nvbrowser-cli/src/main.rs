@@ -16,7 +16,8 @@ use nvbrowser_core::{
     HistoryNavigationRequest, HoverHintRequest, HoverPointRequest, KeyPressRequest,
     KittyImageDelete, KittyImageTransfer, NavigateRequest, PageMetrics, PageMetricsRequest,
     PageTextRequest, PageTextSnapshot, ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer,
-    ScrollRequest, SelectionTextRequest, SessionId, TextInputRequest, Viewport, WheelPointRequest,
+    ScrollRequest, SelectHintRequest, SelectionTextRequest, SessionId, TextInputRequest, Viewport,
+    WheelPointRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -332,6 +333,11 @@ enum ServeRequest {
     HoverHint {
         id: u64,
         hint_id: u32,
+    },
+    SelectHint {
+        id: u64,
+        hint_id: u32,
+        choice: String,
     },
     TypePoint {
         id: u64,
@@ -667,7 +673,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 7,
+            protocol_version: 8,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -834,6 +840,18 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.id(),
                     self.session.active_page_id(),
                     hint_id,
+                ))?;
+                self.settle_after_interaction()?;
+                self.capture_payload().map(Some)
+            }
+            ServeRequest::SelectHint {
+                hint_id, choice, ..
+            } => {
+                self.renderer.select_hint(SelectHintRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    hint_id,
+                    choice,
                 ))?;
                 self.settle_after_interaction()?;
                 self.capture_payload().map(Some)
@@ -1009,6 +1027,7 @@ impl ServeRequest {
             | ServeRequest::WheelPoint { id, .. }
             | ServeRequest::ClickHint { id, .. }
             | ServeRequest::HoverHint { id, .. }
+            | ServeRequest::SelectHint { id, .. }
             | ServeRequest::TypePoint { id, .. }
             | ServeRequest::TypeHint { id, .. }
             | ServeRequest::FindText { id, .. }
@@ -1459,7 +1478,8 @@ mod tests {
         ElementHintKind, ElementHintsRequest, FrameId, FrameMetadata, HistoryNavigationResult,
         InputResult, InteractionSettleResult, NavigationResult, PageId, PageMetricsRequest,
         PageTextRequest, ReloadResult, RendererError, RendererErrorKind, ScrollResult,
-        SelectionTextRequest, SelectionTextResult, ShutdownResult, WheelPointRequest,
+        SelectHintRequest, SelectionTextRequest, SelectionTextResult, ShutdownResult,
+        WheelPointRequest,
     };
 
     struct FakeRenderer {
@@ -1472,6 +1492,7 @@ mod tests {
         focused_hints: Vec<u32>,
         clicked_hints: Vec<u32>,
         hovered_hints: Vec<u32>,
+        selected_hints: Vec<(u32, String)>,
         clicked_points: Vec<(f64, f64)>,
         hovered_points: Vec<(f64, f64)>,
         wheeled_points: Vec<(f64, f64, f64, f64)>,
@@ -1480,6 +1501,7 @@ mod tests {
         fail_click: bool,
         fail_click_hint: bool,
         fail_hover_hint: bool,
+        fail_select_hint: bool,
         fail_hints: bool,
         fail_focus_hint: bool,
         operations: Vec<&'static str>,
@@ -1506,6 +1528,7 @@ mod tests {
                 focused_hints: Vec::new(),
                 clicked_hints: Vec::new(),
                 hovered_hints: Vec::new(),
+                selected_hints: Vec::new(),
                 clicked_points: Vec::new(),
                 hovered_points: Vec::new(),
                 wheeled_points: Vec::new(),
@@ -1514,6 +1537,7 @@ mod tests {
                 fail_click: false,
                 fail_click_hint: false,
                 fail_hover_hint: false,
+                fail_select_hint: false,
                 fail_hints: false,
                 fail_focus_hint: false,
                 operations: Vec::new(),
@@ -1762,6 +1786,24 @@ mod tests {
                 return Err(RendererError::new(
                     RendererErrorKind::InvalidState,
                     "hint hover failed",
+                ));
+            }
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn select_hint(
+            &mut self,
+            request: SelectHintRequest,
+        ) -> Result<InputResult, RendererError> {
+            self.operations.push("select_hint");
+            self.selected_hints.push((request.hint_id, request.choice));
+            if self.fail_select_hint {
+                return Err(RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "hint select failed",
                 ));
             }
             Ok(InputResult {
@@ -2168,6 +2210,17 @@ mod tests {
                 .expect("hover hint request should parse"),
             ServeRequest::HoverHint { id: 10, hint_id: 3 }
         );
+        assert_eq!(
+            parse_serve_request(
+                r##"{"type":"select_hint","id":11,"hint_id":4,"choice":"Canada"}"##
+            )
+            .expect("select hint request should parse"),
+            ServeRequest::SelectHint {
+                id: 11,
+                hint_id: 4,
+                choice: "Canada".to_string(),
+            }
+        );
     }
 
     #[test]
@@ -2408,7 +2461,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 7,
+                protocol_version: 8,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -2436,7 +2489,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":7,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":8,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -2463,7 +2516,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 7);
+        assert_eq!(runtime_info.protocol_version, 8);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -3822,6 +3875,91 @@ mod tests {
         assert_eq!(
             runtime.renderer.operations,
             vec!["capture", "hints", "focus_hint"]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_selects_hint_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::SelectHint {
+            id: 2,
+            hint_id: 3,
+            choice: "Canada".to_string(),
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(
+            runtime.renderer.selected_hints,
+            vec![(3, "Canada".to_string())]
+        );
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "select_hint",
+                "settle",
+                "capture",
+                "hints"
+            ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_does_not_capture_when_hint_select_fails() {
+        let mut renderer = FakeRenderer::new();
+        renderer.fail_select_hint = true;
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::SelectHint {
+            id: 2,
+            hint_id: 404,
+            choice: "Canada".to_string(),
+        });
+
+        assert_eq!(response.status, ServeStatus::Error);
+        assert!(response.payload.is_none());
+        assert_eq!(
+            runtime.renderer.selected_hints,
+            vec![(404, "Canada".to_string())]
+        );
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["capture", "hints", "select_hint"]
         );
     }
 

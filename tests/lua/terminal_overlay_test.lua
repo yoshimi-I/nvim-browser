@@ -183,7 +183,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   url = "https://example.com/long",
   runtime = {
-    protocol_version = 7,
+    protocol_version = 8,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -205,7 +205,7 @@ assert(page_metrics.scroll_y == 250, "stored page metrics should preserve scroll
 assert(page_metrics.document_height == 1600, "stored page metrics should preserve document size")
 local runtime_info = terminal.state().runtime_metadata
 assert(runtime_info ~= nil, "serve responses should store runtime metadata")
-assert(runtime_info.protocol_version == 7, "runtime metadata should preserve protocol version")
+assert(runtime_info.protocol_version == 8, "runtime metadata should preserve protocol version")
 assert(runtime_info.output == "kitty-unicode", "runtime metadata should preserve output mode")
 assert(runtime_info.cells.columns == 80, "runtime metadata should preserve preview columns")
 assert(runtime_info.viewport.width == 800, "runtime metadata should preserve viewport width")
@@ -214,7 +214,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "runtime frame",
   runtime = {
-    protocol_version = 7,
+    protocol_version = 8,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -548,7 +548,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "interactive frame",
   runtime = {
-    protocol_version = 7,
+    protocol_version = 8,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -565,7 +565,7 @@ end
 
 local function interactive_runtime(width, height)
   return {
-    protocol_version = 7,
+    protocol_version = 8,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -732,7 +732,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "refreshed interactive frame",
   runtime = {
-    protocol_version = 7,
+    protocol_version = 8,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -748,7 +748,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "column guard frame",
   runtime = {
-    protocol_version = 7,
+    protocol_version = 8,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -1654,8 +1654,46 @@ assert(vim.wait(1000, function()
 end), "non-submit type_hint response should clear pending state")
 
 sent_requests = {}
+local select_hints_response = vim.json.decode(hints_response)
+select_hints_response.id = draft_type_hint_pending_id + 1
+serve_stdout(nil, { vim.json.encode(select_hints_response), "" })
+assert(vim.wait(1000, function()
+  return #terminal.state().element_hints == 2
+end), "serve hint response should repopulate element hints before hinted select")
+assert(terminal.select_hint("s", "Canada") == true, "select_hint should select an option on the hinted element")
+local select_hint_seen = false
+local select_type_point_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "select_hint" and decoded.hint_id == 2 and decoded.choice == "Canada" then
+    select_hint_seen = true
+  end
+  if ok and decoded.type == "type_point" then
+    select_type_point_seen = true
+  end
+end
+assert(select_hint_seen, "select_hint should send the backend hint id and choice")
+assert(not select_type_point_seen, "select_hint should avoid coordinate-based type_point requests")
+local select_hint_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(select_hint_pending_id ~= nil, "select_hint should mark the select operation as pending")
+assert(#terminal.state().element_hints == 0, "select_hint should clear stale hints while a capture is pending")
+serve_stdout(nil, { vim.json.encode({
+  id = select_hint_pending_id,
+  status = "ok",
+  payload = "selected hint frame",
+  url = "https://example.com",
+  title = "Example",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil
+end), "select_hint response should clear pending state")
+sent_requests = {}
+assert(terminal.select_hint("missing", "Canada") == false, "select_hint should fail for a missing hint label")
+assert(#sent_requests == 0, "select_hint should not send a request for a missing hint label")
+
+sent_requests = {}
 local hover_hints_response = vim.json.decode(hints_response)
-hover_hints_response.id = draft_type_hint_pending_id + 1
+hover_hints_response.id = select_hint_pending_id + 1
 serve_stdout(nil, { vim.json.encode(hover_hints_response), "" })
 assert(vim.wait(1000, function()
   return #terminal.state().element_hints == 2

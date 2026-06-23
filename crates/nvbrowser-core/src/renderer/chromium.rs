@@ -25,8 +25,8 @@ use crate::{
         InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
         PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
         ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
-        RendererErrorKind, ScrollRequest, ScrollResult, SelectionTextRequest, SelectionTextResult,
-        ShutdownResult, TextInputRequest, WheelPointRequest,
+        RendererErrorKind, ScrollRequest, ScrollResult, SelectHintRequest, SelectionTextRequest,
+        SelectionTextResult, ShutdownResult, TextInputRequest, WheelPointRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -398,6 +398,27 @@ impl Renderer for ChromiumRenderer {
                 y: point.y,
             })
             .map_err(render_error)?;
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn select_hint(&mut self, request: SelectHintRequest) -> Result<InputResult, RendererError> {
+        let script = select_hint_script(request.hint_id, &request.choice)?;
+        let selected = self
+            .tab
+            .evaluate(&script, true)
+            .map_err(render_error)?
+            .value
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        if !selected {
+            return Err(RendererError::new(
+                RendererErrorKind::InvalidState,
+                "hint id was not a selectable element, was stale, or option choice was not found",
+            ));
+        }
         Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
@@ -973,6 +994,47 @@ const CLICK_HINT_POINT_SCRIPT: &str = r#"
     x: Math.max(0, Math.min(window.innerWidth || rect.right, rect.left + rect.width / 2)),
     y: Math.max(0, Math.min(window.innerHeight || rect.bottom, rect.top + rect.height / 2))
   });
+})()
+"#;
+
+fn select_hint_script(hint_id: u32, choice: &str) -> Result<String, RendererError> {
+    let hint_id = serde_json::to_string(&hint_id).map_err(render_error)?;
+    let choice = serde_json::to_string(choice).map_err(render_error)?;
+    Ok(SELECT_HINT_SCRIPT
+        .replace("__HINT_ID__", &hint_id)
+        .replace("__CHOICE__", &choice))
+}
+
+const SELECT_HINT_SCRIPT: &str = r#"
+(() => {
+  const hintId = __HINT_ID__;
+  const choice = __CHOICE__;
+  const registry = window.__nvbrowserHintRegistry;
+  const element = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  if (!element || !element.isConnected || element.tagName.toLowerCase() !== 'select') return false;
+  const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+  const normalizedChoice = normalize(choice);
+  const options = Array.from(element.options || []);
+  let selectedIndex = -1;
+  if (/^\d+$/.test(normalizedChoice)) {
+    const index = Number.parseInt(normalizedChoice, 10) - 1;
+    if (index >= 0 && index < options.length && !options[index].disabled) {
+      selectedIndex = index;
+    }
+  }
+  if (selectedIndex < 0) {
+    selectedIndex = options.findIndex((option) => !option.disabled && option.value === choice);
+  }
+  if (selectedIndex < 0) {
+    const wanted = normalizedChoice.toLowerCase();
+    selectedIndex = options.findIndex((option) => !option.disabled && normalize(option.textContent).toLowerCase() === wanted);
+  }
+  if (selectedIndex < 0) return false;
+  element.selectedIndex = selectedIndex;
+  element.value = options[selectedIndex].value;
+  element.dispatchEvent(new Event('input', { bubbles: true }));
+  element.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
 })()
 "#;
 
@@ -1663,6 +1725,24 @@ mod tests {
         assert!(CLICK_HINT_POINT_SCRIPT.contains("getBoundingClientRect"));
         assert!(!CLICK_HINT_POINT_SCRIPT.contains("[hintId - 1]"));
         assert!(!CLICK_HINT_POINT_SCRIPT.contains("element.click()"));
+        assert!(SELECT_HINT_SCRIPT.contains("__nvbrowserHintRegistry"));
+        assert!(SELECT_HINT_SCRIPT.contains("registry.elements.get(hintId)"));
+        assert!(SELECT_HINT_SCRIPT.contains("tagName.toLowerCase() !== 'select'"));
+        assert!(SELECT_HINT_SCRIPT.contains("Number.parseInt(normalizedChoice, 10) - 1"));
+        assert!(SELECT_HINT_SCRIPT.contains("option.value === choice"));
+        assert!(
+            SELECT_HINT_SCRIPT.contains("normalize(option.textContent).toLowerCase() === wanted")
+        );
+        assert!(SELECT_HINT_SCRIPT.contains("new Event('input', { bubbles: true })"));
+        assert!(SELECT_HINT_SCRIPT.contains("new Event('change', { bubbles: true })"));
+        assert!(!SELECT_HINT_SCRIPT.contains("[hintId - 1]"));
+    }
+
+    #[test]
+    fn select_hint_script_escapes_choice() {
+        let script = select_hint_script(4, "Canada \"East\"").expect("select script should build");
+        assert!(script.contains("const hintId = 4;"));
+        assert!(script.contains(r#"const choice = "Canada \"East\"";"#));
     }
 
     #[test]

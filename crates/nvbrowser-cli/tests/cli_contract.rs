@@ -541,7 +541,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
     }));
     assert_eq!(
         adopted_blank["status"], "ok",
-        "target blank click should succeed"
+        "target blank click should succeed; response={adopted_blank:?}"
     );
     assert_eq!(
         adopted_blank["title"], "Blank Target Adopted",
@@ -619,6 +619,97 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
     assert_eq!(quit["id"], 22);
     assert_eq!(quit["status"], "ok");
 
+    serve.wait_success();
+}
+
+#[test]
+fn opt_in_e2e_serve_loop_selects_real_chromium_hint() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let fixture_path = directory.path().join("select-hint.html");
+    std::fs::write(
+        &fixture_path,
+        r##"<!doctype html>
+<html>
+  <head><title>NBrowser Select E2E Fixture</title></head>
+  <body>
+    <main>
+      <label>Country
+        <select aria-label="Country" onchange="document.getElementById('out').textContent='country ' + this.value">
+          <option value="jp">Japan</option>
+          <option value="ca">Canada</option>
+          <option value="de">Germany</option>
+        </select>
+      </label>
+      <p id="out">empty</p>
+    </main>
+  </body>
+</html>"##,
+    )
+    .expect("select fixture should be written");
+    let fixture_url = format!("file://{}", fixture_path.display());
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--url",
+            &fixture_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok", "initial navigation should succeed");
+    let select_hint_id = initial["hints"]
+        .as_array()
+        .expect("initial response should include hints")
+        .iter()
+        .find(|hint| hint["kind"] == "select")
+        .expect("real Chromium hints should include the select")["id"]
+        .as_u64()
+        .expect("select hint should include id");
+
+    let selected = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "select_hint",
+        "hint_id": select_hint_id,
+        "choice": "Canada"
+    }));
+    assert_eq!(
+        selected["status"], "ok",
+        "select_hint should succeed; response={selected:?}"
+    );
+    let selected_text = serve.request(serde_json::json!({ "id": 2, "type": "page_text" }));
+    assert!(
+        selected_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("country ca")),
+        "page_text should observe DOM updated by selected option"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 3, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
     serve.wait_success();
 }
 

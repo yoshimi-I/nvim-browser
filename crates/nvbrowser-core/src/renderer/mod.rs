@@ -39,6 +39,8 @@ pub trait Renderer {
 
     fn hover_hint(&mut self, request: HoverHintRequest) -> Result<InputResult, RendererError>;
 
+    fn select_hint(&mut self, request: SelectHintRequest) -> Result<InputResult, RendererError>;
+
     fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError>;
 
     fn hover_point(&mut self, request: HoverPointRequest) -> Result<InputResult, RendererError>;
@@ -354,6 +356,30 @@ impl HoverHintRequest {
             session_id,
             page_id,
             hint_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SelectHintRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub hint_id: u32,
+    pub choice: String,
+}
+
+impl SelectHintRequest {
+    pub fn new(
+        session_id: SessionId,
+        page_id: PageId,
+        hint_id: u32,
+        choice: impl Into<String>,
+    ) -> Self {
+        Self {
+            session_id,
+            page_id,
+            hint_id,
+            choice: choice.into(),
         }
     }
 }
@@ -738,6 +764,16 @@ mod tests {
             })
         }
 
+        fn select_hint(
+            &mut self,
+            request: SelectHintRequest,
+        ) -> Result<InputResult, RendererError> {
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
         fn click_point(
             &mut self,
             request: ClickPointRequest,
@@ -935,6 +971,9 @@ mod tests {
         let hover_hint = renderer
             .hover_hint(HoverHintRequest::new(session_id, page_id, 2))
             .expect("hint hover should succeed");
+        let select_hint = renderer
+            .select_hint(SelectHintRequest::new(session_id, page_id, 2, "Canada"))
+            .expect("hint select should succeed");
 
         assert_eq!(focus.session_id, session_id);
         assert_eq!(focus.page_id, page_id);
@@ -944,6 +983,8 @@ mod tests {
         assert_eq!(click_hint.page_id, page_id);
         assert_eq!(hover_hint.session_id, session_id);
         assert_eq!(hover_hint.page_id, page_id);
+        assert_eq!(select_hint.session_id, session_id);
+        assert_eq!(select_hint.page_id, page_id);
         assert_eq!(click.session_id, session_id);
         assert_eq!(click.page_id, page_id);
         assert_eq!(hover.session_id, session_id);

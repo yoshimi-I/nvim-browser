@@ -13,8 +13,8 @@ pub use renderer::{
     InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
     PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
     ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
-    ScrollRequest, ScrollResult, SelectionTextRequest, SelectionTextResult, ShutdownResult,
-    TextInputRequest, WheelPointRequest,
+    ScrollRequest, ScrollResult, SelectHintRequest, SelectionTextRequest, SelectionTextResult,
+    ShutdownResult, TextInputRequest, WheelPointRequest,
 };
 pub use session::{
     BrowserSession, FrameId, FrameMetadata, LoadingState, PageId, PageState, SessionId, Viewport,

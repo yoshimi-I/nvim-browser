@@ -143,6 +143,10 @@ function M.setup(browser, opts)
   set_mapping(prefix, mapping_lhs(mappings, "submit_hint_mode", "s"), function()
     browser.type_hint_mode(input, { submit = true })
   end, "nvim-browser: submit hinted input")
+
+  set_mapping(prefix, mapping_lhs(mappings, "select_hint_mode", "o"), function()
+    browser.select_hint_mode(input)
+  end, "nvim-browser: select hinted option")
 end
 
 function M.setup_buffer(browser, bufnr, opts)
@@ -235,6 +239,10 @@ function M.setup_buffer(browser, bufnr, opts)
   set_mapping(nil, mapping_lhs(mappings, "submit_hint_mode", "s"), function()
     browser.type_hint_mode(input, { submit = true })
   end, "nvim-browser: submit hinted input", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "select_hint_mode", "o"), function()
+    browser.select_hint_mode(input)
+  end, "nvim-browser: select hinted option", buffer_opts)
 
   set_mapping(nil, mapping_lhs(mappings, "input_text_mode", "i"), function()
     if browser.start_text_mode ~= nil then

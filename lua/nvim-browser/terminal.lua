@@ -2232,6 +2232,28 @@ function M.type_hint(id, text, opts)
   return send_pending_request(request, state.current_url or state.last_target or label, label)
 end
 
+function M.select_hint(id, choice)
+  if choice == nil or choice == "" then
+    return false
+  end
+  if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
+    return false
+  end
+  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+    return false
+  end
+  local hint = find_hint(state.element_hints, id)
+  if hint == nil then
+    return false
+  end
+  cancel_in_flight_capture()
+  return send_pending_request({
+    type = "select_hint",
+    hint_id = hint.id,
+    choice = choice,
+  }, state.current_url or state.last_target or "select", "select")
+end
+
 function M.toggle()
   if is_valid_window() then
     pcall(send_terminal_escape, kitty_cleanup_escape())

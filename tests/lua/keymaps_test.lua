@@ -50,6 +50,10 @@ local browser = {
     local suffix = opts ~= nil and opts.submit == true and ":submit" or ":type"
     table.insert(calls, "type_hints" .. suffix .. ":" .. value)
   end,
+  select_hint_mode = function(input)
+    local value = input("nvim-browser option: ")
+    table.insert(calls, "select_hint:" .. value)
+  end,
   input_text_mode = function(input)
     table.insert(calls, "input_mode:" .. input("nvim-browser text: "))
   end,
@@ -143,7 +147,10 @@ keymaps.setup(browser, {
     if prompt == "nvim-browser find: " then
       return "needle"
     end
-    assert(prompt == "nvim-browser text: ", "hinted input mapping should pass the configured input function")
+    assert(
+      prompt == "nvim-browser text: " or prompt == "nvim-browser option: ",
+      "hinted input mapping should pass the configured input function"
+    )
     return "global text"
   end,
 })
@@ -158,6 +165,7 @@ assert_mapping("\\x/", "enabled keymaps should install find mapping")
 assert_mapping("\\xf", "enabled keymaps should install hint mapping")
 assert_mapping("\\xt", "enabled keymaps should install hinted input mapping")
 assert_mapping("\\xs", "enabled keymaps should install hinted submit mapping")
+assert_mapping("\\xo", "enabled keymaps should install hinted select mapping")
 
 trigger("\\xr")
 trigger("\\xh")
@@ -169,10 +177,11 @@ trigger("\\x/")
 trigger("\\xf")
 trigger("\\xt")
 trigger("\\xs")
+trigger("\\xo")
 
 assert(
   table.concat(calls, ",")
-    == "reload,back,forward,scroll:250:0,scroll:-250:0,address,find:forward:needle,hints,type_hints:type:global text,type_hints:submit:global text",
+    == "reload,back,forward,scroll:250:0,scroll:-250:0,address,find:forward:needle,hints,type_hints:type:global text,type_hints:submit:global text,select_hint:global text",
   "keymaps should call browser APIs"
 )
 
@@ -185,6 +194,7 @@ keymaps.setup(browser, {
     scroll_down = "<C-d>",
     type_hint_mode = "i",
     submit_hint_mode = false,
+    select_hint_mode = "o",
   },
 })
 
@@ -194,6 +204,7 @@ assert_no_mapping("\\zl", "false custom mapping should disable the default mappi
 assert_mapping("\\z<C-d>", "custom scroll mapping should be installed")
 assert_mapping("\\zi", "custom hinted input mapping should be installed")
 assert_no_mapping("\\zs", "false hinted submit mapping should disable the default mapping")
+assert_mapping("\\zo", "custom hinted select mapping should be installed")
 
 vim.keymap.set("n", "\\yt", function()
   table.insert(calls, "existing")
@@ -226,7 +237,10 @@ keymaps.setup_buffer(browser, first_bufnr, {
     if prompt == "nvim-browser find: " then
       return "local"
     end
-    assert(prompt == "nvim-browser text: ", "buffer hinted input mapping should pass the configured input function")
+    assert(
+      prompt == "nvim-browser text: " or prompt == "nvim-browser option: ",
+      "buffer hinted input mapping should pass the configured input function"
+    )
     return "buffer text"
   end,
 })
@@ -284,6 +298,7 @@ trigger_buffer(first_bufnr, "N")
 trigger_buffer(first_bufnr, "f")
 trigger_buffer(first_bufnr, "t")
 trigger_buffer(first_bufnr, "s")
+trigger_buffer(first_bufnr, "o")
 trigger_buffer(first_bufnr, "i")
 vim.api.nvim_set_current_buf(first_bufnr)
 vim.cmd([[normal "+p]])
@@ -314,7 +329,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,address,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,text_mode,paste:+,yank:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,hover_here,close,click_mouse,wheel:120:0,wheel:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,address,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,select_hint:buffer text,text_mode,paste:+,yank:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,hover_here,close,click_mouse,wheel:120:0,wheel:-120:0,stop",
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
 
@@ -346,6 +361,7 @@ keymaps.setup_buffer(browser, first_bufnr, {
     forward = false,
     type_hint_mode = "i",
     submit_hint_mode = false,
+    select_hint_mode = false,
     page_down = "<C-f>",
     page_up = false,
     click_here = "cc",
@@ -360,6 +376,7 @@ assert(calls[#calls] == "buffer-existing", "buffer-local controls should not ove
 assert_no_buffer_mapping(first_bufnr, "L", "false buffer-local mappings should disable defaults after reinstall")
 assert_buffer_mapping(first_bufnr, "i", "custom buffer-local hinted input mapping should be installed")
 assert_no_buffer_mapping(first_bufnr, "s", "false buffer-local hinted submit mapping should disable default")
+assert_no_buffer_mapping(first_bufnr, "o", "false buffer-local hinted select mapping should disable default")
 assert_buffer_mapping(first_bufnr, "<C-f>", "custom buffer-local page-down mapping should be installed")
 assert_no_buffer_mapping(first_bufnr, "<PageUp>", "false buffer-local page-up mapping should disable default")
 assert_buffer_mapping(first_bufnr, "cc", "custom buffer-local cursor click mapping should be installed")

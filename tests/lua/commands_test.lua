@@ -14,6 +14,7 @@ local found_next = false
 local found_previous = false
 local typed_hint = nil
 local submitted_hint = nil
+local selected_hint = nil
 local typed_here = nil
 local submitted_here = nil
 local input_text = nil
@@ -107,6 +108,10 @@ local browser = {
     else
       typed_hint = label .. ":" .. text
     end
+    return true
+  end,
+  select_hint = function(label, choice)
+    selected_hint = label .. ":" .. choice
     return true
   end,
   type_here = function(text, opts)
@@ -305,6 +310,9 @@ assert(typed_hint == "s:hello world", "NBrowserTypeHint should pass the label an
 vim.cmd("NBrowserSubmitHint s hello world")
 assert(submitted_hint == "s:hello world", "NBrowserSubmitHint should request submit mode")
 
+vim.cmd("NBrowserSelectHint s Canada")
+assert(selected_hint == "s:Canada", "NBrowserSelectHint should pass the label and choice to browser.select_hint")
+
 vim.cmd("NBrowserTypeHere hello world")
 assert(typed_here == "hello world", "NBrowserTypeHere should type at the preview cursor")
 
@@ -336,6 +344,22 @@ commands.register(browser, {
 })
 vim.cmd("NBrowserSubmitHintMode")
 assert(submitted_hint == "s:hello world", "NBrowserSubmitHintMode should prompt and submit a hinted input")
+
+selected_hint = nil
+hint_responses = { "s", "Canada" }
+local select_prompts = {}
+commands.register(browser, {
+  input = function(prompt)
+    table.insert(select_prompts, prompt)
+    return table.remove(hint_responses, 1)
+  end,
+})
+vim.cmd("NBrowserSelectHintMode")
+assert(selected_hint == "s:Canada", "NBrowserSelectHintMode should prompt and select a hinted option")
+assert(
+  table.concat(select_prompts, "|") == "nvim-browser hint: |nvim-browser option: ",
+  "NBrowserSelectHintMode should prompt for hint then option"
+)
 
 commands.register(browser, {
   input = function(prompt, default)
@@ -404,6 +428,9 @@ local failed_browser = {
   type_hint = function()
     return false
   end,
+  select_hint = function()
+    return false
+  end,
   type_here = function()
     return false
   end,
@@ -452,6 +479,9 @@ assert(warnings[#warnings] == "nvim-browser: text mode requires an active cursor
 vim.cmd("NBrowserTypeHint s missing")
 assert(warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive", "NBrowserTypeHint should warn when type_hint fails")
 
+vim.cmd("NBrowserSelectHint s missing")
+assert(warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive", "NBrowserSelectHint should warn when select_hint fails")
+
 vim.cmd("NBrowserTypeHere missing")
 assert(warnings[#warnings] == "nvim-browser: cursor text input requires an active cursor-addressable browser preview", "NBrowserTypeHere should warn when cursor typing fails")
 
@@ -462,6 +492,12 @@ vim.cmd("NBrowserTypeHintMode")
 assert(
   warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive",
   "NBrowserTypeHintMode should warn when hinted input mode fails"
+)
+
+vim.cmd("NBrowserSelectHintMode")
+assert(
+  warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive",
+  "NBrowserSelectHintMode should warn when hinted select mode fails"
 )
 
 vim.cmd("NBrowserStop")
@@ -524,6 +560,10 @@ vim.cmd("NBrowserTypeHintMode")
 assert(warnings[#warnings] == "nvim-browser: no browser hints available", "NBrowserTypeHintMode should warn when no hints exist")
 assert(no_hint_input_called == false, "NBrowserTypeHintMode should not prompt when no hints exist")
 
+vim.cmd("NBrowserSelectHintMode")
+assert(warnings[#warnings] == "nvim-browser: no browser hints available", "NBrowserSelectHintMode should warn when no hints exist")
+assert(no_hint_input_called == false, "NBrowserSelectHintMode should not prompt when no hints exist")
+
 local hint_error_browser = {
   hints = function()
     return {}
@@ -546,6 +586,11 @@ vim.cmd("NBrowserTypeHintMode")
 assert(
   warnings[#warnings] == "nvim-browser: hint extraction failed: hint extraction failed",
   "NBrowserTypeHintMode should distinguish hint extraction failures from empty hint sets"
+)
+vim.cmd("NBrowserSelectHintMode")
+assert(
+  warnings[#warnings] == "nvim-browser: hint extraction failed: hint extraction failed",
+  "NBrowserSelectHintMode should distinguish hint extraction failures from empty hint sets"
 )
 
 local no_default_prompt = nil
