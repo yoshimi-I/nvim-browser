@@ -89,9 +89,12 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   `window.open`, and delayed `about:blank` navigations should stay covered by
   opt-in E2E because real pages commonly create and navigate child targets
   asynchronously.
-- A `target=_blank` hint click can still fail before adoption when CDP reports
-  `underlying connection is closed` during the click. Keep that opt-in E2E as
-  the next renderer reliability target instead of treating it as terminal noise.
+- Hint clicks on `a[target=_blank][href]` should follow the direct `href` in the
+  current preview. Native popup-opening pointer events can close the old CDP
+  target before adoption, so direct href navigation is the stable single-preview
+  behavior. This intentionally skips page pointer/click handlers for that link
+  class; keep separate `window.open` and delayed `about:blank` E2E coverage for
+  real child target adoption.
 - Long-running Chromium lifecycle, stuck navigation cancellation, and late
   response handling remain operational risk areas and should stay covered by
   tests.

@@ -145,6 +145,8 @@ pub struct ChromiumRenderer {
     known_target_ids: HashSet<String>,
     pending_page_target_ids: HashSet<String>,
     dialog_handler_target_ids: HashSet<String>,
+    suppress_target_registration_until: Option<std::time::Instant>,
+    skip_next_target_adoption: bool,
     active_viewport: Viewport,
     current_url: Option<String>,
     current_title: Option<String>,
@@ -167,6 +169,8 @@ impl ChromiumRenderer {
             known_target_ids,
             pending_page_target_ids: HashSet::new(),
             dialog_handler_target_ids,
+            suppress_target_registration_until: None,
+            skip_next_target_adoption: false,
             active_viewport: viewport,
             current_url: None,
             current_title: None,
@@ -355,7 +359,7 @@ impl Renderer for ChromiumRenderer {
 
     fn click_hint(&mut self, request: ClickHintRequest) -> Result<InputResult, RendererError> {
         let hint_id = serde_json::to_string(&request.hint_id).map_err(render_error)?;
-        let script = CLICK_HINT_POINT_SCRIPT.replace("__HINT_ID__", &hint_id);
+        let script = CLICK_HINT_ACTION_SCRIPT.replace("__HINT_ID__", &hint_id);
         let point = self
             .tab
             .evaluate(&script, true)
@@ -368,12 +372,22 @@ impl Renderer for ChromiumRenderer {
                 )
             })
             .and_then(parse_hint_point_json)?;
-        self.tab
-            .click_point(Point {
-                x: point.x,
-                y: point.y,
-            })
-            .map_err(|error| render_context_error("hint click failed", error))?;
+        if point.direct_navigated.unwrap_or(false) {
+            self.skip_next_target_adoption = true;
+            return Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            });
+        }
+        if let Err(error) = dispatch_mouse_click(&self.tab, point.x, point.y)
+            .map_err(|error| render_context_error("hint click failed", error))
+        {
+            if !is_closed_target_error(&error) {
+                return Err(error);
+            }
+            self.suppress_target_registration_until =
+                Some(std::time::Instant::now() + Duration::from_millis(750));
+        }
         Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
@@ -587,11 +601,16 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
-        self.adopt_new_page_target_after_interaction()
-            .map_err(|error| context_renderer_error("target adoption failed", error))?;
-        let settled = self
-            .wait_for_interaction_settle()
-            .map_err(|error| context_renderer_error("interaction settle failed", error))?;
+        let settled = if self.skip_next_target_adoption {
+            self.skip_next_target_adoption = false;
+            self.wait_for_current_tab_interaction_settle()
+                .map_err(|error| context_renderer_error("interaction settle failed", error))?
+        } else {
+            self.adopt_new_page_target_after_interaction()
+                .map_err(|error| context_renderer_error("target adoption failed", error))?;
+            self.wait_for_interaction_settle()
+                .map_err(|error| context_renderer_error("interaction settle failed", error))?
+        };
         let url = settled.url;
         let title = settled.title;
         self.current_url = Some(url.clone());
@@ -700,8 +719,19 @@ impl ChromiumRenderer {
         Ok(())
     }
 
-    fn current_target_candidates(&self) -> (Vec<Arc<Tab>>, Vec<TargetCandidate>) {
-        self.browser.register_missing_tabs();
+    fn current_target_candidates(&mut self) -> (Vec<Arc<Tab>>, Vec<TargetCandidate>) {
+        if self
+            .suppress_target_registration_until
+            .is_some_and(|deadline| std::time::Instant::now() < deadline)
+        {
+            // The browser-level Target.getTargets call inside headless_chrome can
+            // panic immediately after a popup-opening click closes the old target
+            // connection. During that short recovery window, rely on browser
+            // target events that have already populated get_tabs().
+        } else {
+            self.suppress_target_registration_until = None;
+            self.browser.register_missing_tabs();
+        }
         let tabs = self.current_tabs();
         let candidates = tabs
             .iter()
@@ -756,6 +786,26 @@ impl ChromiumRenderer {
                     &candidates,
                 );
             }
+            samples.push(self.read_interaction_settle_sample()?);
+            if let Some(sample) = choose_interaction_settle_sample(&samples, 2) {
+                return Ok(sample);
+            }
+            if std::time::Instant::now() >= deadline {
+                return latest_interaction_settle_sample(&samples)
+                    .ok_or_else(|| render_error("interaction settle did not collect samples"));
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    fn wait_for_current_tab_interaction_settle(
+        &mut self,
+    ) -> Result<InteractionSettleSample, RendererError> {
+        let deadline = std::time::Instant::now() + Duration::from_millis(750);
+        let mut samples = Vec::new();
+        let _ = self.wait_for_dom_quiet();
+
+        loop {
             samples.push(self.read_interaction_settle_sample()?);
             if let Some(sample) = choose_interaction_settle_sample(&samples, 2) {
                 return Ok(sample);
@@ -1252,6 +1302,34 @@ const CLICK_HINT_POINT_SCRIPT: &str = r#"
 })()
 "#;
 
+const CLICK_HINT_ACTION_SCRIPT: &str = r#"
+(() => {
+  const hintId = __HINT_ID__;
+  const registry = window.__nvbrowserHintRegistry;
+  const element = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  if (!element || !element.isConnected) return null;
+  if (typeof element.scrollIntoView === 'function') {
+    element.scrollIntoView({ block: 'center', inline: 'center' });
+  }
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  const link = typeof element.closest === 'function' ? element.closest('a[href]') : null;
+  const href = link && typeof link.href === 'string' ? link.href : null;
+  const target = link ? link.getAttribute('target') : null;
+  const directNavigated = !!(href && target && target.toLowerCase() === '_blank');
+  if (directNavigated) {
+    window.location.assign(href);
+  }
+  return JSON.stringify({
+    x: Math.max(0, Math.min(window.innerWidth || rect.right, rect.left + rect.width / 2)),
+    y: Math.max(0, Math.min(window.innerHeight || rect.bottom, rect.top + rect.height / 2)),
+    href,
+    target,
+    direct_navigated: directNavigated
+  });
+})()
+"#;
+
 fn select_hint_script(hint_id: u32, choice: &str) -> Result<String, RendererError> {
     let hint_id = serde_json::to_string(&hint_id).map_err(render_error)?;
     let choice = serde_json::to_string(choice).map_err(render_error)?;
@@ -1578,6 +1656,50 @@ fn connect_browser(cdp_ws_url: &str) -> Result<Browser, RendererError> {
     )
 }
 
+fn dispatch_mouse_click(tab: &Arc<Tab>, x: f64, y: f64) -> Result<(), RendererError> {
+    dispatch_mouse_event(tab, Input::DispatchMouseEventTypeOption::MouseMoved, x, y)?;
+    dispatch_mouse_event(tab, Input::DispatchMouseEventTypeOption::MousePressed, x, y)?;
+    dispatch_mouse_event(
+        tab,
+        Input::DispatchMouseEventTypeOption::MouseReleased,
+        x,
+        y,
+    )
+}
+
+fn dispatch_mouse_event(
+    tab: &Arc<Tab>,
+    event_type: Input::DispatchMouseEventTypeOption,
+    x: f64,
+    y: f64,
+) -> Result<(), RendererError> {
+    let is_press_or_release = matches!(
+        event_type,
+        Input::DispatchMouseEventTypeOption::MousePressed
+            | Input::DispatchMouseEventTypeOption::MouseReleased
+    );
+    tab.call_method(Input::DispatchMouseEvent {
+        Type: event_type,
+        x,
+        y,
+        modifiers: None,
+        timestamp: None,
+        button: is_press_or_release.then_some(Input::MouseButton::Left),
+        buttons: None,
+        click_count: is_press_or_release.then_some(1),
+        force: None,
+        tangential_pressure: None,
+        tilt_x: None,
+        tilt_y: None,
+        twist: None,
+        delta_x: None,
+        delta_y: None,
+        pointer_Type: None,
+    })
+    .map(|_| ())
+    .map_err(render_error)
+}
+
 fn resize_tab(tab: &Tab, viewport: Viewport) -> Result<(), RendererError> {
     tab.set_bounds(Bounds::Normal {
         left: None,
@@ -1736,6 +1858,7 @@ struct ExtractedPageText {
 struct HintPoint {
     x: f64,
     y: f64,
+    direct_navigated: Option<bool>,
 }
 
 fn parse_page_text_json(text: &str) -> Result<ExtractedPageText, serde_json::Error> {
@@ -2078,6 +2201,10 @@ mod tests {
         assert!(CLICK_HINT_POINT_SCRIPT.contains("getBoundingClientRect"));
         assert!(!CLICK_HINT_POINT_SCRIPT.contains("[hintId - 1]"));
         assert!(!CLICK_HINT_POINT_SCRIPT.contains("element.click()"));
+        assert!(!CLICK_HINT_POINT_SCRIPT.contains("location.assign"));
+        assert!(CLICK_HINT_ACTION_SCRIPT.contains("location.assign(href)"));
+        assert!(CLICK_HINT_ACTION_SCRIPT.contains("direct_navigated"));
+        assert!(!CLICK_HINT_ACTION_SCRIPT.contains("element.click()"));
         assert!(SELECT_HINT_SCRIPT.contains("__nvbrowserHintRegistry"));
         assert!(SELECT_HINT_SCRIPT.contains("registry.elements.get(hintId)"));
         assert!(SELECT_HINT_SCRIPT.contains("tagName.toLowerCase() !== 'select'"));
