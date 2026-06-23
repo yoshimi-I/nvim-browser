@@ -117,6 +117,10 @@ function M.click_point(x, y)
   return terminal.click_point(x, y)
 end
 
+function M.find_text(query)
+  return terminal.find_text(query)
+end
+
 function M.click_here()
   return terminal.click_here()
 end
@@ -163,6 +167,10 @@ end
 
 function M.status_error()
   return terminal.state().status_error
+end
+
+function M.last_find_found()
+  return terminal.state().last_find_found
 end
 
 function M.hints()

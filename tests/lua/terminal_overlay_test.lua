@@ -83,3 +83,24 @@ assert(terminal._test.find_hint(target_hints, "s") == target_hints[2], "hint loo
 assert(terminal._test.find_hint(target_hints, "1") == target_hints[1], "hint lookup should preserve numeric id compatibility")
 assert(terminal._test.find_hint(target_hints, 2) == target_hints[2], "hint lookup should preserve numeric id arguments")
 assert(terminal._test.find_hint(target_hints, "missing") == nil, "hint lookup should return nil for unknown labels")
+
+terminal._test.set_last_find_found(true)
+terminal._test.handle_find_text_response({ status = "error" })
+assert(terminal.state().last_find_found == nil, "failed find responses should clear stale find state")
+
+local warnings = {}
+local original_echo = vim.api.nvim_echo
+vim.api.nvim_echo = function(chunks)
+  if chunks[1][2] == "WarningMsg" then
+    table.insert(warnings, chunks[1][1])
+  end
+end
+
+terminal._test.handle_find_text_response({ status = "ok", found = false })
+assert(terminal.state().last_find_found == false, "not-found responses should update find state to false")
+assert(warnings[#warnings] == "nvim-browser: text was not found", "not-found responses should warn")
+
+terminal._test.handle_find_text_response({ status = "ok", found = true })
+assert(terminal.state().last_find_found == true, "found responses should update find state to true")
+
+vim.api.nvim_echo = original_echo

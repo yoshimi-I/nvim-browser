@@ -16,7 +16,7 @@ This repository is an early MVP scaffold. Today it includes:
 - Markdown-to-HTML rendering
 - image output through Kitty graphics protocol
 - Chromium/CDP browser sessions rendered through Kitty graphics or ANSI output
-- Neovim commands for opening, navigating, reloading, history, scrolling, text input, keys, selector focus, point clicks, and hinted element clicks
+- Neovim commands for opening, navigating, reloading, history, scrolling, finding text, text input, keys, selector focus, point clicks, and hinted element clicks
 - browser element hints overlaid on cursor-addressable previews
 - persistent Neovim preview surface reuse
 - current URL, title, and status reporting from the active browser session
@@ -101,6 +101,7 @@ Then run:
 :NBrowserBack
 :NBrowserForward
 :NBrowserScrollDown 400
+:NBrowserFind search text
 :NBrowserFocusSelector input[name="q"]
 :NBrowserInput hello
 :NBrowserKey Enter
@@ -129,6 +130,9 @@ Lua mappings can call `require("nvim-browser").hint_mode()` for the same prompt.
 `:NBrowserAddress` prompts for a URL or search query; host-like input opens as a
 URL, and plain words use the configured search URL. Lua mappings can call
 `require("nvim-browser").address()`.
+
+`:NBrowserFind {text}` finds text in the active browser page, scrolls to the
+match through the browser's native find behavior, and captures a fresh frame.
 
 Configure search with `require("nvim-browser").setup({ search_url = "https://www.google.com/search?q=%s" })`.
 The `%s` placeholder receives the encoded query; write literal percent signs as

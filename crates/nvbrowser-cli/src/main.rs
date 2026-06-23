@@ -11,9 +11,9 @@ use nvbrowser_core::{
     inspect_target, kitty_image_escape, render_markdown_document,
     renderer::chromium::{render_url_png, ChromiumOptions},
     BrowserSession, ChromiumRenderer, ClickPointRequest, ElementHint, ElementHintsRequest,
-    FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest, KeyPressRequest,
-    KittyImageTransfer, NavigateRequest, ReloadRequest, RenderFrameRequest, RenderedFrame,
-    Renderer, ScrollRequest, SessionId, TextInputRequest, Viewport,
+    FindTextRequest, FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest,
+    KeyPressRequest, KittyImageTransfer, NavigateRequest, ReloadRequest, RenderFrameRequest,
+    RenderedFrame, Renderer, ScrollRequest, SessionId, TextInputRequest, Viewport,
 };
 use serde::{Deserialize, Serialize};
 
@@ -202,6 +202,10 @@ enum ServeRequest {
         x: f64,
         y: f64,
     },
+    FindText {
+        id: u64,
+        query: String,
+    },
     Resize {
         id: u64,
         columns: u32,
@@ -225,6 +229,8 @@ struct ServeResponse {
     title: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     hints: Vec<ElementHint>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    found: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
@@ -264,6 +270,7 @@ struct ServeRuntime<R: Renderer> {
 struct CapturePayload {
     payload: String,
     hints: Vec<ElementHint>,
+    found: Option<bool>,
 }
 
 impl<R: Renderer> ServeRuntime<R> {
@@ -281,9 +288,9 @@ impl<R: Renderer> ServeRuntime<R> {
         let id = request.id();
         match self.try_handle(request) {
             Ok(capture) => {
-                let (payload, hints) = capture
-                    .map(|capture| (Some(capture.payload), capture.hints))
-                    .unwrap_or((None, Vec::new()));
+                let (payload, hints, found) = capture
+                    .map(|capture| (Some(capture.payload), capture.hints, capture.found))
+                    .unwrap_or((None, Vec::new(), None));
                 ServeResponse {
                     id,
                     status: ServeStatus::Ok,
@@ -291,6 +298,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     url: self.session.active_page().url().map(str::to_string),
                     title: self.session.active_page().title().map(str::to_string),
                     hints,
+                    found,
                     error: None,
                 }
             }
@@ -301,6 +309,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 url: self.session.active_page().url().map(str::to_string),
                 title: self.session.active_page().title().map(str::to_string),
                 hints: Vec::new(),
+                found: None,
                 error: Some(error.to_string()),
             },
         }
@@ -401,6 +410,16 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload().map(Some)
             }
+            ServeRequest::FindText { query, .. } => {
+                let result = self.renderer.find_text(FindTextRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    query,
+                ))?;
+                let mut capture = self.capture_payload()?;
+                capture.found = Some(result.found);
+                Ok(Some(capture))
+            }
             ServeRequest::Resize {
                 columns,
                 rows,
@@ -433,7 +452,11 @@ impl<R: Renderer> ServeRuntime<R> {
             self.session.active_page_id(),
         ))?;
         let payload = frame_to_payload(frame, self.output, self.columns, Some(self.rows))?;
-        Ok(CapturePayload { payload, hints })
+        Ok(CapturePayload {
+            payload,
+            hints,
+            found: None,
+        })
     }
 
     fn settle_after_interaction(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -458,6 +481,7 @@ impl ServeRequest {
             | ServeRequest::KeyPress { id, .. }
             | ServeRequest::FocusSelector { id, .. }
             | ServeRequest::ClickPoint { id, .. }
+            | ServeRequest::FindText { id, .. }
             | ServeRequest::Resize { id, .. }
             | ServeRequest::Quit { id } => *id,
         }
@@ -527,6 +551,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         url: None,
                         title: None,
                         hints: Vec::new(),
+                        found: None,
                         error: Some(error.to_string()),
                     })
                 )?;
@@ -630,6 +655,7 @@ mod tests {
         key_presses: Vec<String>,
         focused_selectors: Vec<String>,
         clicked_points: Vec<(f64, f64)>,
+        find_queries: Vec<String>,
         operations: Vec<&'static str>,
         history: Vec<String>,
         history_index: Option<usize>,
@@ -652,6 +678,7 @@ mod tests {
                 key_presses: Vec::new(),
                 focused_selectors: Vec::new(),
                 clicked_points: Vec::new(),
+                find_queries: Vec::new(),
                 operations: Vec::new(),
                 history: Vec::new(),
                 history_index: None,
@@ -829,6 +856,20 @@ mod tests {
             })
         }
 
+        fn find_text(
+            &mut self,
+            request: FindTextRequest,
+        ) -> Result<nvbrowser_core::FindTextResult, RendererError> {
+            self.operations.push("find_text");
+            self.find_queries.push(request.query.clone());
+            Ok(nvbrowser_core::FindTextResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                query: request.query,
+                found: true,
+            })
+        }
+
         fn element_hints(
             &mut self,
             _request: ElementHintsRequest,
@@ -982,6 +1023,18 @@ mod tests {
     }
 
     #[test]
+    fn serve_request_parses_find_text_jsonl() {
+        assert_eq!(
+            parse_serve_request(r#"{"type":"find_text","id":11,"query":"hello \"world\""}"#)
+                .expect("find text request should parse"),
+            ServeRequest::FindText {
+                id: 11,
+                query: "hello \"world\"".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn serve_response_encodes_single_json_line() {
         let response = ServeResponse {
             id: 7,
@@ -990,6 +1043,7 @@ mod tests {
             url: None,
             title: None,
             hints: Vec::new(),
+            found: None,
             error: None,
         };
 
@@ -1018,12 +1072,32 @@ mod tests {
                 clickable: true,
                 focusable: false,
             }],
+            found: None,
             error: None,
         };
 
         assert_eq!(
             encode_serve_response(&response),
             r#"{"id":8,"status":"ok","payload":"frame","url":"https://example.com","title":"Example Domain","hints":[{"id":1,"kind":"link","label":"Docs","x":120.5,"y":240.0,"width":80.0,"height":24.0,"clickable":true,"focusable":false}]}"#
+        );
+    }
+
+    #[test]
+    fn serve_response_encodes_find_result_when_present() {
+        let response = ServeResponse {
+            id: 12,
+            status: ServeStatus::Ok,
+            payload: Some("frame".to_string()),
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            hints: Vec::new(),
+            found: Some(true),
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r#"{"id":12,"status":"ok","payload":"frame","url":"https://example.com","title":"Example","found":true}"#
         );
     }
 
@@ -1481,6 +1555,39 @@ mod tests {
                 "capture",
                 "hints"
             ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_finds_text_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::FindText {
+            id: 2,
+            query: "needle".to_string(),
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(response.found, Some(true));
+        assert_eq!(runtime.renderer.find_queries, vec!["needle"]);
+        assert_eq!(runtime.renderer.captures, 2);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["capture", "hints", "find_text", "capture", "hints"]
         );
     }
 

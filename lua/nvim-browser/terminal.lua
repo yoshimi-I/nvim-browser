@@ -18,6 +18,8 @@ local state = {
   current_title = nil,
   status = nil,
   status_error = nil,
+  last_find_found = nil,
+  response_handlers = {},
   element_hints = {},
   element_hints_geometry = nil,
   cursor_addressable_preview = false,
@@ -270,15 +272,30 @@ local function send_terminal_escape(payload)
   vim.api.nvim_chan_send(vim.v.stderr, terminal_escape(payload))
 end
 
-local function send_serve_request(request)
+local function send_serve_request(request, on_response)
   if state.mode ~= "serve" or state.job_id == nil then
     return false
   end
 
   request.id = state.next_request_id
   state.next_request_id = state.next_request_id + 1
+  if on_response ~= nil then
+    state.response_handlers[request.id] = on_response
+  end
   vim.fn.chansend(state.job_id, vim.json.encode(request) .. "\n")
   return true
+end
+
+local function handle_find_text_response(response)
+  if response.status ~= "ok" then
+    state.last_find_found = nil
+    return
+  end
+
+  state.last_find_found = response.found == true
+  if response.found == false then
+    vim.api.nvim_echo({ { "nvim-browser: text was not found", "WarningMsg" } }, false, {})
+  end
 end
 
 local function stop_existing_job(force)
@@ -473,6 +490,9 @@ function M.open(command)
   state.current_url = nil
   state.current_title = nil
   state.status = nil
+  state.status_error = nil
+  state.last_find_found = nil
+  state.response_handlers = {}
   state.element_hints = {}
   state.element_hints_geometry = nil
   state.cursor_addressable_preview = false
@@ -533,6 +553,13 @@ function M.open(command)
         end
         if response.title ~= nil then
           state.current_title = response.title ~= vim.NIL and response.title or nil
+        end
+        local response_handler = state.response_handlers[response.id]
+        if response_handler ~= nil then
+          state.response_handlers[response.id] = nil
+          response_handler(response)
+        elseif response.found ~= nil then
+          state.last_find_found = response.found == true
         end
         local geometry = valid_preview_geometry()
         state.element_hints = assign_hint_labels(response.hints or {})
@@ -724,6 +751,8 @@ function M.close()
   state.current_title = nil
   state.status = nil
   state.status_error = nil
+  state.last_find_found = nil
+  state.response_handlers = {}
   state.element_hints = {}
   state.element_hints_geometry = nil
   state.cursor_addressable_preview = false
@@ -823,6 +852,18 @@ function M.click_point(x, y)
   })
 end
 
+function M.find_text(query)
+  if query == nil or query == "" then
+    return false
+  end
+  state.last_find_found = nil
+  request_resize()
+  return send_serve_request({
+    type = "find_text",
+    query = query,
+  }, handle_find_text_response)
+end
+
 function M.click_here()
   if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
     return false
@@ -893,6 +934,7 @@ function M.state()
     current_title = state.current_title,
     status = state.status,
     status_error = state.status_error,
+    last_find_found = state.last_find_found,
     element_hints = state.element_hints,
   }
 end
@@ -904,6 +946,10 @@ M._test = {
   clear_hint_overlay = hints_overlay.clear,
   hint_namespace = function()
     return hints_overlay.namespace()
+  end,
+  handle_find_text_response = handle_find_text_response,
+  set_last_find_found = function(value)
+    state.last_find_found = value
   end,
 }
 

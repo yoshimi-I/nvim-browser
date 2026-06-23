@@ -35,6 +35,8 @@ pub trait Renderer {
 
     fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError>;
 
+    fn find_text(&mut self, request: FindTextRequest) -> Result<FindTextResult, RendererError>;
+
     fn element_hints(
         &mut self,
         _request: ElementHintsRequest,
@@ -252,6 +254,31 @@ pub struct ClickPointRequest {
     pub page_id: PageId,
     pub x: f64,
     pub y: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FindTextRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub query: String,
+}
+
+impl FindTextRequest {
+    pub fn new(session_id: SessionId, page_id: PageId, query: impl Into<String>) -> Self {
+        Self {
+            session_id,
+            page_id,
+            query: query.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FindTextResult {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub query: String,
+    pub found: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -484,6 +511,15 @@ mod tests {
             })
         }
 
+        fn find_text(&mut self, request: FindTextRequest) -> Result<FindTextResult, RendererError> {
+            Ok(FindTextResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                query: request.query,
+                found: true,
+            })
+        }
+
         fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
             self.settled = true;
             Ok(InteractionSettleResult::new(
@@ -604,6 +640,22 @@ mod tests {
         assert_eq!(focus.page_id, page_id);
         assert_eq!(click.session_id, session_id);
         assert_eq!(click.page_id, page_id);
+    }
+
+    #[test]
+    fn renderer_contract_supports_find_text() {
+        let mut renderer = FakeRenderer::new();
+        let session_id = SessionId::new(7);
+        let page_id = PageId::new(10);
+
+        let find = renderer
+            .find_text(FindTextRequest::new(session_id, page_id, "needle"))
+            .expect("find text should succeed");
+
+        assert_eq!(find.session_id, session_id);
+        assert_eq!(find.page_id, page_id);
+        assert_eq!(find.query, "needle");
+        assert!(find.found);
     }
 
     #[test]

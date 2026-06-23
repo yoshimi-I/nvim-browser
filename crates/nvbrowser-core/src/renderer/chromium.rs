@@ -16,11 +16,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     renderer::{
-        ClickPointRequest, ElementHint, ElementHintsRequest, FocusSelectorRequest, FrameArtifact,
-        HistoryNavigationRequest, HistoryNavigationResult, InputResult, InteractionSettleResult,
-        KeyPressRequest, NavigateRequest, NavigationResult, ReloadRequest, ReloadResult,
-        RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
-        ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
+        ClickPointRequest, ElementHint, ElementHintsRequest, FindTextRequest, FindTextResult,
+        FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest, HistoryNavigationResult,
+        InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
+        ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
+        RendererErrorKind, ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -273,6 +273,24 @@ impl Renderer for ChromiumRenderer {
         Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
+        })
+    }
+
+    fn find_text(&mut self, request: FindTextRequest) -> Result<FindTextResult, RendererError> {
+        let query = serde_json::to_string(&request.query).map_err(render_error)?;
+        let script = format!("window.find({query}, false, false, true, false, true, false)");
+        let found = self
+            .tab
+            .evaluate(&script, false)
+            .map_err(render_error)?
+            .value
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        Ok(FindTextResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+            query: request.query,
+            found,
         })
     }
 

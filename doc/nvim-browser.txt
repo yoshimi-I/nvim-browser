@@ -58,6 +58,11 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserScrollUp [pixels]
 	Scroll the active browser page up and capture a fresh frame.
 
+							*:NBrowserFind*
+:NBrowserFind {text}
+	Find text in the active browser page, scroll to the match through the
+	browser's native find behavior, and capture a fresh frame.
+
 							*:NBrowserInput*
 :NBrowserInput {text}
 	Type text into the focused browser element and capture a fresh frame.

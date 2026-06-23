@@ -8,6 +8,7 @@ local followed = nil
 local prompted = nil
 local warnings = {}
 local addressed = nil
+local found = nil
 local browser = {
   hints = function()
     return {
@@ -25,6 +26,10 @@ local browser = {
   end,
   address = function(input)
     addressed = input("nvim-browser address: ")
+    return true
+  end,
+  find_text = function(query)
+    found = query
     return true
   end,
 }
@@ -52,6 +57,14 @@ assert(echoed:match("\ns%s+2%s+input%s+Search%s+@%s+30,40"), "NBrowserHints shou
 vim.cmd("NBrowserAddress")
 assert(addressed == "s", "NBrowserAddress should pass the injected input function to browser.address")
 
+vim.cmd("NBrowserFind needle")
+assert(found == "needle", "NBrowserFind should pass an argument to browser.find_text")
+
+found = nil
+vim.cmd("NBrowserFind")
+assert(prompted == "nvim-browser find: ", "NBrowserFind should prompt without an argument")
+assert(found == "s", "NBrowserFind should find the entered text")
+
 vim.cmd("NBrowserFollowHint a")
 assert(followed == "a", "NBrowserFollowHint should pass the label to follow_hint")
 assert(clicked == nil, "NBrowserFollowHint should not call click_hint when follow_hint exists")
@@ -78,6 +91,9 @@ local failed_browser = {
   address = function()
     return false
   end,
+  find_text = function()
+    return false
+  end,
 }
 commands.register(failed_browser, {
   input = function()
@@ -93,6 +109,9 @@ assert(
 vim.cmd("NBrowserAddress")
 assert(warnings[#warnings] == "nvim-browser: address was empty or could not be opened", "NBrowserAddress should warn when address fails")
 
+vim.cmd("NBrowserFind missing")
+assert(warnings[#warnings] == "nvim-browser: text was not found or browser session is inactive", "NBrowserFind should warn when find fails")
+
 local warning_count = #warnings
 commands.register(failed_browser, {
   input = function()
@@ -101,6 +120,9 @@ commands.register(failed_browser, {
 })
 vim.cmd("NBrowserAddress")
 assert(#warnings == warning_count, "NBrowserAddress should silently cancel on empty input")
+
+vim.cmd("NBrowserFind")
+assert(#warnings == warning_count, "NBrowserFind should silently cancel on empty input")
 
 local empty_browser = {
   hints = function()

@@ -113,6 +113,21 @@ function M.register(browser, opts)
     nargs = "+",
   })
 
+  vim.api.nvim_create_user_command("NBrowserFind", function(opts)
+    local query = opts.args
+    if query == nil or query == "" then
+      query = input("nvim-browser find: ")
+    end
+    if query == nil or query == "" then
+      return
+    end
+    if not browser.find_text(query) then
+      vim.api.nvim_echo({ { "nvim-browser: text was not found or browser session is inactive", "WarningMsg" } }, false, {})
+    end
+  end, {
+    nargs = "*",
+  })
+
   vim.api.nvim_create_user_command("NBrowserClick", function(opts)
     local parts = vim.split(opts.args, "%s+", { trimempty = true })
     browser.click_point(parts[1], parts[2])
