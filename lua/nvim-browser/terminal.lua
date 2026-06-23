@@ -367,7 +367,12 @@ local function send_serve_request(request, on_response)
   if on_response ~= nil then
     state.response_handlers[request.id] = on_response
   end
-  vim.fn.chansend(state.job_id, vim.json.encode(request) .. "\n")
+  local ok, sent = pcall(vim.fn.chansend, state.job_id, vim.json.encode(request) .. "\n")
+  if not ok or sent == 0 then
+    state.quiet_request_ids[request.id] = nil
+    state.response_handlers[request.id] = nil
+    return false
+  end
   return true, request.id
 end
 
@@ -664,7 +669,10 @@ end
 local rendered_frame_geometry_from_runtime
 
 local function apply_serve_response_metadata(response)
-  if state.pending_operation ~= nil and state.pending_operation.id == response.id then
+  if
+    state.pending_operation ~= nil
+    and (state.pending_operation.id == response.id or (response.id == 0 and response.status == "error"))
+  then
     state.pending_operation = nil
     state.stopped_operation = nil
   elseif state.pending_operation == nil then
@@ -698,8 +706,6 @@ local function apply_serve_response_metadata(response)
   end
   if response.status == "ok" and response.payload ~= nil then
     state.rendered_frame_geometry = rendered_frame_geometry_from_runtime(response.runtime)
-  elseif response.status == "error" then
-    state.rendered_frame_geometry = nil
   end
 end
 
@@ -749,16 +755,13 @@ end
 
 local clear_in_flight_capture
 local cancel_in_flight_capture
+local same_preview_geometry
 
 local function request_resize()
   if state.mode ~= "serve" or not is_valid_window() then
     return false
   end
 
-  hints_overlay.clear(state.bufnr)
-  state.element_hints = {}
-  state.element_hints_geometry = nil
-  state.rendered_frame_geometry = nil
   local geometry = valid_preview_geometry()
   if geometry == nil then
     return false
@@ -918,7 +921,7 @@ function M.viewport_point_for_cell(row, column, geometry)
   }
 end
 
-local function same_preview_geometry(left, right)
+same_preview_geometry = function(left, right)
   if left == nil or right == nil then
     return false
   end
@@ -1239,10 +1242,6 @@ local function mark_pending_operation(id, label, target)
   state.stopped_operation = nil
   state.status_error = nil
   state.hint_error = nil
-  state.rendered_frame_geometry = nil
-  hints_overlay.clear(state.bufnr)
-  state.element_hints = {}
-  state.element_hints_geometry = nil
   if is_valid_buffer() then
     refresh_preview_footer(state.bufnr)
   end
@@ -1440,6 +1439,7 @@ function M.open(command)
           return
         end
         state.quiet_request_ids[response.id] = nil
+        local is_protocol_error = response.id == 0 and response.status == "error"
         if response.id == state.live_refresh_request_id and state.pending_operation ~= nil then
           dispatch_serve_response_handler(response)
           if state.live_refresh_request_id == response.id then
@@ -1447,11 +1447,11 @@ function M.open(command)
           end
           return
         end
-        if state.pending_operation ~= nil and response.id < state.pending_operation.id then
+        if not is_protocol_error and state.pending_operation ~= nil and response.id < state.pending_operation.id then
           dispatch_serve_response_handler(response)
           return
         end
-        if response.id < state.latest_applied_response_id then
+        if not is_protocol_error and response.id < state.latest_applied_response_id then
           dispatch_serve_response_handler(response)
           return
         end
@@ -1468,8 +1468,10 @@ function M.open(command)
           return
         end
         local geometry = valid_preview_geometry()
-        state.element_hints = assign_hint_labels(response.hints or {})
-        state.element_hints_geometry = #state.element_hints > 0 and geometry or nil
+        if response.status ~= "error" then
+          state.element_hints = assign_hint_labels(response.hints or {})
+          state.element_hints_geometry = #state.element_hints > 0 and geometry or nil
+        end
 
         if response.status == "ok" and response.payload ~= nil then
           state.rendered_frame_geometry = rendered_frame_geometry_from_runtime(response.runtime)
@@ -1489,10 +1491,18 @@ function M.open(command)
         end
 
         if response.status == "error" then
-          state.rendered_frame_geometry = nil
-          hints_overlay.clear(bufnr)
           refresh_preview_footer(bufnr, geometry)
+          if
+            state.cursor_addressable_preview
+            and #state.element_hints > 0
+            and same_preview_geometry(state.element_hints_geometry, geometry)
+          then
+            hints_overlay.apply(bufnr, state.element_hints, state.element_hints_geometry)
+          else
+            hints_overlay.clear(bufnr)
+          end
           vim.api.nvim_echo({ { "nvim-browser: " .. (response.error or "unknown error"), "WarningMsg" } }, false, {})
+          return
         end
         hints_overlay.clear(bufnr)
       end)
@@ -1530,6 +1540,12 @@ function M.open(command)
           stop_live_refresh()
           state.mode = nil
           state.serve_output = nil
+          state.pending_operation = nil
+          state.stopped_operation = nil
+          state.live_refresh_request_id = nil
+          state.response_handlers = {}
+          state.canceled_request_ids = {}
+          state.quiet_request_ids = {}
           state.runtime_metadata = nil
           state.rendered_frame_geometry = nil
           state.focused_element = nil

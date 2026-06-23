@@ -269,6 +269,30 @@ assert(rendered_frame_geometry.columns == 40, "rendered frame geometry should pr
 assert(rendered_frame_geometry.rows == 10, "rendered frame geometry should preserve runtime rows")
 assert(rendered_frame_geometry.width == 360, "rendered frame geometry should preserve runtime viewport width")
 assert(rendered_frame_geometry.height == 140, "rendered frame geometry should preserve runtime viewport height")
+terminal._test.set_element_hints({
+  {
+    id = 10,
+    hint_label = "a",
+    kind = "button",
+    label = "Retry",
+    x = 1,
+    y = 2,
+    width = 3,
+    height = 4,
+    clickable = true,
+    focusable = true,
+  },
+}, rendered_frame_geometry)
+terminal._test.set_pending_operation({ id = 101, label = "loading", target = "https://example.com/fail" })
+terminal._test.apply_serve_response({ id = 101, status = "error", error = "navigation failed" })
+assert(terminal.state().pending_operation == nil, "matching error responses should clear pending operations")
+assert(terminal.state().status == "error", "error responses should store error status")
+assert(terminal.state().status_error == "navigation failed", "error responses should store error text")
+assert(
+  terminal.state().rendered_frame_geometry == rendered_frame_geometry,
+  "error responses should preserve the last good rendered frame geometry"
+)
+assert(#terminal.state().element_hints == 1, "error responses should preserve last good hints when geometry is unchanged")
 terminal.close()
 assert(terminal.state().page_metrics == nil, "closing a browser session should clear page metrics")
 assert(terminal.state().runtime_metadata == nil, "closing a browser session should clear runtime metadata")
@@ -866,6 +890,7 @@ local sent_requests = {}
 local jobstop_calls = {}
 local termopen_calls = {}
 local serve_stdout = nil
+local serve_exit = nil
 local function last_request_of_type(kind)
   for index = #sent_requests, 1, -1 do
     local ok, decoded = pcall(vim.json.decode, sent_requests[index].payload)
@@ -879,6 +904,7 @@ end
 vim.fn.jobstart = function(command, opts)
   table.insert(jobstart_calls, command)
   serve_stdout = opts and opts.on_stdout or nil
+  serve_exit = opts and opts.on_exit or nil
   return 1234
 end
 vim.fn.chansend = function(job_id, payload)
@@ -910,6 +936,108 @@ assert(
 assert(#fake_timers == 1, "serve sessions should start a live refresh timer by default")
 assert(fake_timers[1].starts[1].timeout == 1500, "live refresh should use the default interval as its initial delay")
 assert(fake_timers[1].starts[1].repeat_ms == 1500, "live refresh should repeat at the configured interval")
+
+do
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "last good frame",
+  url = "https://example.com",
+  title = "Example",
+  hints = {
+    {
+      id = 11,
+      kind = "button",
+      label = "Retry",
+      x = 12,
+      y = 24,
+      width = 80,
+      height = 32,
+      clickable = true,
+      focusable = true,
+    },
+  },
+  runtime = {
+    protocol_version = 9,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = startup_columns, rows = startup_expected_rows - 1 },
+    viewport = { width = startup_columns * 10, height = (startup_expected_rows - 1) * 20, device_scale_factor = 1 },
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Example"
+end), "serve frame responses should update preview metadata")
+local last_good_geometry = terminal.state().rendered_frame_geometry
+assert(last_good_geometry ~= nil, "serve frame responses should store last good geometry")
+assert(#terminal.state().element_hints == 1, "serve frame responses should store element hints")
+local last_good_render_rows = vim.api.nvim_buf_get_lines(first_state.bufnr, 0, startup_expected_rows - 1, false)
+terminal._test.set_pending_operation({ id = 2, label = "loading", target = "https://example.com/fail" })
+serve_stdout(nil, { vim.json.encode({
+  id = 2,
+  status = "error",
+  error = "navigation failed",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().status == "error"
+end), "serve error responses should update status")
+assert(terminal.state().pending_operation == nil, "serve error responses should clear matching pending operations")
+assert(terminal.state().status_error == "navigation failed", "serve error responses should store error text")
+assert(
+  terminal.state().rendered_frame_geometry == last_good_geometry,
+  "serve error responses should preserve last good geometry"
+)
+assert(#terminal.state().element_hints == 1, "serve error responses should preserve last good hints")
+local render_rows_after_error = vim.api.nvim_buf_get_lines(first_state.bufnr, 0, startup_expected_rows - 1, false)
+assert(vim.deep_equal(render_rows_after_error, last_good_render_rows), "serve errors should not replace the last rendered frame")
+
+terminal._test.set_pending_operation({ id = 3, label = "loading", target = "https://example.com/protocol" })
+serve_stdout(nil, { vim.json.encode({
+  id = 0,
+  status = "error",
+  error = "invalid serve request",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().status_error == "invalid serve request"
+end), "protocol error responses should be surfaced even while newer operations are pending")
+assert(terminal.state().pending_operation == nil, "protocol error responses should clear pending operations")
+assert(
+  terminal.state().rendered_frame_geometry == last_good_geometry,
+  "protocol error responses should preserve last good geometry"
+)
+
+sent_requests = {}
+assert(terminal.navigate("https://example.com/fail-real") == true, "real navigation should send a pending request")
+local failed_navigation_request = last_request_of_type("navigate")
+assert(failed_navigation_request ~= nil, "real navigation should send a navigate request")
+serve_stdout(nil, { vim.json.encode({
+  id = failed_navigation_request.id,
+  status = "error",
+  error = "real navigation failed",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().status_error == "real navigation failed"
+end), "real navigation errors should be surfaced")
+assert(terminal.state().pending_operation == nil, "real navigation errors should clear pending operations")
+assert(
+  terminal.state().rendered_frame_geometry == last_good_geometry,
+  "real navigation errors should preserve last good geometry"
+)
+assert(#terminal.state().element_hints == 1, "real navigation errors should preserve last good hints")
+
+local original_send_before_failed_navigation = vim.fn.chansend
+vim.fn.chansend = function()
+  return 0
+end
+assert(terminal.navigate("https://example.com/send-fail") == false, "failed navigation send should report failure")
+assert(
+  terminal.state().rendered_frame_geometry == last_good_geometry,
+  "failed navigation send should preserve last good geometry"
+)
+assert(#terminal.state().element_hints == 1, "failed navigation send should preserve last good hints")
+vim.fn.chansend = original_send_before_failed_navigation
+end
 
 sent_requests = {}
 assert(terminal.yank_selection("ab") == false, "selection yank should reject invalid register names")
@@ -1206,6 +1334,7 @@ sent_requests = {}
 assert(terminal.navigate("https://example.com/newer") == true, "test setup should send a newer navigation")
 local newer_navigation_id = terminal.state().pending_operation and terminal.state().pending_operation.id
 assert(newer_navigation_id ~= nil and newer_navigation_id ~= older_navigation_id, "newer navigation should replace older pending operation")
+local active_hint_count_before_older_navigation = #terminal.state().element_hints
 serve_stdout(nil, { vim.json.encode({
   id = older_navigation_id,
   status = "ok",
@@ -1234,7 +1363,10 @@ assert(
   terminal.state().pending_operation ~= nil and terminal.state().pending_operation.id == newer_navigation_id,
   "late older navigation response should not clear the newer pending operation"
 )
-assert(#terminal.state().element_hints == 0, "late older navigation response should not replace active hints")
+assert(
+  #terminal.state().element_hints == active_hint_count_before_older_navigation,
+  "late older navigation response should not replace active hints"
+)
 serve_stdout(nil, { vim.json.encode({
   id = newer_navigation_id,
   status = "ok",
@@ -1545,7 +1677,7 @@ end
 assert(link_navigate_seen, "link follow should send a navigate request")
 assert(not link_click_seen, "link follow should not click coordinates when href is available")
 assert(terminal.state().last_target == "https://example.com/docs", "link follow should update the remembered target")
-assert(#terminal.state().element_hints == 0, "link follow should clear stale hints before the next frame")
+assert(#terminal.state().element_hints > 0, "link follow should preserve active hints until the next frame")
 assert(terminal.state().pending_operation ~= nil, "link follow should mark the navigation as pending")
 assert(terminal._test.preview_footer_line(120):match("^loading | https://example%.com/docs | Esc stop"), "link follow should refresh the footer with loading feedback")
 
@@ -1677,7 +1809,7 @@ assert(focus_hint_seen, "focus_hint should send the backend hint id")
 assert(not focus_point_seen, "focus_hint should avoid coordinate-based focus requests")
 local focus_hint_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
 assert(focus_hint_pending_id ~= nil, "hinted focus should mark the operation as pending")
-assert(#terminal.state().element_hints == 0, "focus_hint should clear stale hints while a capture is pending")
+assert(#terminal.state().element_hints > 0, "focus_hint should preserve active hints while a capture is pending")
 serve_stdout(nil, { vim.json.encode({
   id = focus_hint_pending_id,
   status = "ok",
@@ -1787,7 +1919,7 @@ assert(draft_type_hint_seen, "non-submit type_hint should send the backend hint 
 assert(not draft_type_point_seen, "non-submit type_hint should avoid coordinate-based type_point requests")
 local draft_type_hint_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
 assert(draft_type_hint_pending_id ~= nil, "non-submit type_hint should mark the operation as pending")
-assert(#terminal.state().element_hints == 0, "non-submit type_hint should clear stale hints while a capture is pending")
+assert(#terminal.state().element_hints > 0, "non-submit type_hint should preserve active hints while a capture is pending")
 serve_stdout(nil, { vim.json.encode({
   id = draft_type_hint_pending_id,
   status = "ok",
@@ -1822,7 +1954,7 @@ assert(select_hint_seen, "select_hint should send the backend hint id and choice
 assert(not select_type_point_seen, "select_hint should avoid coordinate-based type_point requests")
 local select_hint_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
 assert(select_hint_pending_id ~= nil, "select_hint should mark the select operation as pending")
-assert(#terminal.state().element_hints == 0, "select_hint should clear stale hints while a capture is pending")
+assert(#terminal.state().element_hints > 0, "select_hint should preserve active hints while a capture is pending")
 serve_stdout(nil, { vim.json.encode({
   id = select_hint_pending_id,
   status = "ok",
@@ -1862,7 +1994,7 @@ assert(toggle_hint_seen, "toggle_hint should send the backend hint id")
 assert(not toggle_type_point_seen, "toggle_hint should avoid coordinate-based type_point requests")
 local toggle_hint_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
 assert(toggle_hint_pending_id ~= nil, "toggle_hint should mark the toggle operation as pending")
-assert(#terminal.state().element_hints == 0, "toggle_hint should clear stale hints while a capture is pending")
+assert(#terminal.state().element_hints > 0, "toggle_hint should preserve active hints while a capture is pending")
 serve_stdout(nil, { vim.json.encode({
   id = toggle_hint_pending_id,
   status = "ok",
@@ -2205,6 +2337,30 @@ terminal.open({ "nvbrowser", "show-image", "/tmp/image.png", "--output", "ansi" 
 local replacement_state = terminal.state()
 assert(#termopen_calls == 1, "non-serve previews should still replace an active serve session")
 assert(replacement_state.bufnr ~= reused_bufnr, "non-serve previews should use a replacement buffer")
+
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/exit" })
+terminal._test.clear_in_flight_capture()
+local handler_count_before_failed_send = terminal._test.response_handler_count()
+local original_active_chansend = vim.fn.chansend
+vim.fn.chansend = function()
+  return 0
+end
+assert(terminal.refresh() == false, "failed chansend should report refresh failure")
+assert(terminal.state().live_refresh_request_id == nil, "failed chansend should not leave an in-flight capture")
+assert(
+  terminal._test.response_handler_count() == handler_count_before_failed_send,
+  "failed chansend should not leak response handlers"
+)
+vim.fn.chansend = original_active_chansend
+
+terminal._test.set_pending_operation({ id = 4, label = "loading", target = "https://example.com/crash" })
+assert(type(serve_exit) == "function", "serve jobstart should expose an exit callback in tests")
+serve_exit(nil, 17)
+assert(vim.wait(1000, function()
+  return terminal.state().job_id == nil
+end), "serve job exit should clear the active job")
+assert(terminal.state().pending_operation == nil, "serve job exit should clear pending operations")
+assert(terminal._test.response_handler_count() == 0, "serve job exit should clear response handlers")
 
 terminal._test.set_timer_factory(nil)
 vim.fn.jobstart = original_jobstart
