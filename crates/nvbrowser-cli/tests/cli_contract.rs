@@ -713,6 +713,142 @@ fn opt_in_e2e_serve_loop_selects_real_chromium_hint() {
     serve.wait_success();
 }
 
+#[test]
+fn opt_in_e2e_serve_loop_toggles_checkbox_and_radio_hints() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let fixture_path = directory.path().join("toggle-hint.html");
+    std::fs::write(
+        &fixture_path,
+        r##"<!doctype html>
+<html>
+  <head><title>NBrowser Toggle E2E Fixture</title></head>
+  <body>
+    <main>
+      <label><input id="newsletter" type="checkbox" onclick="document.getElementById('out').textContent='newsletter click ' + this.checked"> Newsletter</label>
+      <input id="standard" type="radio" name="plan" value="standard" aria-labelledby="standard-label" onclick="document.getElementById('out').textContent='plan click ' + this.value">
+      <span id="standard-label">Standard Plan</span>
+      <p id="out">empty</p>
+    </main>
+  </body>
+</html>"##,
+    )
+    .expect("toggle fixture should be written");
+    let fixture_url = format!("file://{}", fixture_path.display());
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--url",
+            &fixture_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok", "initial navigation should succeed");
+    let hints = initial["hints"]
+        .as_array()
+        .expect("initial response should include hints");
+    let checkbox_hint = hints
+        .iter()
+        .find(|hint| hint["kind"] == "checkbox" && hint["label"] == "Newsletter")
+        .expect("real Chromium hints should include labeled checkbox");
+    assert_eq!(checkbox_hint["checked"], false);
+    let checkbox_hint_id = checkbox_hint["id"]
+        .as_u64()
+        .expect("checkbox hint should include id");
+
+    let checked = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "toggle_hint",
+        "hint_id": checkbox_hint_id
+    }));
+    assert_eq!(
+        checked["status"], "ok",
+        "checkbox toggle_hint should succeed; response={checked:?}"
+    );
+    assert!(
+        checked["hints"]
+            .as_array()
+            .is_some_and(|hints| hints.iter().any(|hint| {
+                hint["kind"] == "checkbox"
+                    && hint["label"] == "Newsletter"
+                    && hint["checked"] == true
+            })),
+        "checkbox hint should report checked state after toggle"
+    );
+    let checked_text = serve.request(serde_json::json!({ "id": 2, "type": "page_text" }));
+    assert!(
+        checked_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("newsletter click true")),
+        "page_text should observe checkbox click handler"
+    );
+
+    let radio_hint = checked["hints"]
+        .as_array()
+        .expect("checked response should include hints")
+        .iter()
+        .find(|hint| hint["kind"] == "radio" && hint["label"] == "Standard Plan")
+        .expect("real Chromium hints should include labeled radio");
+    assert_eq!(radio_hint["checked"], false);
+    let radio_hint_id = radio_hint["id"]
+        .as_u64()
+        .expect("radio hint should include id");
+    let selected = serve.request(serde_json::json!({
+        "id": 3,
+        "type": "toggle_hint",
+        "hint_id": radio_hint_id
+    }));
+    assert_eq!(
+        selected["status"], "ok",
+        "radio toggle_hint should succeed; response={selected:?}"
+    );
+    assert!(
+        selected["hints"]
+            .as_array()
+            .is_some_and(|hints| hints.iter().any(|hint| {
+                hint["kind"] == "radio"
+                    && hint["label"] == "Standard Plan"
+                    && hint["checked"] == true
+            })),
+        "radio hint should report checked state after toggle"
+    );
+    let selected_text = serve.request(serde_json::json!({ "id": 4, "type": "page_text" }));
+    assert!(
+        selected_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("plan click standard")),
+        "page_text should observe radio click handler"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 5, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
 fn tiny_png() -> Vec<u8> {
     const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, PNG)

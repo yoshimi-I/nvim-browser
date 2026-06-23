@@ -93,6 +93,10 @@ assert(
   "global keymaps should include a hinted select mapping"
 )
 assert(
+  configured.keymaps.mappings.toggle_hint_mode == "c",
+  "global keymaps should include a hinted checkbox/radio toggle mapping"
+)
+assert(
   configured.preview_keymaps.mappings.type_hint_mode == "t",
   "preview-local keymaps should include a hinted input mapping"
 )
@@ -103,6 +107,10 @@ assert(
 assert(
   configured.preview_keymaps.mappings.select_hint_mode == "o",
   "preview-local keymaps should include a hinted select mapping"
+)
+assert(
+  configured.preview_keymaps.mappings.toggle_hint_mode == "c",
+  "preview-local keymaps should include a hinted checkbox/radio toggle mapping"
 )
 local remapped = config.setup({
   live_refresh = {
@@ -147,6 +155,10 @@ assert(
 assert(
   remapped.preview_keymaps.mappings.select_hint_mode == "o",
   "preview-local partial remaps should retain hinted select mapping"
+)
+assert(
+  remapped.preview_keymaps.mappings.toggle_hint_mode == "c",
+  "preview-local partial remaps should retain hinted checkbox/radio toggle mapping"
 )
 assert(
   remapped.preview_keymaps.mappings.stop == "<Esc>",

@@ -41,6 +41,8 @@ pub trait Renderer {
 
     fn select_hint(&mut self, request: SelectHintRequest) -> Result<InputResult, RendererError>;
 
+    fn toggle_hint(&mut self, request: ToggleHintRequest) -> Result<InputResult, RendererError>;
+
     fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError>;
 
     fn hover_point(&mut self, request: HoverPointRequest) -> Result<InputResult, RendererError>;
@@ -384,6 +386,23 @@ impl SelectHintRequest {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ToggleHintRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub hint_id: u32,
+}
+
+impl ToggleHintRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId, hint_id: u32) -> Self {
+        Self {
+            session_id,
+            page_id,
+            hint_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct ClickPointRequest {
     pub session_id: SessionId,
@@ -513,6 +532,8 @@ pub enum ElementHintKind {
     Input,
     TextArea,
     Select,
+    Checkbox,
+    Radio,
     Editable,
     Other,
 }
@@ -524,6 +545,8 @@ pub struct ElementHint {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub href: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<bool>,
     pub x: f64,
     pub y: f64,
     pub width: f64,
@@ -774,6 +797,16 @@ mod tests {
             })
         }
 
+        fn toggle_hint(
+            &mut self,
+            request: ToggleHintRequest,
+        ) -> Result<InputResult, RendererError> {
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
         fn click_point(
             &mut self,
             request: ClickPointRequest,
@@ -974,6 +1007,9 @@ mod tests {
         let select_hint = renderer
             .select_hint(SelectHintRequest::new(session_id, page_id, 2, "Canada"))
             .expect("hint select should succeed");
+        let toggle_hint = renderer
+            .toggle_hint(ToggleHintRequest::new(session_id, page_id, 2))
+            .expect("hint toggle should succeed");
 
         assert_eq!(focus.session_id, session_id);
         assert_eq!(focus.page_id, page_id);
@@ -985,6 +1021,8 @@ mod tests {
         assert_eq!(hover_hint.page_id, page_id);
         assert_eq!(select_hint.session_id, session_id);
         assert_eq!(select_hint.page_id, page_id);
+        assert_eq!(toggle_hint.session_id, session_id);
+        assert_eq!(toggle_hint.page_id, page_id);
         assert_eq!(click.session_id, session_id);
         assert_eq!(click.page_id, page_id);
         assert_eq!(hover.session_id, session_id);
@@ -1059,6 +1097,7 @@ mod tests {
             kind: ElementHintKind::Link,
             label: "Docs".to_string(),
             href: Some("https://example.com/docs".to_string()),
+            checked: None,
             x: 120.5,
             y: 240.0,
             width: 80.0,
@@ -1068,6 +1107,24 @@ mod tests {
         };
         let json = serde_json::to_string(&hint).expect("hint should serialize");
         assert!(json.contains(r#""kind":"link""#));
+        assert!(!json.contains("checked"));
+        let checkbox = ElementHint {
+            id: 2,
+            kind: ElementHintKind::Checkbox,
+            label: "Subscribe".to_string(),
+            href: None,
+            checked: Some(true),
+            x: 10.0,
+            y: 20.0,
+            width: 16.0,
+            height: 16.0,
+            clickable: true,
+            focusable: true,
+        };
+        let checkbox_json =
+            serde_json::to_string(&checkbox).expect("checkbox hint should serialize");
+        assert!(checkbox_json.contains(r#""kind":"checkbox""#));
+        assert!(checkbox_json.contains(r#""checked":true"#));
         assert!(json.contains(r#""label":"Docs""#));
         assert!(json.contains(r#""href":"https://example.com/docs""#));
     }

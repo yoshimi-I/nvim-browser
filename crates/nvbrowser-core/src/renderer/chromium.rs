@@ -26,7 +26,8 @@ use crate::{
         PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
         ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
         RendererErrorKind, ScrollRequest, ScrollResult, SelectHintRequest, SelectionTextRequest,
-        SelectionTextResult, ShutdownResult, TextInputRequest, WheelPointRequest,
+        SelectionTextResult, ShutdownResult, TextInputRequest, ToggleHintRequest,
+        WheelPointRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -417,6 +418,27 @@ impl Renderer for ChromiumRenderer {
             return Err(RendererError::new(
                 RendererErrorKind::InvalidState,
                 "hint id was not a selectable element, was stale, or option choice was not found",
+            ));
+        }
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn toggle_hint(&mut self, request: ToggleHintRequest) -> Result<InputResult, RendererError> {
+        let script = toggle_hint_script(request.hint_id)?;
+        let toggled = self
+            .tab
+            .evaluate(&script, true)
+            .map_err(render_error)?
+            .value
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        if !toggled {
+            return Err(RendererError::new(
+                RendererErrorKind::InvalidState,
+                "hint id was not a checkbox or radio input, was stale, or was disabled",
             ));
         }
         Ok(InputResult {
@@ -845,9 +867,33 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
   ].join(',');
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
   const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const normalizeText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+  const labelledByText = (element) => {
+    const raw = normalizeText(element.getAttribute('aria-labelledby'));
+    if (raw.length === 0) return null;
+    const text = raw.split(' ').map((id) => {
+      const label = document.getElementById(id);
+      return label ? normalizeText(label.textContent) : '';
+    }).filter(Boolean).join(' ');
+    return text.length > 0 ? text : null;
+  };
+  const labelElementText = (element) => {
+    if (element.labels && element.labels.length > 0) {
+      const text = Array.from(element.labels).map((label) => normalizeText(label.textContent)).filter(Boolean).join(' ');
+      if (text.length > 0) return text;
+    }
+    const wrapping = typeof element.closest === 'function' ? element.closest('label') : null;
+    if (wrapping) {
+      const text = normalizeText(wrapping.textContent);
+      if (text.length > 0) return text;
+    }
+    return null;
+  };
   const labelFor = (element) => {
     const candidates = [
       element.getAttribute('aria-label'),
+      labelledByText(element),
+      labelElementText(element),
       element.getAttribute('title'),
       element.getAttribute('placeholder'),
       element.value,
@@ -857,7 +903,7 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
     ];
     for (const candidate of candidates) {
       if (typeof candidate !== 'string') continue;
-      const label = candidate.replace(/\s+/g, ' ').trim();
+      const label = normalizeText(candidate);
       if (label.length > 0) return label.slice(0, 80);
     }
     return element.tagName.toLowerCase();
@@ -867,7 +913,12 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
     const role = (element.getAttribute('role') || '').toLowerCase();
     if (tag === 'a' || role === 'link') return 'link';
     if (tag === 'button' || role === 'button') return 'button';
-    if (tag === 'input') return 'input';
+    if (tag === 'input') {
+      const type = (element.getAttribute('type') || 'text').toLowerCase();
+      if (type === 'checkbox') return 'checkbox';
+      if (type === 'radio') return 'radio';
+      return 'input';
+    }
     if (tag === 'textarea') return 'text_area';
     if (tag === 'select') return 'select';
     if (element.isContentEditable) return 'editable';
@@ -891,6 +942,11 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
       || element.tabIndex >= 0;
   };
   const isDisabled = (element) => element.disabled || element.getAttribute('aria-disabled') === 'true';
+  const checkedFor = (element) => {
+    const kind = kindFor(element);
+    if (kind !== 'checkbox' && kind !== 'radio') return null;
+    return element.checked === true;
+  };
   const isVisible = (element) => {
     const style = window.getComputedStyle(element);
     return style.display !== 'none'
@@ -948,6 +1004,7 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
         kind: kindFor(element),
         label: labelFor(element),
         href: hrefFor(element),
+        checked: checkedFor(element),
         x,
         y,
         width: Math.max(0, right - left),
@@ -1034,6 +1091,25 @@ const SELECT_HINT_SCRIPT: &str = r#"
   element.value = options[selectedIndex].value;
   element.dispatchEvent(new Event('input', { bubbles: true }));
   element.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
+})()
+"#;
+
+fn toggle_hint_script(hint_id: u32) -> Result<String, RendererError> {
+    let hint_id = serde_json::to_string(&hint_id).map_err(render_error)?;
+    Ok(TOGGLE_HINT_SCRIPT.replace("__HINT_ID__", &hint_id))
+}
+
+const TOGGLE_HINT_SCRIPT: &str = r#"
+(() => {
+  const hintId = __HINT_ID__;
+  const registry = window.__nvbrowserHintRegistry;
+  const element = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  if (!element || !element.isConnected || element.tagName.toLowerCase() !== 'input') return false;
+  if (element.disabled || element.getAttribute('aria-disabled') === 'true') return false;
+  const type = (element.getAttribute('type') || 'text').toLowerCase();
+  if (type !== 'checkbox' && type !== 'radio') return false;
+  element.click();
   return true;
 })()
 "#;
@@ -1717,6 +1793,12 @@ mod tests {
         assert!(ELEMENT_HINTS_SCRIPT.contains("__nvbrowserHintRegistry"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("registry.elements.set(id, element)"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("id,"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("aria-labelledby"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("element.labels"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("closest('label')"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("return 'checkbox'"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("return 'radio'"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("checked: checkedFor(element)"));
         assert!(FOCUS_HINT_SCRIPT.contains("__nvbrowserHintRegistry"));
         assert!(FOCUS_HINT_SCRIPT.contains("registry.elements.get(hintId)"));
         assert!(!FOCUS_HINT_SCRIPT.contains("[hintId - 1]"));
@@ -1736,6 +1818,15 @@ mod tests {
         assert!(SELECT_HINT_SCRIPT.contains("new Event('input', { bubbles: true })"));
         assert!(SELECT_HINT_SCRIPT.contains("new Event('change', { bubbles: true })"));
         assert!(!SELECT_HINT_SCRIPT.contains("[hintId - 1]"));
+        assert!(TOGGLE_HINT_SCRIPT.contains("__nvbrowserHintRegistry"));
+        assert!(TOGGLE_HINT_SCRIPT.contains("registry.elements.get(hintId)"));
+        assert!(TOGGLE_HINT_SCRIPT.contains("type !== 'checkbox'"));
+        assert!(TOGGLE_HINT_SCRIPT.contains("type !== 'radio'"));
+        assert!(TOGGLE_HINT_SCRIPT.contains("element.click()"));
+        assert!(!TOGGLE_HINT_SCRIPT.contains("element.checked ="));
+        assert!(!TOGGLE_HINT_SCRIPT.contains("new Event('input'"));
+        assert!(!TOGGLE_HINT_SCRIPT.contains("new Event('change'"));
+        assert!(!TOGGLE_HINT_SCRIPT.contains("[hintId - 1]"));
     }
 
     #[test]
@@ -1743,6 +1834,12 @@ mod tests {
         let script = select_hint_script(4, "Canada \"East\"").expect("select script should build");
         assert!(script.contains("const hintId = 4;"));
         assert!(script.contains(r#"const choice = "Canada \"East\"";"#));
+    }
+
+    #[test]
+    fn toggle_hint_script_uses_requested_hint_id() {
+        let script = toggle_hint_script(7).expect("toggle script should build");
+        assert!(script.contains("const hintId = 7;"));
     }
 
     #[test]

@@ -228,11 +228,13 @@ Then run:
 :NBrowserTypeHint s hello world
 :NBrowserSubmitHint s hello world
 :NBrowserSelectHint s Canada
+:NBrowserToggleHint c
 :NBrowserTypeHere hello world
 :NBrowserSubmitHere hello world
 :NBrowserTypeHintMode
 :NBrowserSubmitHintMode
 :NBrowserSelectHintMode
+:NBrowserToggleHintMode
 :NBrowserHintMode
 :NBrowserCurrentUrl
 :NBrowserCurrentTitle
@@ -295,6 +297,9 @@ text into it without relying on viewport coordinates. `:NBrowserSubmitHint
 `:NBrowserSelectHint {id-or-label} {choice}` selects an option in a hinted
 `<select>` element. Numeric choices use 1-based option indexes; otherwise the
 runtime matches option values, then normalized visible option text.
+`:NBrowserToggleHint {id-or-label}` toggles a hinted checkbox or selects a
+hinted radio input. Checkbox/radio hints show `[checked]` or `[unchecked]` in
+`:NBrowserHints`.
 `:NBrowserTypeHere {text}` maps the preview cursor to browser viewport pixels,
 clicks/focuses that point, and types text there. `:NBrowserSubmitHere {text}`
 does the same and presses Enter after the text is queued. These commands require
@@ -303,9 +308,11 @@ an ANSI or Kitty Unicode browser preview and ignore the preview footer row.
 `:NBrowserTypeHintMode` prompts for a hint label and text, then types into the
 hinted element. `:NBrowserSubmitHintMode` does the same and presses Enter after
 the text is queued. `:NBrowserSelectHintMode` prompts for a hint label and
-option choice. Lua mappings can call `require("nvim-browser").hint_mode()`,
+option choice. `:NBrowserToggleHintMode` prompts for a checkbox/radio hint
+label. Lua mappings can call `require("nvim-browser").hint_mode()`,
 `require("nvim-browser").type_hint_mode(nil, { submit = true })`, or
-`require("nvim-browser").select_hint_mode()`.
+`require("nvim-browser").select_hint_mode()` /
+`require("nvim-browser").toggle_hint_mode()`.
 `:NBrowserAddress [url-or-search]` works like a small omnibox; host-like input
 opens as a URL, and plain words use the configured search URL. With no
 argument, the prompt is prefilled with the current URL when available, falling
@@ -361,17 +368,17 @@ The default mappings are `<leader>br` reload, `<leader>bh` back, `<leader>bl`
 forward, `<leader>bj` scroll down, `<leader>bk` scroll up, `<leader>ba`
 address, `<leader>b/` find, `<leader>bf` hint mode, `<leader>bt` type into a
 hinted field, `<leader>bs` type and submit, and `<leader>bo` select a hinted
-option. Existing mappings are left
+option, and `<leader>bc` toggle a hinted checkbox/radio. Existing mappings are left
 untouched; choose another prefix or mapping key if one is already in use.
 
 Focused preview buffers also install buffer-local browser controls by default:
 `r` reload, `H` back, `L` forward, `j`/`k` scroll, `<PageDown>/<PageUp>` scroll
-by 90% of the browser viewport, `a` address, `/` find, `f` hint mode, `t` type
 by 90% of the browser viewport, `a` address, `/` find, `n` repeat find forward,
 `N` repeat find backward, `f` hint mode, `t` type into a hinted field, `s` type
-and submit, `o` select a hinted option, `i` type into the focused element with browser text mode, `p` paste
-the selected register into the focused element, `y` yank the browser selection
-into the selected register, `<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
+and submit, `o` select a hinted option, `c` toggle a hinted checkbox/radio, `i`
+type into the focused element with browser text mode, `p` paste the selected
+register into the focused element, `y` yank the browser selection into the
+selected register, `<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
 Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` Meta-L
 focus location, arrow keys, `gc` click the browser viewport at the cursor, `gh`
 hover the browser viewport at the cursor, `<Esc>` stop a pending load, left

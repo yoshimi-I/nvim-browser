@@ -257,6 +257,11 @@ COMMANDS                                           *nvim-browser-commands*
 	Numeric choices use 1-based option indexes. Other choices match option
 	values first, then normalized visible option text case-insensitively.
 
+							*:NBrowserToggleHint*
+:NBrowserToggleHint {id-or-label}
+	Toggle a hinted checkbox or select a hinted radio input and capture a
+	fresh frame. Checkbox/radio hints show checked state in :NBrowserHints.
+
 							*:NBrowserTypeHere*
 :NBrowserTypeHere {text}
 	Map the preview cursor to viewport pixels, click/focus that browser point,
@@ -282,6 +287,11 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserSelectHintMode
 	Prompt for a browser hint label and option choice, select the matching
 	<option> in a hinted <select> element, and capture a fresh frame.
+
+							*:NBrowserToggleHintMode*
+:NBrowserToggleHintMode
+	Prompt for a browser hint label, toggle the matching checkbox or select
+	the matching radio input, and capture a fresh frame.
 
 							*:NBrowserHintMode*
 :NBrowserHintMode
@@ -381,6 +391,7 @@ Default normal-mode mappings:
 <leader>bt  type into hinted field
 <leader>bs  type into hinted field and submit
 <leader>bo  select hinted option
+<leader>bc  toggle hinted checkbox/radio
 <
 Existing mappings are left untouched. Choose another prefix or mapping key if
 one is already in use.
@@ -402,6 +413,7 @@ f  hint mode
 t  type into hinted field
 s  type into hinted field and submit
 o  select hinted option
+c  toggle hinted checkbox/radio
 i  type into focused element
 p  paste register into focused element
 y  yank browser selection into register
@@ -440,6 +452,7 @@ require("nvim-browser").setup({
       find_next = "n",
       find_previous = "N",
       select_hint_mode = "o",
+      toggle_hint_mode = "c",
       wheel_down = "<ScrollWheelDown>",
       wheel_up = "<ScrollWheelUp>",
     },

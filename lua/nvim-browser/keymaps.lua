@@ -147,6 +147,10 @@ function M.setup(browser, opts)
   set_mapping(prefix, mapping_lhs(mappings, "select_hint_mode", "o"), function()
     browser.select_hint_mode(input)
   end, "nvim-browser: select hinted option")
+
+  set_mapping(prefix, mapping_lhs(mappings, "toggle_hint_mode", "c"), function()
+    browser.toggle_hint_mode(input)
+  end, "nvim-browser: toggle hinted checkbox/radio")
 end
 
 function M.setup_buffer(browser, bufnr, opts)
@@ -243,6 +247,10 @@ function M.setup_buffer(browser, bufnr, opts)
   set_mapping(nil, mapping_lhs(mappings, "select_hint_mode", "o"), function()
     browser.select_hint_mode(input)
   end, "nvim-browser: select hinted option", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "toggle_hint_mode", "c"), function()
+    browser.toggle_hint_mode(input)
+  end, "nvim-browser: toggle hinted checkbox/radio", buffer_opts)
 
   set_mapping(nil, mapping_lhs(mappings, "input_text_mode", "i"), function()
     if browser.start_text_mode ~= nil then

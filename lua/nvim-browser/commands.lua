@@ -346,6 +346,9 @@ function M.register(browser, opts)
       if hint.href ~= nil and hint.href ~= "" then
         label = label .. " -> " .. hint.href
       end
+      if hint.checked ~= nil then
+        label = string.format("[%s] %s", hint.checked and "checked" or "unchecked", label)
+      end
       table.insert(lines, string.format(
         "%s %d %s %s @ %.0f,%.0f",
         hint.hint_label or tostring(hint.id),
@@ -408,6 +411,14 @@ function M.register(browser, opts)
     end
   end, {
     nargs = "+",
+  })
+
+  vim.api.nvim_create_user_command("NBrowserToggleHint", function(opts)
+    if opts.args == nil or opts.args == "" or not browser.toggle_hint(opts.args) then
+      warn_hint_input_unavailable()
+    end
+  end, {
+    nargs = 1,
   })
 
   vim.api.nvim_create_user_command("NBrowserTypeHere", function(opts)
@@ -479,6 +490,21 @@ function M.register(browser, opts)
       return
     end
     if not browser.select_hint(label, choice) then
+      warn_hint_input_unavailable()
+    end
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserToggleHintMode", function()
+    local hints = browser.hints()
+    if #hints == 0 then
+      warn_no_hints()
+      return
+    end
+    local label = input("nvim-browser hint: ")
+    if label == nil or label == "" then
+      return
+    end
+    if not browser.toggle_hint(label) then
       warn_hint_input_unavailable()
     end
   end, {})

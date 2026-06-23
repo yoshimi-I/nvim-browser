@@ -272,6 +272,10 @@ function M.select_hint(id, choice)
   return terminal.select_hint(id, choice)
 end
 
+function M.toggle_hint(id)
+  return terminal.toggle_hint(id)
+end
+
 function M.hint_mode(input)
   input = input or vim.fn.input
   if #M.hints() == 0 then
@@ -361,6 +365,18 @@ function M.select_hint_mode(input)
     return false
   end
   return M.select_hint(label, choice)
+end
+
+function M.toggle_hint_mode(input)
+  input = input or vim.fn.input
+  if #M.hints() == 0 then
+    return false
+  end
+  local label = input("nvim-browser hint: ")
+  if label == nil or label == "" then
+    return false
+  end
+  return M.toggle_hint(label)
 end
 
 function M.toggle()

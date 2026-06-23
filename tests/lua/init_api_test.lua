@@ -20,6 +20,8 @@ assert(type(browser.type_hint) == "function", "type_hint API should exist")
 assert(type(browser.type_hint_mode) == "function", "type_hint_mode API should exist")
 assert(type(browser.select_hint) == "function", "select_hint API should exist")
 assert(type(browser.select_hint_mode) == "function", "select_hint_mode API should exist")
+assert(type(browser.toggle_hint) == "function", "toggle_hint API should exist")
+assert(type(browser.toggle_hint_mode) == "function", "toggle_hint_mode API should exist")
 assert(type(browser.input_text_mode) == "function", "focused input text mode API should exist")
 assert(type(browser.paste_register) == "function", "register paste API should exist")
 assert(type(browser.yank_selection) == "function", "browser selection yank API should exist")
@@ -61,6 +63,7 @@ local original_terminal_wheel_point = terminal.wheel_point
 local original_terminal_wheel_mouse = terminal.wheel_mouse
 local original_terminal_type_hint = terminal.type_hint
 local original_terminal_select_hint = terminal.select_hint
+local original_terminal_toggle_hint = terminal.toggle_hint
 local original_terminal_hover_point = terminal.hover_point
 local original_terminal_hover_here = terminal.hover_here
 local original_terminal_hover_hint = terminal.hover_hint
@@ -242,6 +245,14 @@ end
 assert(browser.select_hint("s", "Canada") == true, "select_hint should delegate to terminal")
 assert(selected_hint.label == "s", "select_hint should pass hint label to terminal")
 assert(selected_hint.choice == "Canada", "select_hint should pass option choice to terminal")
+
+local toggled_hint = nil
+terminal.toggle_hint = function(label)
+  toggled_hint = label
+  return true
+end
+assert(browser.toggle_hint("c") == true, "toggle_hint should delegate to terminal")
+assert(toggled_hint == "c", "toggle_hint should pass hint label to terminal")
 
 local hovered_point = nil
 terminal.hover_point = function(x, y)
@@ -469,6 +480,23 @@ assert(selected_hint.label == "s", "select_hint_mode should pass the prompted hi
 assert(selected_hint.choice == "Canada", "select_hint_mode should pass the prompted option choice")
 
 browser.hints = function()
+  return { { id = 3, hint_label = "c" } }
+end
+toggled_hint = nil
+local toggle_prompts = {}
+local toggle_responses = { "c" }
+terminal.toggle_hint = function(label)
+  toggled_hint = label
+  return true
+end
+assert(browser.toggle_hint_mode(function(prompt)
+  table.insert(toggle_prompts, prompt)
+  return table.remove(toggle_responses, 1)
+end) == true, "toggle_hint_mode should toggle the prompted checkbox/radio")
+assert(table.concat(toggle_prompts, "|") == "nvim-browser hint: ", "toggle_hint_mode should prompt for hint")
+assert(toggled_hint == "c", "toggle_hint_mode should pass the prompted hint label")
+
+browser.hints = function()
   return {}
 end
 assert(browser.type_hint_mode(function()
@@ -477,6 +505,9 @@ end) == false, "type_hint_mode should return false without active hints")
 assert(browser.select_hint_mode(function()
   error("input should not be called without hints")
 end) == false, "select_hint_mode should return false without active hints")
+assert(browser.toggle_hint_mode(function()
+  error("input should not be called without hints")
+end) == false, "toggle_hint_mode should return false without active hints")
 
 browser.hints = function()
   return { { id = 2, hint_label = "s" } }
@@ -487,6 +518,9 @@ end) == false, "type_hint_mode should cancel on empty hint label")
 assert(browser.select_hint_mode(function()
   return ""
 end) == false, "select_hint_mode should cancel on empty hint label")
+assert(browser.toggle_hint_mode(function()
+  return ""
+end) == false, "toggle_hint_mode should cancel on empty hint label")
 
 local empty_text_responses = { "s", "" }
 assert(browser.type_hint_mode(function()
@@ -506,6 +540,10 @@ terminal.select_hint = function()
   return false
 end
 assert(browser.select_hint("s", "Canada") == false, "select_hint should propagate terminal failure")
+terminal.toggle_hint = function()
+  return false
+end
+assert(browser.toggle_hint("c") == false, "toggle_hint should propagate terminal failure")
 
 browser.click_hint = original_click_hint
 browser.follow_hint = original_follow_hint
@@ -517,6 +555,7 @@ terminal.wheel_point = original_terminal_wheel_point
 terminal.wheel_mouse = original_terminal_wheel_mouse
 terminal.type_hint = original_terminal_type_hint
 terminal.select_hint = original_terminal_select_hint
+terminal.toggle_hint = original_terminal_toggle_hint
 terminal.hover_point = original_terminal_hover_point
 terminal.hover_here = original_terminal_hover_here
 terminal.hover_hint = original_terminal_hover_hint

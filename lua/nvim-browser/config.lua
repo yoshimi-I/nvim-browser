@@ -45,6 +45,7 @@ M.options = {
       type_hint_mode = "t",
       submit_hint_mode = "s",
       select_hint_mode = "o",
+      toggle_hint_mode = "c",
     },
   },
   preview_keymaps = {
@@ -68,6 +69,7 @@ M.options = {
       type_hint_mode = "t",
       submit_hint_mode = "s",
       select_hint_mode = "o",
+      toggle_hint_mode = "c",
       input_text_mode = "i",
       paste_register = "p",
       yank_selection = "y",
