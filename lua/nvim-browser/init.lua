@@ -1,6 +1,7 @@
 local address = require("nvim-browser.address")
 local backend = require("nvim-browser.backend")
 local config = require("nvim-browser.config")
+local doctor = require("nvim-browser.doctor")
 local keymaps = require("nvim-browser.keymaps")
 local terminal = require("nvim-browser.terminal")
 
@@ -173,6 +174,10 @@ end
 
 function M.status_error()
   return terminal.state().status_error
+end
+
+function M.doctor()
+  return doctor.run(M.config, terminal.state())
 end
 
 function M.last_find_found()

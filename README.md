@@ -170,6 +170,7 @@ Then run:
 :NBrowserCurrentUrl
 :NBrowserCurrentTitle
 :NBrowserStatus
+:NBrowserDoctor
 :NBrowserToggle
 ```
 

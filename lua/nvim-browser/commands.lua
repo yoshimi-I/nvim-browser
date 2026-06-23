@@ -250,6 +250,11 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { message } }, false, {})
   end, {})
 
+  vim.api.nvim_create_user_command("NBrowserDoctor", function()
+    local report = browser.doctor()
+    vim.api.nvim_echo({ { table.concat(report.lines or {}, "\n") } }, false, {})
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserToggle", function()
     browser.toggle()
   end, {})

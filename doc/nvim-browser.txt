@@ -164,6 +164,11 @@ COMMANDS                                           *nvim-browser-commands*
 	Echo the last serve response status, current title, and current URL.
 	The preview buffer name is also kept in sync with the current title or URL.
 
+							*:NBrowserDoctor*
+:NBrowserDoctor
+	Echo a diagnostic report for backend binary resolution, selected graphics
+	output, Zellij/terminal environment, and the active preview session.
+
 							*:NBrowserPreview*
 :NBrowserPreview
 	Preview the current buffer path.

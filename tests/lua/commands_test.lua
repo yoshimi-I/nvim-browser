@@ -11,6 +11,7 @@ local addressed = nil
 local found = nil
 local typed_hint = nil
 local submitted_hint = nil
+local doctor_called = false
 local browser = {
   hints = function()
     return {
@@ -42,6 +43,10 @@ local browser = {
     end
     return true
   end,
+  doctor = function()
+    doctor_called = true
+    return { lines = { "nvim-browser doctor", "browser output: kitty-unicode" } }
+  end,
 }
 
 local echoed = nil
@@ -64,6 +69,10 @@ vim.cmd("NBrowserHints")
 assert(echoed:match("^a%s+1%s+link%s+Docs%s+%->%s+https://example%.com/docs%s+@%s+10,20"), "NBrowserHints should show keyboard label before numeric id and href")
 assert(echoed:match("https://example%.com/docs"), "NBrowserHints should show structured link hrefs")
 assert(echoed:match("\ns%s+2%s+input%s+Search%s+@%s+30,40"), "NBrowserHints should show all keyboard labels")
+
+vim.cmd("NBrowserDoctor")
+assert(doctor_called == true, "NBrowserDoctor should call browser.doctor")
+assert(echoed == "nvim-browser doctor\nbrowser output: kitty-unicode", "NBrowserDoctor should echo doctor lines")
 
 vim.cmd("NBrowserAddress")
 assert(addressed == "s", "NBrowserAddress should pass the injected input function to browser.address")
