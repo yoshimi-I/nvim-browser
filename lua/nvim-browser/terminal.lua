@@ -23,6 +23,9 @@ local state = {
   status = nil,
   status_error = nil,
   pending_operation = nil,
+  live_refresh_timer = nil,
+  live_refresh_generation = 0,
+  live_refresh_request_id = nil,
   stopped_operation = nil,
   canceled_request_ids = {},
   last_find_found = nil,
@@ -32,6 +35,17 @@ local state = {
   cursor_addressable_preview = false,
   reader_bufnr = nil,
 }
+
+local options = {
+  live_refresh = {
+    enabled = true,
+    interval_ms = 1500,
+  },
+}
+
+local timer_factory = function()
+  return vim.loop.new_timer()
+end
 
 local kitty_placeholder = vim.fn.nr2char(0x10eeee)
 local serve_footer_rows = 1
@@ -517,7 +531,11 @@ local function apply_serve_response_metadata(response)
   end
 end
 
+local stop_live_refresh_timer
+local stop_live_refresh
+
 local function stop_existing_job(force)
+  stop_live_refresh()
   if state.job_id == nil then
     return
   end
@@ -565,6 +583,88 @@ local function request_resize()
 end
 
 local send_pending_request
+local send_capture_request
+
+stop_live_refresh_timer = function()
+  state.live_refresh_generation = state.live_refresh_generation + 1
+  if state.live_refresh_timer == nil then
+    return
+  end
+  state.live_refresh_timer:stop()
+  state.live_refresh_timer:close()
+  state.live_refresh_timer = nil
+end
+
+local function clear_in_flight_capture()
+  if state.live_refresh_request_id ~= nil then
+    state.response_handlers[state.live_refresh_request_id] = nil
+  end
+  state.live_refresh_request_id = nil
+end
+
+stop_live_refresh = function()
+  stop_live_refresh_timer()
+  clear_in_flight_capture()
+end
+
+local function live_refresh_interval()
+  local live_refresh = options.live_refresh or {}
+  if live_refresh.enabled == false then
+    return nil
+  end
+  local interval = tonumber(live_refresh.interval_ms)
+  if interval == nil or interval <= 0 then
+    return nil
+  end
+  return interval
+end
+
+local function start_live_refresh_timer(generation)
+  stop_live_refresh_timer()
+  local interval = live_refresh_interval()
+  if interval == nil then
+    return
+  end
+  local timer = timer_factory()
+  if timer == nil then
+    return
+  end
+  state.live_refresh_timer = timer
+  local live_refresh_generation = state.live_refresh_generation
+  timer:start(interval, interval, function()
+    vim.schedule(function()
+      if state.live_refresh_generation ~= live_refresh_generation or state.live_refresh_timer ~= timer then
+        return
+      end
+      if live_refresh_interval() == nil then
+        return
+      end
+      if generation ~= state.generation then
+        return
+      end
+      if state.mode ~= "serve" or state.job_id == nil or not is_valid_buffer() then
+        return
+      end
+      if state.pending_operation ~= nil or state.live_refresh_request_id ~= nil then
+        return
+      end
+      send_capture_request()
+    end)
+  end)
+end
+
+send_capture_request = function()
+  if state.live_refresh_request_id ~= nil then
+    return false
+  end
+  local ok, id = send_serve_request({ type = "capture" }, function()
+    state.live_refresh_request_id = nil
+  end)
+  if ok then
+    state.live_refresh_request_id = id
+  end
+  return ok
+end
 
 local function ensure_resize_autocmd()
   if state.resize_autocmd ~= nil then
@@ -986,6 +1086,7 @@ function M.open(command)
   state.status = nil
   state.status_error = nil
   state.pending_operation = nil
+  state.live_refresh_request_id = nil
   state.stopped_operation = nil
   state.canceled_request_ids = {}
   state.last_find_found = nil
@@ -1048,6 +1149,11 @@ function M.open(command)
         end
         if state.canceled_request_ids[response.id] then
           state.canceled_request_ids[response.id] = nil
+          state.response_handlers[response.id] = nil
+          return
+        end
+        if response.id == state.live_refresh_request_id and state.pending_operation ~= nil then
+          state.live_refresh_request_id = nil
           state.response_handlers[response.id] = nil
           return
         end
@@ -1119,6 +1225,7 @@ function M.open(command)
             return
           end
           state.job_id = nil
+          stop_live_refresh()
           state.mode = nil
           state.serve_output = nil
           state.runtime_metadata = nil
@@ -1140,6 +1247,7 @@ function M.open(command)
         end)
       end,
     })
+    start_live_refresh_timer(generation)
     return
   end
 
@@ -1259,6 +1367,7 @@ function M.close()
   state.status = nil
   state.status_error = nil
   state.pending_operation = nil
+  state.live_refresh_request_id = nil
   state.stopped_operation = nil
   state.canceled_request_ids = {}
   state.last_find_found = nil
@@ -1274,10 +1383,7 @@ function M.close()
 end
 
 function M.refresh()
-  if request_resize() then
-    return true
-  end
-  return send_serve_request({ type = "capture" })
+  return send_capture_request()
 end
 
 function M.reload()
@@ -1325,6 +1431,7 @@ function M.stop()
   state.status_error = nil
   state.response_handlers[pending.id] = nil
   state.generation = state.generation + 1
+  stop_live_refresh()
   hints_overlay.clear(state.bufnr)
   if is_valid_buffer() then
     refresh_preview_footer(state.bufnr)
@@ -1569,6 +1676,18 @@ function M.toggle()
   return false
 end
 
+function M.configure(opts)
+  opts = opts or {}
+  options = vim.tbl_deep_extend("force", options, {
+    live_refresh = opts.live_refresh or {},
+  })
+  if state.mode == "serve" and state.job_id ~= nil and is_valid_buffer() then
+    start_live_refresh_timer(state.generation)
+  else
+    stop_live_refresh()
+  end
+end
+
 function M.state()
   return {
     bufnr = state.bufnr,
@@ -1588,6 +1707,7 @@ function M.state()
     status = state.status,
     status_error = state.status_error,
     pending_operation = state.pending_operation,
+    live_refresh_request_id = state.live_refresh_request_id,
     stopped_operation = state.stopped_operation,
     last_find_found = state.last_find_found,
     element_hints = state.element_hints,
@@ -1615,7 +1735,23 @@ M._test = {
   set_pending_operation = function(value)
     state.pending_operation = value
   end,
+  response_handler_count = function()
+    local count = 0
+    for _ in pairs(state.response_handlers) do
+      count = count + 1
+    end
+    return count
+  end,
+  set_timer_factory = function(factory)
+    stop_live_refresh()
+    timer_factory = factory or function()
+      return vim.loop.new_timer()
+    end
+  end,
   clear_pending_operation = clear_pending_operation,
+  clear_in_flight_capture = function()
+    clear_in_flight_capture()
+  end,
   kitty_cleanup_escape = kitty_cleanup_escape,
   set_last_find_found = function(value)
     state.last_find_found = value

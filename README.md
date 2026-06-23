@@ -24,7 +24,7 @@ This repository is an early MVP scaffold. Today it includes:
 - Neovim commands for opening, navigating, reloading, stopping pending loads, history, scrolling, finding text, text input, keys, selector focus, point clicks, and hinted element clicks
 - browser element hints overlaid on cursor-addressable previews
 - persistent Neovim preview surface reuse
-- current URL, title, scroll progress, status, runtime diagnostics, preview footer, and preview buffer naming from the active browser session
+- current URL, title, scroll progress, status, runtime diagnostics, preview footer, live recapture, and preview buffer naming from the active browser session
 - CLI integration tests for backend command contracts
 - initial OSS packaging and CI
 
@@ -95,6 +95,19 @@ letting `nvbrowser` launch Chrome, pass the browser WebSocket URL:
 ```lua
 require("nvim-browser").setup({
   cdp_ws_url = "ws://127.0.0.1:9222/devtools/browser/<id>",
+})
+```
+
+Active browser previews recapture the page every 1500ms by default so async
+page updates and SPA state changes appear in Neovim without manual refresh.
+Disable it or tune the interval with:
+
+```lua
+require("nvim-browser").setup({
+  live_refresh = {
+    enabled = false,
+    interval_ms = 2500,
+  },
 })
 ```
 
@@ -197,6 +210,11 @@ Browser preview footers show the latest serve status, title or URL, scroll
 progress, output mode, cell geometry, and current URL when reported by the
 Chromium/CDP session. `:NBrowserStatus` echoes the same browser-session state in
 the command line.
+
+While a browser session is idle, nvim-browser periodically sends a lightweight
+capture request to keep the preview current. It does not send background
+captures while a navigation-like operation is pending, and it stops the timer
+when the browser preview is stopped, closed, or replaced.
 
 Navigation-like operations show immediate `loading | ... | Esc stop` feedback
 in the preview footer before Chromium returns a frame. Run `:NBrowserStop`, or

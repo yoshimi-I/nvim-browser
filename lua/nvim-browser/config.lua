@@ -20,6 +20,10 @@ M.options = {
   graphics = "auto",
   image_fit = "original",
   search_url = "https://www.google.com/search?q=%s",
+  live_refresh = {
+    enabled = true,
+    interval_ms = 1500,
+  },
   keymaps = {
     enabled = false,
     prefix = "<leader>b",

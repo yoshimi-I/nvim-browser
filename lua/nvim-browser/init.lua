@@ -13,6 +13,7 @@ local state = {
 
 function M.setup(opts)
   M.config = config.setup(opts)
+  terminal.configure(M.config)
   keymaps.setup(M, M.config.keymaps or {})
 end
 

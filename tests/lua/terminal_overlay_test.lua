@@ -399,6 +399,26 @@ local original_jobstart = vim.fn.jobstart
 local original_chansend = vim.fn.chansend
 local original_jobstop = vim.fn.jobstop
 local original_termopen = vim.fn.termopen
+local fake_timers = {}
+terminal._test.set_timer_factory(function()
+  local timer = {
+    starts = {},
+    stopped = false,
+    closed = false,
+  }
+  function timer:start(timeout, repeat_ms, callback)
+    table.insert(self.starts, { timeout = timeout, repeat_ms = repeat_ms })
+    self.callback = callback
+  end
+  function timer:stop()
+    self.stopped = true
+  end
+  function timer:close()
+    self.closed = true
+  end
+  table.insert(fake_timers, timer)
+  return timer
+end)
 local jobstart_calls = {}
 local sent_requests = {}
 local jobstop_calls = {}
@@ -424,6 +444,93 @@ end
 
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
 local first_state = terminal.state()
+assert(#fake_timers == 1, "serve sessions should start a live refresh timer by default")
+assert(fake_timers[1].starts[1].timeout == 1500, "live refresh should use the default interval as its initial delay")
+assert(fake_timers[1].starts[1].repeat_ms == 1500, "live refresh should repeat at the configured interval")
+sent_requests = {}
+fake_timers[1].callback()
+assert(vim.wait(1000, function()
+  for _, request in ipairs(sent_requests) do
+    local ok, decoded = pcall(vim.json.decode, request.payload)
+    if ok and decoded.type == "capture" then
+      return true
+    end
+  end
+  return false
+end), "live refresh timer should send capture requests for active serve sessions")
+local live_capture_id = terminal.state().live_refresh_request_id
+assert(live_capture_id ~= nil, "live refresh should track an in-flight capture request")
+assert(terminal._test.response_handler_count() == 1, "live refresh should register one response handler")
+
+sent_requests = {}
+assert(terminal.navigate("https://example.com/new") == true, "navigation should be allowed while a live capture is in flight")
+serve_stdout(nil, { vim.json.encode({
+  id = live_capture_id,
+  status = "ok",
+  payload = "stale frame",
+  url = "https://example.com/stale",
+  title = "Stale Capture",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id == nil
+end), "late live capture responses should clear in-flight capture state")
+assert(
+  terminal.state().current_title ~= "Stale Capture",
+  "late live capture responses should not overwrite navigation-pending preview metadata"
+)
+assert(
+  terminal.state().pending_operation ~= nil,
+  "late live capture responses should not clear navigation pending feedback"
+)
+assert(terminal._test.response_handler_count() == 0, "stale live capture handling should remove the capture response handler")
+terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
+
+sent_requests = {}
+terminal.refresh()
+local manual_capture_seen = false
+local manual_resize_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "capture" then
+    manual_capture_seen = true
+  end
+  if ok and decoded.type == "resize" then
+    manual_resize_seen = true
+  end
+end
+assert(manual_capture_seen, "manual refresh should send a capture request for active serve sessions")
+assert(not manual_resize_seen, "manual refresh should not send a separate resize capture")
+assert(terminal.state().live_refresh_request_id ~= nil, "manual refresh capture should be tracked as in-flight capture")
+assert(terminal._test.response_handler_count() == 1, "manual refresh capture should register one response handler")
+local manual_capture_count = 0
+fake_timers[1].callback()
+vim.wait(50)
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "capture" then
+    manual_capture_count = manual_capture_count + 1
+  end
+end
+assert(manual_capture_count == 1, "live refresh should not send a second capture while manual refresh is in flight")
+sent_requests = {}
+assert(terminal.refresh() == false, "manual refresh should not send another request while a capture is already in flight")
+assert(#sent_requests == 0, "manual refresh should not send resize while a capture is already in flight")
+terminal._test.clear_in_flight_capture()
+
+sent_requests = {}
+terminal._test.set_pending_operation({ id = 777, label = "loading", target = "https://example.com/pending" })
+fake_timers[1].callback()
+vim.wait(50)
+local capture_while_pending = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "capture" then
+    capture_while_pending = true
+  end
+end
+assert(not capture_while_pending, "live refresh should not send capture while an operation is pending")
+terminal._test.clear_pending_operation(777)
+
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.org" })
 local second_state = terminal.state()
 
@@ -445,6 +552,51 @@ for _, request in ipairs(sent_requests) do
 end
 assert(navigate_seen, "serve URL reuse should send a navigate request to the active backend")
 assert(not quit_seen, "serve URL reuse should not send quit to the active backend")
+terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
+
+terminal.configure({ live_refresh = { enabled = false } })
+assert(fake_timers[1].stopped == true and fake_timers[1].closed == true, "disabling live refresh should stop the active timer")
+sent_requests = {}
+fake_timers[1].callback()
+vim.wait(50)
+assert(#sent_requests == 0, "stopped live refresh timer callbacks should not send capture after disabling")
+terminal.configure({ live_refresh = { enabled = true, interval_ms = 25 } })
+assert(#fake_timers == 2, "re-enabling live refresh should start a replacement timer for the active serve session")
+assert(fake_timers[2].starts[1].timeout == 25, "live refresh reconfiguration should apply the new interval")
+sent_requests = {}
+fake_timers[1].callback()
+vim.wait(50)
+assert(#sent_requests == 0, "old live refresh timer callbacks should not send capture after reconfiguration")
+
+sent_requests = {}
+fake_timers[2].callback()
+local reconfigured_capture_id = nil
+assert(vim.wait(1000, function()
+  reconfigured_capture_id = terminal.state().live_refresh_request_id
+  return reconfigured_capture_id ~= nil
+end), "reconfigured live refresh should still track capture requests")
+terminal.configure({ live_refresh = { enabled = false } })
+assert(
+  terminal.state().live_refresh_request_id == reconfigured_capture_id,
+  "disabling live refresh should not forget an already in-flight capture"
+)
+assert(terminal.navigate("https://example.com/after-reconfigure") == true, "navigation should still work after live refresh reconfiguration")
+serve_stdout(nil, { vim.json.encode({
+  id = reconfigured_capture_id,
+  status = "ok",
+  payload = "stale after reconfigure",
+  url = "https://example.com/stale-after-reconfigure",
+  title = "Stale After Reconfigure",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id == nil
+end), "stale capture after reconfigure should clear in-flight capture state")
+assert(
+  terminal.state().current_title ~= "Stale After Reconfigure",
+  "stale capture after reconfigure should not overwrite pending navigation metadata"
+)
+terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
+terminal.configure({ live_refresh = { enabled = true, interval_ms = 25 } })
 
 jobstart_calls = {}
 sent_requests = {}
@@ -453,10 +605,17 @@ terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--markdown", "/tmp/RE
 local markdown_state = terminal.state()
 assert(#jobstart_calls == 1, "opening Markdown should start a replacement serve job so the backend can render HTML")
 assert(markdown_state.bufnr ~= served_bufnr, "Markdown serve replacement should use a fresh preview buffer")
+assert(fake_timers[1].stopped == true and fake_timers[1].closed == true, "serve replacement should stop the previous live refresh timer")
 
 sent_requests = {}
 terminal.close()
+local closed_timer = fake_timers[#fake_timers]
+assert(closed_timer.stopped == true and closed_timer.closed == true, "close should stop the active live refresh timer")
+terminal.configure({ live_refresh = { enabled = false, interval_ms = 25 } })
+local disabled_timer_count = #fake_timers
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
+assert(#fake_timers == disabled_timer_count, "disabled live refresh should not create a new timer")
+terminal.configure({ live_refresh = { enabled = true, interval_ms = 25 } })
 local hints_response = vim.json.encode({
   id = 1,
   status = "ok",
@@ -597,6 +756,7 @@ local replacement_state = terminal.state()
 assert(#termopen_calls == 1, "non-serve previews should still replace an active serve session")
 assert(replacement_state.bufnr ~= reused_bufnr, "non-serve previews should use a replacement buffer")
 
+terminal._test.set_timer_factory(nil)
 vim.fn.jobstart = original_jobstart
 vim.fn.chansend = original_chansend
 vim.fn.jobstop = original_jobstop

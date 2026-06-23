@@ -44,6 +44,17 @@ require("nvim-browser").setup({
   binary = vim.fn.expand("~/.local/bin/nvbrowser"),
 })
 <
+Active browser previews recapture the page every 1500ms by default. This keeps
+async page updates visible in Neovim without manual refresh. Disable it or tune
+the interval with:
+>
+require("nvim-browser").setup({
+  live_refresh = {
+    enabled = false,
+    interval_ms = 2500,
+  },
+})
+<
 Release tags use vMAJOR.MINOR.PATCH; replace v0.1.2 with the latest release
 tag when installing. Until v1.0.0, pin the plugin and backend binary to the
 same tag or commit.
@@ -198,6 +209,9 @@ COMMANDS                                           *nvim-browser-commands*
 	preview buffer name is also kept in sync with the current title or URL.
 	Navigation-like operations show immediate "loading | ... | Esc stop"
 	feedback in this footer before Chromium returns a new frame.
+	Idle browser previews periodically send capture requests to keep async
+	page updates visible. Background captures are skipped while an operation is
+	pending and stop when the browser preview is stopped, closed, or replaced.
 
 							*:NBrowserReader*
 :NBrowserReader

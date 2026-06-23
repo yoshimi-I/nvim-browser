@@ -47,6 +47,8 @@ assert(
   configured.preview_keymaps.mappings.wheel_up == "<ScrollWheelUp>",
   "preview-local keymaps should include a wheel-up mouse mapping"
 )
+assert(configured.live_refresh.enabled == true, "live refresh should be enabled by default")
+assert(configured.live_refresh.interval_ms == 1500, "live refresh should default to a conservative interval")
 assert(configured.preview_keymaps.mappings.stop == "<Esc>", "preview-local keymaps should include a stop mapping")
 assert(configured.preview_keymaps.mappings.input_text_mode == "i", "preview-local keymaps should include focused input mode")
 assert(configured.preview_keymaps.mappings.key_enter == "<CR>", "preview-local keymaps should include Enter forwarding")
@@ -74,12 +76,17 @@ assert(
   "preview-local keymaps should include a hinted submit mapping"
 )
 local remapped = config.setup({
+  live_refresh = {
+    enabled = false,
+  },
   preview_keymaps = {
     mappings = {
       scroll_down = "<C-d>",
     },
   },
 })
+assert(remapped.live_refresh.enabled == false, "live refresh should allow disabling automatic capture")
+assert(remapped.live_refresh.interval_ms == 1500, "live refresh partial config should retain the default interval")
 assert(remapped.preview_keymaps.mappings.scroll_down == "<C-d>", "preview-local keymaps should allow partial remaps")
 assert(remapped.preview_keymaps.mappings.close == "q", "preview-local partial remaps should retain defaults")
 assert(

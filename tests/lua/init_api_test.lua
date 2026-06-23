@@ -275,6 +275,7 @@ end, { is_active = true }) == false, "empty prompted address should be a no-op w
 assert(default_seen == "https://www.google.com/search?q=search%20terms", "address prompt should fall back to last target")
 
 local original_terminal_reader_follow = terminal.reader_follow
+local original_terminal_configure = terminal.configure
 terminal.reader_follow = function()
   return "https://example.com/from-reader"
 end
@@ -289,6 +290,20 @@ assert(
   "failed reader_follow should not replace the public last target"
 )
 terminal.reader_follow = original_terminal_reader_follow
+
+local configured_terminal_opts = nil
+terminal.configure = function(opts)
+  configured_terminal_opts = opts
+end
+browser.setup({
+  live_refresh = {
+    enabled = false,
+    interval_ms = 2500,
+  },
+})
+assert(configured_terminal_opts.live_refresh.enabled == false, "setup should pass live refresh config to terminal")
+assert(configured_terminal_opts.live_refresh.interval_ms == 2500, "setup should pass live refresh interval to terminal")
+terminal.configure = original_terminal_configure
 
 browser.open = original_open
 browser.navigate = original_navigate
