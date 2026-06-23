@@ -12,6 +12,7 @@ end
 M.options = {
   binary = default_binary(),
   graphics = "auto",
+  image_fit = "original",
   search_url = "https://www.google.com/search?q=%s",
   keymaps = {
     enabled = false,

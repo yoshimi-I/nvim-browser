@@ -142,4 +142,17 @@ assert(warnings[#warnings] == "nvim-browser: text was not found", "not-found res
 terminal._test.handle_find_text_response({ status = "ok", found = true })
 assert(terminal.state().last_find_found == true, "found responses should update find state to true")
 
+vim.cmd("vsplit")
+local image_win = vim.api.nvim_get_current_win()
+vim.api.nvim_win_set_width(image_win, 52)
+vim.api.nvim_win_set_height(image_win, 14)
+terminal._test.set_test_window(image_win)
+local image_command = terminal._test.command_for_window({ "nvbrowser", "show-image", "/tmp/image.png", "--fit", "contain" })
+assert(vim.tbl_contains(image_command, "--columns"), "show-image should receive preview columns")
+assert(vim.tbl_contains(image_command, "--rows"), "show-image should receive preview rows")
+assert(vim.tbl_contains(image_command, "--width"), "show-image should receive preview pixel width")
+assert(vim.tbl_contains(image_command, "--height"), "show-image should receive preview pixel height")
+assert(vim.tbl_contains(image_command, "50"), "show-image columns should come from preview width minus borders")
+assert(vim.tbl_contains(image_command, "12"), "show-image rows should come from preview height minus borders")
+
 vim.api.nvim_echo = original_echo

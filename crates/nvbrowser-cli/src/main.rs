@@ -39,6 +39,14 @@ enum Command {
         output: ImageOutput,
         #[arg(long, default_value_t = 100)]
         columns: u32,
+        #[arg(long)]
+        rows: Option<u32>,
+        #[arg(long)]
+        width: Option<u32>,
+        #[arg(long)]
+        height: Option<u32>,
+        #[arg(long, value_enum, default_value_t = ImageFit::Original)]
+        fit: ImageFit,
     },
     Browse {
         url: String,
@@ -78,6 +86,14 @@ enum ImageOutput {
     Ansi,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum ImageFit {
+    Contain,
+    Original,
+    Width,
+    Height,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
@@ -92,20 +108,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             path,
             output,
             columns,
+            rows,
+            width,
+            height,
+            fit,
         } => {
             let image = image::open(path)?;
+            let bounds = ImageBounds {
+                columns,
+                rows,
+                width_px: width,
+                height_px: height,
+            };
+            let image = resize_image_for_fit(image, bounds, fit);
             match output {
                 ImageOutput::Kitty => {
                     let mut png = Cursor::new(Vec::new());
                     image.write_to(&mut png, ImageFormat::Png)?;
                     let encoded = general_purpose::STANDARD.encode(png.into_inner());
-                    print!("{}", kitty_image_escape(&encoded));
+                    if let Some(rows) = rows {
+                        let (width_px, height_px) = image.dimensions();
+                        print!(
+                            "{}",
+                            kitty_placed_image_escape(encoded, width_px, height_px, columns, rows)
+                        );
+                    } else {
+                        print!("{}", kitty_image_escape(&encoded));
+                    }
                 }
                 ImageOutput::KittyUnicode => {
                     return Err("kitty-unicode output is only supported by browse".into());
                 }
                 ImageOutput::Ansi => {
-                    print!("{}", image_to_ansi_halfblocks(&image, columns));
+                    print!(
+                        "{}",
+                        image_to_ansi_halfblocks(&image, columns, rows.map(|rows| rows * 2))
+                    );
                 }
             }
         }
@@ -136,7 +174,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 ImageOutput::Ansi => {
                     let image = image::load_from_memory_with_format(&png, ImageFormat::Png)?;
-                    print!("{}", image_to_ansi_halfblocks(&image, columns));
+                    print!("{}", image_to_ansi_halfblocks(&image, columns, None));
                 }
             }
         }
@@ -643,7 +681,7 @@ fn frame_to_payload(
         }
         ImageOutput::Ansi => {
             let image = image::load_from_memory_with_format(&png, ImageFormat::Png)?;
-            Ok(image_to_ansi_halfblocks(&image, columns))
+            Ok(image_to_ansi_halfblocks(&image, columns, None))
         }
     }
 }
@@ -728,11 +766,116 @@ fn kitty_unicode_browse_escape(
     transfer.virtual_placement_escape(columns, rows.unwrap_or(1))
 }
 
-fn image_to_ansi_halfblocks(image: &DynamicImage, columns: u32) -> String {
+fn kitty_placed_image_escape(
+    encoded_png: String,
+    width_px: u32,
+    height_px: u32,
+    columns: u32,
+    rows: u32,
+) -> String {
+    let control = format!(
+        "a=T,i=1,p=1,c={},r={},f=100,s={},v={}",
+        columns.max(1),
+        rows.max(1),
+        width_px,
+        height_px
+    );
+    chunked_kitty_escape(&control, &encoded_png)
+}
+
+fn chunked_kitty_escape(control: &str, payload: &str) -> String {
+    const CHUNK_SIZE: usize = 4096;
+    if payload.len() <= CHUNK_SIZE {
+        return format!("\x1b_G{control},m=0;{payload}\x1b\\");
+    }
+
+    let mut escape = String::new();
+    let mut offset = 0;
+    while offset < payload.len() {
+        let end = (offset + CHUNK_SIZE).min(payload.len());
+        let chunk = &payload[offset..end];
+        let more = if end < payload.len() { 1 } else { 0 };
+        if offset == 0 {
+            escape.push_str(&format!("\x1b_G{control},m={more};{chunk}\x1b\\"));
+        } else {
+            escape.push_str(&format!("\x1b_Gm={more};{chunk}\x1b\\"));
+        }
+        offset = end;
+    }
+
+    escape
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ImageBounds {
+    columns: u32,
+    rows: Option<u32>,
+    width_px: Option<u32>,
+    height_px: Option<u32>,
+}
+
+fn resize_image_for_fit(image: DynamicImage, bounds: ImageBounds, fit: ImageFit) -> DynamicImage {
+    let size = fitted_image_size(image.dimensions(), bounds, fit);
+    if image.dimensions() == size {
+        return image;
+    }
+    image.resize_exact(size.0, size.1, FilterType::Triangle)
+}
+
+fn fitted_image_size(source: (u32, u32), bounds: ImageBounds, fit: ImageFit) -> (u32, u32) {
+    let (source_width, source_height) = (source.0.max(1), source.1.max(1));
+    let bounds_width = bounds
+        .width_px
+        .unwrap_or_else(|| bounds.columns.max(1) * 10);
+    let bounds_height = bounds
+        .height_px
+        .or_else(|| bounds.rows.map(|rows| rows.max(1) * 20))
+        .unwrap_or(source_height);
+
+    match fit {
+        ImageFit::Original => (source_width, source_height),
+        ImageFit::Width => scale_to_width(source, bounds_width),
+        ImageFit::Height => scale_to_height(source, bounds_height),
+        ImageFit::Contain => {
+            let width_fit = scale_to_width(source, bounds_width);
+            if width_fit.1 <= bounds_height {
+                width_fit
+            } else {
+                scale_to_height(source, bounds_height)
+            }
+        }
+    }
+}
+
+fn scale_to_width(source: (u32, u32), target_width: u32) -> (u32, u32) {
+    let (source_width, source_height) = (source.0.max(1), source.1.max(1));
+    let width = target_width.max(1);
+    let height = ((source_height as f64 * width as f64) / source_width as f64)
+        .round()
+        .max(1.0) as u32;
+    (width, height)
+}
+
+fn scale_to_height(source: (u32, u32), target_height: u32) -> (u32, u32) {
+    let (source_width, source_height) = (source.0.max(1), source.1.max(1));
+    let height = target_height.max(1);
+    let width = ((source_width as f64 * height as f64) / source_height as f64)
+        .round()
+        .max(1.0) as u32;
+    (width, height)
+}
+
+fn image_to_ansi_halfblocks(
+    image: &DynamicImage,
+    columns: u32,
+    target_height: Option<u32>,
+) -> String {
     let columns = columns.max(1);
     let (width, height) = image.dimensions();
     let aspect = height as f32 / width.max(1) as f32;
-    let mut target_height = (aspect * columns as f32).round().max(2.0) as u32;
+    let mut target_height =
+        target_height.unwrap_or_else(|| (aspect * columns as f32).round().max(2.0) as u32);
+    target_height = target_height.max(2);
     if !target_height.is_multiple_of(2) {
         target_height += 1;
     }
@@ -1079,6 +1222,49 @@ mod tests {
         assert!(escape.contains("U=1"));
         assert!(escape.contains("i=1,c=80,r=24"));
         assert!(escape.contains("s=800,v=600"));
+    }
+
+    #[test]
+    fn image_fit_size_calculates_contain_original_width_and_height() {
+        let bounds = ImageBounds {
+            columns: 40,
+            rows: Some(10),
+            width_px: Some(400),
+            height_px: Some(200),
+        };
+
+        assert_eq!(
+            fitted_image_size((800, 600), bounds, ImageFit::Contain),
+            (267, 200)
+        );
+        assert_eq!(
+            fitted_image_size((800, 600), bounds, ImageFit::Original),
+            (800, 600)
+        );
+        assert_eq!(
+            fitted_image_size((800, 600), bounds, ImageFit::Width),
+            (400, 300)
+        );
+        assert_eq!(
+            fitted_image_size((800, 600), bounds, ImageFit::Height),
+            (267, 200)
+        );
+    }
+
+    #[test]
+    fn kitty_placed_image_escape_chunks_large_payloads() {
+        let escape = kitty_placed_image_escape("a".repeat(4097), 800, 600, 80, 24);
+
+        assert!(escape.starts_with("\x1b_Ga=T,i=1,p=1,c=80,r=24,f=100,s=800,v=600,m=1;"));
+        assert!(escape.contains(&format!("{}{}", "a".repeat(4096), "\x1b\\\x1b_Gm=0;a")));
+    }
+
+    #[test]
+    fn ansi_halfblocks_can_use_fitted_height() {
+        let image = DynamicImage::new_rgba8(20, 200);
+        let output = image_to_ansi_halfblocks(&image, 4, Some(4));
+
+        assert_eq!(output.lines().count(), 2);
     }
 
     #[test]

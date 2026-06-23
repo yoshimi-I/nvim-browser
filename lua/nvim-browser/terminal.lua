@@ -127,6 +127,10 @@ local function command_uses_serve(command)
   return type(command) == "table" and command[2] == "serve"
 end
 
+local function command_uses_show_image(command)
+  return type(command) == "table" and command[2] == "show-image"
+end
+
 local function command_uses_captured_browse(command)
   return command_uses_ansi_browse(command)
     or command_uses_kitty_browse(command)
@@ -195,11 +199,21 @@ local function command_for_window(command)
     and not command_uses_kitty_browse(command)
     and not command_uses_kitty_unicode_browse(command)
     and not command_uses_serve(command)
+    and not command_uses_show_image(command)
   then
     return command
   end
 
   local adjusted = vim.list_extend({}, command)
+
+  if command_uses_show_image(command) then
+    local cells = preview_cells()
+    add_option(adjusted, "--columns", cells.columns)
+    add_option(adjusted, "--rows", cells.rows)
+    add_option(adjusted, "--width", cells.columns * 10)
+    add_option(adjusted, "--height", cells.rows * 20)
+    return adjusted
+  end
 
   if command_uses_ansi_browse(command) or command_uses_ansi_serve(command) then
     add_option(adjusted, "--columns", preview_cells().columns)
@@ -1038,6 +1052,10 @@ M._test = {
   handle_find_text_response = handle_find_text_response,
   set_last_find_found = function(value)
     state.last_find_found = value
+  end,
+  command_for_window = command_for_window,
+  set_test_window = function(winid)
+    state.winid = winid
   end,
 }
 

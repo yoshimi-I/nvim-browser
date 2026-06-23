@@ -29,6 +29,7 @@ assert(vim.deep_equal(url_command, {
 
 local image_command = backend.command_for("nvbrowser", "open", "/tmp/image.png", {
   graphics = "ansi",
+  image_fit = "contain",
 })
 assert(vim.deep_equal(image_command, {
   "nvbrowser",
@@ -36,4 +37,6 @@ assert(vim.deep_equal(image_command, {
   "/tmp/image.png",
   "--output",
   "ansi",
+  "--fit",
+  "contain",
 }), "raster images should keep direct image routing")

@@ -56,6 +56,37 @@ fn show_image_outputs_kitty_escape() {
 }
 
 #[test]
+fn show_image_can_fit_to_kitty_placement() {
+    let directory = tempdir().expect("tempdir should be created");
+    let image_path = directory.path().join("pixel.png");
+    std::fs::write(&image_path, tiny_png()).expect("image fixture should be written");
+
+    let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+    command
+        .arg("show-image")
+        .arg(image_path)
+        .args([
+            "--output",
+            "kitty",
+            "--columns",
+            "2",
+            "--rows",
+            "2",
+            "--width",
+            "20",
+            "--height",
+            "40",
+            "--fit",
+            "contain",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("p=1,c=2,r=2"))
+        .stdout(predicate::str::contains("s=20,v=20"));
+}
+
+#[test]
 fn show_image_outputs_ansi_halfblocks() {
     let directory = tempdir().expect("tempdir should be created");
     let image_path = directory.path().join("pixel.png");
@@ -72,6 +103,41 @@ fn show_image_outputs_ansi_halfblocks() {
         .stdout(predicate::str::contains("\x1b[38;2;"))
         .stdout(predicate::str::contains("▀"))
         .stdout(predicate::str::ends_with("\x1b[0m\n"));
+}
+
+#[test]
+fn show_image_ansi_contain_respects_rows() {
+    let directory = tempdir().expect("tempdir should be created");
+    let image_path = directory.path().join("pixel.png");
+    std::fs::write(&image_path, tiny_png()).expect("image fixture should be written");
+
+    let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+    let output = command
+        .arg("show-image")
+        .arg(image_path)
+        .args([
+            "--output",
+            "ansi",
+            "--columns",
+            "4",
+            "--rows",
+            "2",
+            "--width",
+            "40",
+            "--height",
+            "40",
+            "--fit",
+            "contain",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8(output).expect("ansi output should be utf-8");
+
+    assert_eq!(output.lines().count(), 2);
 }
 
 fn tiny_png() -> Vec<u8> {

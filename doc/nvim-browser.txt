@@ -24,9 +24,9 @@ COMMANDS                                           *nvim-browser-commands*
         Open a URL or file target in the browser preview surface. Markdown files
         are rendered through a browser-styled HTML shell with local relative
         asset support. Image files are emitted with Kitty graphics protocol
-        escape sequences for terminals such as
-	Ghostty. HTTP and HTTPS URLs start a Chromium-backed browser session for
-	the current POC.
+        escape sequences or ANSI output and can use original, contain, width,
+        or height fit modes for the preview pane. HTTP and HTTPS URLs start a
+        Chromium-backed browser session for the current POC.
 
 							*:NBrowserReload*
 :NBrowserReload
