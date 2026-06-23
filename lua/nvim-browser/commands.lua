@@ -204,9 +204,14 @@ function M.register(browser, opts)
   end, {})
 
   vim.api.nvim_create_user_command("NBrowserKey", function(opts)
-    browser.press_key(opts.args)
+    local parts = vim.split(opts.args or "", "%s+", { trimempty = true })
+    local key = table.remove(parts, 1)
+    if key == nil or key == "" then
+      return
+    end
+    browser.press_key(key, { modifiers = parts })
   end, {
-    nargs = 1,
+    nargs = "+",
   })
 
   vim.api.nvim_create_user_command("NBrowserFocusSelector", function(opts)

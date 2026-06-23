@@ -206,6 +206,10 @@ assert_buffer_mapping(first_bufnr, "<CR>", "buffer-local controls should install
 assert_buffer_mapping(first_bufnr, "<Tab>", "buffer-local controls should install Tab forwarding")
 assert_buffer_mapping(first_bufnr, "<S-Tab>", "buffer-local controls should install Shift-Tab forwarding")
 assert_buffer_mapping(first_bufnr, "<BS>", "buffer-local controls should install Backspace forwarding")
+assert_buffer_mapping(first_bufnr, "x", "buffer-local controls should install Delete forwarding")
+assert_buffer_mapping(first_bufnr, "ge", "buffer-local controls should install browser Escape forwarding")
+assert_buffer_mapping(first_bufnr, "A", "buffer-local controls should install select-all forwarding")
+assert_buffer_mapping(first_bufnr, "gl", "buffer-local controls should install location focus forwarding")
 assert_buffer_mapping(first_bufnr, "<Up>", "buffer-local controls should install ArrowUp forwarding")
 assert_buffer_mapping(first_bufnr, "<Down>", "buffer-local controls should install ArrowDown forwarding")
 assert_buffer_mapping(first_bufnr, "<Left>", "buffer-local controls should install ArrowLeft forwarding")
@@ -233,6 +237,10 @@ trigger_buffer(first_bufnr, "<CR>")
 trigger_buffer(first_bufnr, "<Tab>")
 trigger_buffer(first_bufnr, "<S-Tab>")
 trigger_buffer(first_bufnr, "<BS>")
+trigger_buffer(first_bufnr, "x")
+trigger_buffer(first_bufnr, "ge")
+trigger_buffer(first_bufnr, "A")
+trigger_buffer(first_bufnr, "gl")
 trigger_buffer(first_bufnr, "<Up>")
 trigger_buffer(first_bufnr, "<Down>")
 trigger_buffer(first_bufnr, "<Left>")
@@ -249,7 +257,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,address,find:local,hints,type_hints:type:buffer text,type_hints:submit:buffer text,input_mode:buffer text,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,address,find:local,hints,type_hints:type:buffer text,type_hints:submit:buffer text,input_mode:buffer text,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
   "buffer-local controls should call browser APIs"
 )
 

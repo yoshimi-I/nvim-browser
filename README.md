@@ -175,6 +175,7 @@ Then run:
 :NBrowserInput hello
 :NBrowserInputMode
 :NBrowserKey Enter
+:NBrowserKey A ctrl
 :NBrowserClick 120 240
 :NBrowserClickHere
 :NBrowserHints
@@ -250,7 +251,9 @@ match through the browser's native find behavior, and captures a fresh frame.
 `:NBrowserInputMode` prompts once for text and sends it to the focused element,
 which is useful after clicking a field or focusing one with hints. Focused
 preview buffers also forward common browser keys: `<CR>`, `<Tab>`, `<S-Tab>`,
-`<BS>`, and arrow keys.
+`<BS>`, `x` Delete, `ge` Escape, `A` Ctrl-A select-all, `gl` Meta-L focus
+location, and arrow keys. `:NBrowserKey {key} [modifier ...]` accepts modifier
+names such as `ctrl`, `shift`, `alt`, and `meta`.
 
 `:NBrowserReader` captures the current browser page as Markdown-like text in a
 normal scratch buffer so page content can be selected, searched, and yanked
@@ -279,8 +282,9 @@ Focused preview buffers also install buffer-local browser controls by default:
 `r` reload, `H` back, `L` forward, `j`/`k` scroll, `a` address, `/` find, `f`
 hint mode, `t` type into a hinted field, `s` type and submit, `i` type into the
 focused element, `<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
-Backspace, arrow keys, `<Esc>` stop a pending load, left click to click the
-browser viewport, scroll wheel to scroll the page, and `q` close.
+Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` Meta-L
+focus location, arrow keys, `<Esc>` stop a pending load, left click to click
+the browser viewport, scroll wheel to scroll the page, and `q` close.
 Disable or remap them with
 `preview_keymaps = { enabled = false }` or `preview_keymaps.mappings`.
 

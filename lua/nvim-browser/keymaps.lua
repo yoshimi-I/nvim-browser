@@ -228,6 +228,22 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.press_key("Backspace")
   end, "nvim-browser: press Backspace", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "key_delete", "x"), function()
+    browser.press_key("Delete")
+  end, "nvim-browser: press Delete", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "key_escape", "ge"), function()
+    browser.press_key("Escape")
+  end, "nvim-browser: press Escape", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "key_select_all", "A"), function()
+    browser.press_key("A", { modifiers = { "ctrl" } })
+  end, "nvim-browser: select all", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "key_focus_location", "gl"), function()
+    browser.press_key("L", { modifiers = { "meta" } })
+  end, "nvim-browser: focus location", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "key_up", "<Up>"), function()
     browser.press_key("ArrowUp")
   end, "nvim-browser: press ArrowUp", buffer_opts)

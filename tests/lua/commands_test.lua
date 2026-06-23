@@ -181,6 +181,14 @@ assert(input_text == "hello world", "NBrowserInput should pass text to browser.i
 
 vim.cmd("NBrowserKey Enter")
 assert(pressed_key.key == "Enter", "NBrowserKey should pass a key to browser.press_key")
+assert(#pressed_key.modifiers == 0, "NBrowserKey without modifiers should pass an empty modifier list")
+
+vim.cmd("NBrowserKey A ctrl shift")
+assert(pressed_key.key == "A", "NBrowserKey should parse the first argument as the key")
+assert(
+  table.concat(pressed_key.modifiers, "+") == "ctrl+shift",
+  "NBrowserKey should pass remaining arguments as modifiers"
+)
 
 input_text = nil
 vim.cmd("NBrowserInputMode")

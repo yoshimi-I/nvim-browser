@@ -130,9 +130,13 @@ COMMANDS                                           *nvim-browser-commands*
 	a field, or using Tab in the focused preview buffer.
 
 							*:NBrowserKey*
-:NBrowserKey {key}
+:NBrowserKey {key} [modifier ...]
 	Press a Puppeteer-style key name such as Enter, Tab, Backspace, or
-	ArrowDown in the active browser page and capture a fresh frame.
+	ArrowDown in the active browser page and capture a fresh frame. Modifier
+	names such as ctrl, shift, alt, and meta can follow the key:
+>
+:NBrowserKey A ctrl
+<
 
 							*:NBrowserFocusSelector*
 :NBrowserFocusSelector {selector}
@@ -299,6 +303,10 @@ i  type into focused element
 <Tab>    press Tab
 <S-Tab>  press Shift-Tab
 <BS>     press Backspace
+x        press Delete
+ge       press browser Escape
+A        press Ctrl-A to select all in the focused element
+gl       press Meta-L to focus the browser location
 <Up>     press ArrowUp
 <Down>   press ArrowDown
 <Left>   press ArrowLeft
