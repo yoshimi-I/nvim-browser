@@ -29,6 +29,7 @@ local state = {
   stopped_operation = nil,
   canceled_request_ids = {},
   quiet_request_ids = {},
+  latest_applied_response_id = 0,
   last_find_found = nil,
   response_handlers = {},
   element_hints = {},
@@ -664,6 +665,20 @@ local function apply_serve_response_metadata(response)
   end
 end
 
+local function dispatch_serve_response_handler(response)
+  local response_handler = state.response_handlers[response.id]
+  if response_handler ~= nil then
+    state.response_handlers[response.id] = nil
+    response_handler(response)
+    return true
+  end
+  if response.found ~= nil then
+    state.last_find_found = response.found == true
+    return true
+  end
+  return false
+end
+
 local stop_live_refresh_timer
 local stop_live_refresh
 
@@ -694,6 +709,8 @@ local function stop_existing_job(force)
   state.job_id = nil
 end
 
+local clear_in_flight_capture
+
 local function request_resize()
   if state.mode ~= "serve" or not is_valid_window() then
     return false
@@ -705,6 +722,10 @@ local function request_resize()
   local geometry = valid_preview_geometry()
   if geometry == nil then
     return false
+  end
+  if state.live_refresh_request_id ~= nil then
+    state.canceled_request_ids[state.live_refresh_request_id] = true
+    clear_in_flight_capture()
   end
   return send_serve_request({
     type = "resize",
@@ -728,7 +749,7 @@ stop_live_refresh_timer = function()
   state.live_refresh_timer = nil
 end
 
-local function clear_in_flight_capture()
+clear_in_flight_capture = function()
   if state.live_refresh_request_id ~= nil then
     state.response_handlers[state.live_refresh_request_id] = nil
   end
@@ -1233,6 +1254,7 @@ function M.open(command)
   state.stopped_operation = nil
   state.canceled_request_ids = {}
   state.quiet_request_ids = {}
+  state.latest_applied_response_id = 0
   state.last_find_found = nil
   state.response_handlers = {}
   state.element_hints = {}
@@ -1303,20 +1325,25 @@ function M.open(command)
         end
         state.quiet_request_ids[response.id] = nil
         if response.id == state.live_refresh_request_id and state.pending_operation ~= nil then
-          state.live_refresh_request_id = nil
-          state.response_handlers[response.id] = nil
+          dispatch_serve_response_handler(response)
+          if state.live_refresh_request_id == response.id then
+            state.live_refresh_request_id = nil
+          end
+          return
+        end
+        if state.pending_operation ~= nil and response.id < state.pending_operation.id then
+          dispatch_serve_response_handler(response)
+          return
+        end
+        if response.id < state.latest_applied_response_id then
+          dispatch_serve_response_handler(response)
           return
         end
 
         apply_serve_response_metadata(response)
+        state.latest_applied_response_id = math.max(state.latest_applied_response_id, response.id)
         update_browser_buffer_name(bufnr)
-        local response_handler = state.response_handlers[response.id]
-        if response_handler ~= nil then
-          state.response_handlers[response.id] = nil
-          response_handler(response)
-        elseif response.found ~= nil then
-          state.last_find_found = response.found == true
-        end
+        dispatch_serve_response_handler(response)
         local geometry = valid_preview_geometry()
         state.element_hints = assign_hint_labels(response.hints or {})
         state.element_hints_geometry = #state.element_hints > 0 and geometry or nil
@@ -1521,6 +1548,7 @@ function M.close()
   state.stopped_operation = nil
   state.canceled_request_ids = {}
   state.quiet_request_ids = {}
+  state.latest_applied_response_id = 0
   state.last_find_found = nil
   state.response_handlers = {}
   state.element_hints = {}

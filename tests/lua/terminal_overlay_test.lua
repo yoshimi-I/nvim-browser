@@ -718,6 +718,208 @@ assert(navigate_seen, "serve URL reuse should send a navigate request to the act
 assert(not quit_seen, "serve URL reuse should not send quit to the active backend")
 terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
 
+sent_requests = {}
+assert(terminal.navigate("https://example.com/older") == true, "test setup should send an older navigation")
+local older_navigation_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(older_navigation_id ~= nil, "older navigation should be tracked as pending")
+sent_requests = {}
+assert(terminal.navigate("https://example.com/newer") == true, "test setup should send a newer navigation")
+local newer_navigation_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(newer_navigation_id ~= nil and newer_navigation_id ~= older_navigation_id, "newer navigation should replace older pending operation")
+serve_stdout(nil, { vim.json.encode({
+  id = older_navigation_id,
+  status = "ok",
+  payload = "older navigation frame",
+  url = "https://example.com/older",
+  title = "Older Navigation",
+  hints = {
+    {
+      id = 99,
+      kind = "button",
+      label = "Older Button",
+      x = 1,
+      y = 2,
+      width = 3,
+      height = 4,
+      clickable = true,
+      focusable = true,
+    },
+  },
+}), "" })
+local older_navigation_applied = vim.wait(200, function()
+  return terminal.state().current_title == "Older Navigation"
+end)
+assert(not older_navigation_applied, "late older navigation response should not overwrite newer pending navigation state")
+assert(
+  terminal.state().pending_operation ~= nil and terminal.state().pending_operation.id == newer_navigation_id,
+  "late older navigation response should not clear the newer pending operation"
+)
+assert(#terminal.state().element_hints == 0, "late older navigation response should not replace active hints")
+serve_stdout(nil, { vim.json.encode({
+  id = newer_navigation_id,
+  status = "ok",
+  payload = "newer navigation frame",
+  url = "https://example.com/newer",
+  title = "Newer Navigation",
+  hints = {
+    {
+      id = 100,
+      kind = "button",
+      label = "Newer Button",
+      x = 10,
+      y = 20,
+      width = 30,
+      height = 40,
+      clickable = true,
+      focusable = true,
+    },
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Newer Navigation"
+end), "latest navigation response should still update browser metadata")
+assert(terminal.state().pending_operation == nil, "latest navigation response should clear its pending operation")
+assert(#terminal.state().element_hints == 1, "latest navigation response should update active hints")
+serve_stdout(nil, { vim.json.encode({
+  id = older_navigation_id,
+  status = "ok",
+  payload = "older navigation after latest frame",
+  url = "https://example.com/older-after-latest",
+  title = "Older Navigation After Latest",
+  hints = {
+    {
+      id = 101,
+      kind = "button",
+      label = "Older After Latest Button",
+      x = 11,
+      y = 22,
+      width = 33,
+      height = 44,
+      clickable = true,
+      focusable = true,
+    },
+  },
+}), "" })
+local older_after_latest_applied = vim.wait(200, function()
+  return terminal.state().current_title == "Older Navigation After Latest"
+end)
+assert(not older_after_latest_applied, "late older navigation response should not apply after the newer response has completed")
+assert(terminal.state().current_title == "Newer Navigation", "newer navigation metadata should remain current")
+assert(#terminal.state().element_hints == 1, "newer navigation hints should remain current")
+
+sent_requests = {}
+assert(terminal.hover_point(10, 20) == true, "test setup should send an older hover operation")
+local older_hover_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(older_hover_id ~= nil, "older hover should be tracked as pending")
+sent_requests = {}
+assert(terminal.navigate("https://example.com/after-hover") == true, "test setup should send a newer navigation after hover")
+local after_hover_navigation_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(after_hover_navigation_id ~= nil and after_hover_navigation_id ~= older_hover_id, "newer navigation should replace hover as pending")
+serve_stdout(nil, { vim.json.encode({
+  id = older_hover_id,
+  status = "ok",
+  payload = "older hover frame",
+  url = "https://example.com/hover",
+  title = "Older Hover",
+}), "" })
+local older_hover_applied = vim.wait(200, function()
+  return terminal.state().current_title == "Older Hover"
+end)
+assert(not older_hover_applied, "late older hover response should not overwrite newer pending navigation state")
+assert(
+  terminal.state().pending_operation ~= nil and terminal.state().pending_operation.id == after_hover_navigation_id,
+  "late older hover response should not clear the newer pending operation"
+)
+serve_stdout(nil, { vim.json.encode({
+  id = after_hover_navigation_id,
+  status = "ok",
+  payload = "after hover navigation frame",
+  url = "https://example.com/after-hover",
+  title = "After Hover Navigation",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "After Hover Navigation"
+end), "latest navigation after hover should still apply")
+
+sent_requests = {}
+assert(terminal.refresh() == true, "test setup should send an older live capture")
+local older_capture_before_reader_id = terminal.state().live_refresh_request_id
+assert(older_capture_before_reader_id ~= nil, "older live capture should be tracked")
+sent_requests = {}
+assert(terminal.reader() == true, "test setup should send a newer reader request")
+local reader_request_id = nil
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "page_text" then
+    reader_request_id = decoded.id
+  end
+end
+assert(reader_request_id ~= nil and reader_request_id > older_capture_before_reader_id, "reader request should be newer than the live capture")
+serve_stdout(nil, { vim.json.encode({
+  id = reader_request_id,
+  status = "ok",
+  text = {
+    title = "Reader After Capture",
+    url = "https://example.com/reader-after-capture",
+    text = "# Reader After Capture\n\nreader body",
+    truncated = false,
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  local reader_bufnr = terminal.state().reader_bufnr
+  if reader_bufnr == nil or not vim.api.nvim_buf_is_valid(reader_bufnr) then
+    return false
+  end
+  local reader_lines = table.concat(vim.api.nvim_buf_get_lines(reader_bufnr, 0, -1, false), "\n")
+  return reader_lines:match("Reader After Capture") ~= nil
+end), "newer reader response should still run its handler")
+serve_stdout(nil, { vim.json.encode({
+  id = older_capture_before_reader_id,
+  status = "ok",
+  payload = "stale capture after reader frame",
+  url = "https://example.com/stale-capture-after-reader",
+  title = "Stale Capture After Reader",
+}), "" })
+local stale_capture_after_reader_applied = vim.wait(200, function()
+  return terminal.state().current_title == "Stale Capture After Reader"
+end)
+assert(not stale_capture_after_reader_applied, "older live capture should not overwrite state after a newer response has applied")
+assert(terminal.state().live_refresh_request_id == nil, "older live capture handler should still clear in-flight tracking")
+
+sent_requests = {}
+assert(terminal.find_text("needle") == true, "test setup should send an older find request")
+local older_find_id = nil
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "find_text" then
+    older_find_id = decoded.id
+  end
+end
+assert(older_find_id ~= nil, "find request should be sent")
+sent_requests = {}
+assert(terminal.navigate("https://example.com/after-find") == true, "test setup should send a newer navigation after find")
+local after_find_navigation_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(after_find_navigation_id ~= nil and after_find_navigation_id > older_find_id, "navigation after find should be newer")
+serve_stdout(nil, { vim.json.encode({
+  id = after_find_navigation_id,
+  status = "ok",
+  payload = "after find navigation frame",
+  url = "https://example.com/after-find",
+  title = "After Find Navigation",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "After Find Navigation"
+end), "newer navigation after find should apply")
+serve_stdout(nil, { vim.json.encode({
+  id = older_find_id,
+  status = "ok",
+  found = true,
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().last_find_found == true
+end), "older handler-only find response should still update find status after newer render response")
+assert(terminal.state().current_title == "After Find Navigation", "older find response should not overwrite current browser metadata")
+
 terminal.configure({ live_refresh = { enabled = false } })
 assert(fake_timers[1].stopped == true and fake_timers[1].closed == true, "disabling live refresh should stop the active timer")
 sent_requests = {}
@@ -912,6 +1114,47 @@ for _, request in ipairs(sent_requests) do
   end
 end
 assert(resize_seen, "active serve sessions should resize when Neovim is resized")
+
+sent_requests = {}
+assert(terminal.refresh() == true, "test setup should create an in-flight capture before resize")
+local stale_before_resize_capture_id = terminal.state().live_refresh_request_id
+assert(stale_before_resize_capture_id ~= nil, "test setup should track capture before resize")
+sent_requests = {}
+vim.cmd("doautocmd WinResized")
+local resize_after_capture_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "resize" then
+    resize_after_capture_seen = true
+  end
+end
+assert(resize_after_capture_seen, "resize should still be sent while a capture is in flight")
+serve_stdout(nil, { vim.json.encode({
+  id = stale_before_resize_capture_id,
+  status = "ok",
+  payload = "stale before resize frame",
+  url = "https://example.com/stale-before-resize",
+  title = "Stale Before Resize",
+  hints = {
+    {
+      id = 77,
+      kind = "button",
+      label = "Stale Resize Hint",
+      x = 1,
+      y = 2,
+      width = 3,
+      height = 4,
+      clickable = true,
+      focusable = true,
+    },
+  },
+}), "" })
+local stale_before_resize_applied = vim.wait(200, function()
+  return terminal.state().current_title == "Stale Before Resize"
+end)
+assert(not stale_before_resize_applied, "capture response made stale by resize should not update browser metadata")
+assert(terminal.state().live_refresh_request_id == nil, "stale capture tracking should be cleared after resize invalidates it")
+assert(#terminal.state().element_hints == 0, "capture response made stale by resize should not update hints")
 
 sent_requests = {}
 vim.cmd("doautocmd WinResized")
