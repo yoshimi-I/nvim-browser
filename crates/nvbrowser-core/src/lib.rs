@@ -5,6 +5,7 @@ pub mod target;
 pub mod terminal;
 
 pub use markdown::render_markdown_document;
+pub use renderer::chromium::ChromiumRenderer;
 pub use renderer::{
     FrameArtifact, NavigateRequest, NavigationResult, ReloadRequest, ReloadResult,
     RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest,

@@ -1,4 +1,8 @@
-use std::{fs, io::Cursor, path::PathBuf};
+use std::{
+    fs,
+    io::{self, BufRead, Cursor, Write},
+    path::PathBuf,
+};
 
 use base64::{engine::general_purpose, Engine};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -6,8 +10,10 @@ use image::{imageops::FilterType, DynamicImage, GenericImageView, ImageFormat, R
 use nvbrowser_core::{
     inspect_target, kitty_image_escape, render_markdown_document,
     renderer::chromium::{render_url_png, ChromiumOptions},
-    FrameArtifact, KittyImageTransfer, Viewport,
+    BrowserSession, ChromiumRenderer, FrameArtifact, KittyImageTransfer, NavigateRequest,
+    ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer, ScrollRequest, SessionId, Viewport,
 };
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Parser)]
 #[command(name = "nvbrowser")]
@@ -44,6 +50,20 @@ enum Command {
         columns: u32,
         #[arg(long)]
         rows: Option<u32>,
+    },
+    Serve {
+        #[arg(long, value_enum, default_value_t = ImageOutput::KittyUnicode)]
+        output: ImageOutput,
+        #[arg(long, default_value_t = 80)]
+        columns: u32,
+        #[arg(long, default_value_t = 24)]
+        rows: u32,
+        #[arg(long, default_value_t = 800)]
+        width: u32,
+        #[arg(long, default_value_t = 480)]
+        height: u32,
+        #[arg(long)]
+        url: Option<String>,
     },
 }
 
@@ -116,6 +136,281 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     print!("{}", image_to_ansi_halfblocks(&image, columns));
                 }
             }
+        }
+        Command::Serve {
+            output,
+            columns,
+            rows,
+            width,
+            height,
+            url,
+        } => {
+            let options = ServeOptions {
+                output,
+                columns,
+                rows,
+                viewport: Viewport::new(width, height),
+                initial_url: url,
+            };
+            serve_stdio(options)?;
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ServeRequest {
+    Navigate {
+        id: u64,
+        url: String,
+    },
+    Capture {
+        id: u64,
+    },
+    Scroll {
+        id: u64,
+        delta_x: i32,
+        delta_y: i32,
+    },
+    Reload {
+        id: u64,
+    },
+    Resize {
+        id: u64,
+        columns: u32,
+        rows: u32,
+        width: u32,
+        height: u32,
+    },
+    Quit {
+        id: u64,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct ServeResponse {
+    id: u64,
+    status: ServeStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ServeStatus {
+    Ok,
+    Error,
+}
+
+fn parse_serve_request(line: &str) -> Result<ServeRequest, serde_json::Error> {
+    serde_json::from_str(line)
+}
+
+fn encode_serve_response(response: &ServeResponse) -> String {
+    serde_json::to_string(response).expect("serve responses should serialize")
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ServeOptions {
+    output: ImageOutput,
+    columns: u32,
+    rows: u32,
+    viewport: Viewport,
+    initial_url: Option<String>,
+}
+
+struct ServeRuntime<R: Renderer> {
+    renderer: R,
+    session: BrowserSession,
+    columns: u32,
+    rows: u32,
+    output: ImageOutput,
+}
+
+impl<R: Renderer> ServeRuntime<R> {
+    fn new(renderer: R, options: ServeOptions) -> Self {
+        Self {
+            renderer,
+            session: BrowserSession::new(SessionId::new(1), options.viewport),
+            columns: options.columns,
+            rows: options.rows,
+            output: options.output,
+        }
+    }
+
+    fn handle(&mut self, request: ServeRequest) -> ServeResponse {
+        let id = request.id();
+        match self.try_handle(request) {
+            Ok(payload) => ServeResponse {
+                id,
+                status: ServeStatus::Ok,
+                payload,
+                error: None,
+            },
+            Err(error) => ServeResponse {
+                id,
+                status: ServeStatus::Error,
+                payload: None,
+                error: Some(error.to_string()),
+            },
+        }
+    }
+
+    fn try_handle(
+        &mut self,
+        request: ServeRequest,
+    ) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        match request {
+            ServeRequest::Navigate { url, .. } => {
+                let navigation = self.renderer.navigate(NavigateRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    url,
+                ))?;
+                self.session.navigate_active_page(navigation.url);
+                self.session.finish_active_page_load();
+                self.capture_payload().map(Some)
+            }
+            ServeRequest::Capture { .. } => self.capture_payload().map(Some),
+            ServeRequest::Scroll {
+                delta_x, delta_y, ..
+            } => {
+                self.renderer.scroll(ScrollRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    delta_x,
+                    delta_y,
+                ))?;
+                self.capture_payload().map(Some)
+            }
+            ServeRequest::Reload { .. } => {
+                self.renderer.reload(ReloadRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                ))?;
+                self.capture_payload().map(Some)
+            }
+            ServeRequest::Resize {
+                columns,
+                rows,
+                width,
+                height,
+                ..
+            } => {
+                self.columns = columns;
+                self.rows = rows;
+                self.session
+                    .update_active_viewport(Viewport::new(width, height));
+                self.capture_payload().map(Some)
+            }
+            ServeRequest::Quit { .. } => {
+                self.renderer.shutdown()?;
+                Ok(None)
+            }
+        }
+    }
+
+    fn capture_payload(&mut self) -> Result<String, Box<dyn std::error::Error>> {
+        let frame = self.renderer.render_frame(RenderFrameRequest::new(
+            self.session.id(),
+            self.session.active_page_id(),
+            self.session.active_page().viewport(),
+        ))?;
+        self.session.set_active_page_frame(frame.metadata.clone());
+        frame_to_payload(frame, self.output, self.columns, Some(self.rows))
+    }
+}
+
+impl ServeRequest {
+    fn id(&self) -> u64 {
+        match self {
+            ServeRequest::Navigate { id, .. }
+            | ServeRequest::Capture { id }
+            | ServeRequest::Scroll { id, .. }
+            | ServeRequest::Reload { id }
+            | ServeRequest::Resize { id, .. }
+            | ServeRequest::Quit { id } => *id,
+        }
+    }
+}
+
+fn frame_to_payload(
+    frame: RenderedFrame,
+    output: ImageOutput,
+    columns: u32,
+    rows: Option<u32>,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let FrameArtifact::Png(png) = frame.artifact else {
+        return Err("renderer returned a non-PNG artifact".into());
+    };
+    let viewport = frame.metadata.viewport;
+    match output {
+        ImageOutput::Kitty => {
+            let encoded = general_purpose::STANDARD.encode(png);
+            Ok(kitty_browse_escape(encoded, viewport, columns, rows))
+        }
+        ImageOutput::KittyUnicode => {
+            let encoded = general_purpose::STANDARD.encode(png);
+            Ok(kitty_unicode_browse_escape(
+                encoded, viewport, columns, rows,
+            ))
+        }
+        ImageOutput::Ansi => {
+            let image = image::load_from_memory_with_format(&png, ImageFormat::Png)?;
+            Ok(image_to_ansi_halfblocks(&image, columns))
+        }
+    }
+}
+
+fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> {
+    let mut runtime = ServeRuntime::new(
+        ChromiumRenderer::launch(options.viewport, ChromiumOptions::detect())?,
+        options.clone(),
+    );
+    let stdout = io::stdout();
+    let mut writer = stdout.lock();
+
+    if let Some(url) = options.initial_url {
+        writeln!(
+            writer,
+            "{}",
+            encode_serve_response(&runtime.handle(ServeRequest::Navigate { id: 0, url }))
+        )?;
+        writer.flush()?;
+    }
+
+    for line in io::stdin().lock().lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let request = match parse_serve_request(&line) {
+            Ok(request) => request,
+            Err(error) => {
+                writeln!(
+                    writer,
+                    "{}",
+                    encode_serve_response(&ServeResponse {
+                        id: 0,
+                        status: ServeStatus::Error,
+                        payload: None,
+                        error: Some(error.to_string()),
+                    })
+                )?;
+                writer.flush()?;
+                continue;
+            }
+        };
+        let should_quit = matches!(request, ServeRequest::Quit { .. });
+        let response = runtime.handle(request);
+        writeln!(writer, "{}", encode_serve_response(&response))?;
+        writer.flush()?;
+        if should_quit {
+            break;
         }
     }
 
@@ -192,6 +487,85 @@ fn rgba_to_rgb(pixel: Rgba<u8>) -> (u8, u8, u8) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nvbrowser_core::{
+        FrameId, FrameMetadata, NavigationResult, ReloadResult, RendererError, RendererErrorKind,
+        ScrollResult, ShutdownResult,
+    };
+
+    struct FakeRenderer {
+        url: Option<String>,
+        captures: u64,
+        scrolls: Vec<(i32, i32)>,
+        shutdown: bool,
+    }
+
+    impl FakeRenderer {
+        fn new() -> Self {
+            Self {
+                url: None,
+                captures: 0,
+                scrolls: Vec::new(),
+                shutdown: false,
+            }
+        }
+    }
+
+    impl Renderer for FakeRenderer {
+        fn navigate(
+            &mut self,
+            request: NavigateRequest,
+        ) -> Result<NavigationResult, RendererError> {
+            self.url = Some(request.url.clone());
+            Ok(NavigationResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                url: request.url,
+            })
+        }
+
+        fn render_frame(
+            &mut self,
+            request: RenderFrameRequest,
+        ) -> Result<RenderedFrame, RendererError> {
+            let url = self.url.clone().ok_or_else(|| {
+                RendererError::new(RendererErrorKind::InvalidState, "missing url")
+            })?;
+            self.captures += 1;
+            Ok(RenderedFrame {
+                metadata: FrameMetadata::new(
+                    FrameId::new(self.captures),
+                    request.session_id,
+                    request.page_id,
+                    url,
+                    request.viewport,
+                    1000 + self.captures,
+                ),
+                artifact: FrameArtifact::Png(tiny_png()),
+            })
+        }
+
+        fn scroll(&mut self, request: ScrollRequest) -> Result<ScrollResult, RendererError> {
+            self.scrolls.push((request.delta_x, request.delta_y));
+            Ok(ScrollResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                delta_x: request.delta_x,
+                delta_y: request.delta_y,
+            })
+        }
+
+        fn reload(&mut self, request: ReloadRequest) -> Result<ReloadResult, RendererError> {
+            Ok(ReloadResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
+            self.shutdown = true;
+            Ok(ShutdownResult {})
+        }
+    }
 
     #[test]
     fn kitty_browse_escape_includes_placement_when_rows_are_provided() {
@@ -236,5 +610,104 @@ mod tests {
         assert!(escape.contains("U=1"));
         assert!(escape.contains("i=1,c=80,r=24"));
         assert!(escape.contains("s=800,v=600"));
+    }
+
+    #[test]
+    fn serve_request_parses_navigate_and_resize_jsonl() {
+        assert_eq!(
+            parse_serve_request(r#"{"type":"navigate","id":1,"url":"https://example.com"}"#)
+                .expect("navigate request should parse"),
+            ServeRequest::Navigate {
+                id: 1,
+                url: "https://example.com".to_string(),
+            }
+        );
+
+        assert_eq!(
+            parse_serve_request(
+                r#"{"type":"resize","id":2,"columns":80,"rows":24,"width":800,"height":480}"#
+            )
+            .expect("resize request should parse"),
+            ServeRequest::Resize {
+                id: 2,
+                columns: 80,
+                rows: 24,
+                width: 800,
+                height: 480,
+            }
+        );
+    }
+
+    #[test]
+    fn serve_response_encodes_single_json_line() {
+        let response = ServeResponse {
+            id: 7,
+            status: ServeStatus::Ok,
+            payload: Some("frame".to_string()),
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r#"{"id":7,"status":"ok","payload":"frame"}"#
+        );
+    }
+
+    #[test]
+    fn serve_runtime_navigates_and_returns_frame_payload() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        let response = runtime.handle(ServeRequest::Navigate {
+            id: 3,
+            url: "https://example.com".to_string(),
+        });
+
+        assert_eq!(response.id, 3);
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.expect("payload").contains("▀"));
+    }
+
+    #[test]
+    fn serve_runtime_scrolls_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::Scroll {
+            id: 2,
+            delta_x: 0,
+            delta_y: 100,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(runtime.renderer.scrolls, vec![(0, 100)]);
+    }
+
+    fn tiny_png() -> Vec<u8> {
+        const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
+        general_purpose::STANDARD
+            .decode(PNG)
+            .expect("embedded PNG should decode")
     }
 }

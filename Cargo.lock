@@ -1311,6 +1311,8 @@ dependencies = [
  "image",
  "nvbrowser-core",
  "predicates",
+ "serde",
+ "serde_json",
  "tempfile",
 ]
 

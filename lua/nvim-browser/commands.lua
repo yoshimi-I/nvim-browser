@@ -27,6 +27,26 @@ function M.register(browser)
     browser.close()
   end, {})
 
+  vim.api.nvim_create_user_command("NBrowserRefresh", function()
+    browser.refresh()
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserReload", function()
+    browser.reload()
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserScrollDown", function(opts)
+    browser.scroll(tonumber(opts.args) or 400, 0)
+  end, {
+    nargs = "?",
+  })
+
+  vim.api.nvim_create_user_command("NBrowserScrollUp", function(opts)
+    browser.scroll(-(tonumber(opts.args) or 400), 0)
+  end, {
+    nargs = "?",
+  })
+
   vim.api.nvim_create_user_command("NBrowserToggle", function()
     browser.toggle()
   end, {})

@@ -9,6 +9,10 @@ local state = {
   last_payload = nil,
   last_payload_is_unicode = false,
   last_target = nil,
+  stream_buffer = "",
+  mode = nil,
+  next_request_id = 1,
+  stop_timer = nil,
 }
 
 local kitty_placeholder = vim.fn.nr2char(0x10eeee)
@@ -66,6 +70,20 @@ local function command_uses_browse_output(command, output)
   return false
 end
 
+local function command_uses_serve_output(command, output)
+  if type(command) ~= "table" or command[2] ~= "serve" then
+    return false
+  end
+
+  for index, value in ipairs(command) do
+    if value == "--output" and command[index + 1] == output then
+      return true
+    end
+  end
+
+  return false
+end
+
 local function command_uses_ansi_browse(command)
   return command_uses_browse_output(command, "ansi")
 end
@@ -76,6 +94,22 @@ end
 
 local function command_uses_kitty_unicode_browse(command)
   return command_uses_browse_output(command, "kitty-unicode")
+end
+
+local function command_uses_ansi_serve(command)
+  return command_uses_serve_output(command, "ansi")
+end
+
+local function command_uses_kitty_serve(command)
+  return command_uses_serve_output(command, "kitty")
+end
+
+local function command_uses_kitty_unicode_serve(command)
+  return command_uses_serve_output(command, "kitty-unicode")
+end
+
+local function command_uses_serve(command)
+  return type(command) == "table" and command[2] == "serve"
 end
 
 local function command_uses_captured_browse(command)
@@ -128,13 +162,14 @@ local function command_for_window(command)
     not command_uses_ansi_browse(command)
     and not command_uses_kitty_browse(command)
     and not command_uses_kitty_unicode_browse(command)
+    and not command_uses_serve(command)
   then
     return command
   end
 
   local adjusted = vim.list_extend({}, command)
 
-  if command_uses_ansi_browse(command) then
+  if command_uses_ansi_browse(command) or command_uses_ansi_serve(command) then
     add_option(adjusted, "--columns", preview_cells().columns)
     return adjusted
   end
@@ -145,6 +180,21 @@ local function command_for_window(command)
   add_option(adjusted, "--width", cells.columns * 10)
   add_option(adjusted, "--height", cells.rows * 20)
   return adjusted
+end
+
+local function command_target(command)
+  if type(command) ~= "table" then
+    return nil
+  end
+  if command[2] == "serve" then
+    for index, value in ipairs(command) do
+      if value == "--url" then
+        return command[index + 1]
+      end
+    end
+    return nil
+  end
+  return command[3]
 end
 
 local function kitty_placeholder_lines(columns, rows)
@@ -188,6 +238,77 @@ end
 
 local function send_terminal_escape(payload)
   vim.api.nvim_chan_send(vim.v.stderr, terminal_escape(payload))
+end
+
+local function send_serve_request(request)
+  if state.mode ~= "serve" or state.job_id == nil then
+    return false
+  end
+
+  request.id = state.next_request_id
+  state.next_request_id = state.next_request_id + 1
+  vim.fn.chansend(state.job_id, vim.json.encode(request) .. "\n")
+  return true
+end
+
+local function stop_existing_job(force)
+  if state.job_id == nil then
+    return
+  end
+
+  local job_id = state.job_id
+  if state.mode == "serve" and not force then
+    pcall(vim.fn.chansend, job_id, vim.json.encode({ type = "quit", id = 0 }) .. "\n")
+    if state.stop_timer ~= nil then
+      state.stop_timer:stop()
+      state.stop_timer:close()
+    end
+    state.stop_timer = vim.loop.new_timer()
+    state.stop_timer:start(500, 0, function()
+      vim.schedule(function()
+        pcall(vim.fn.jobstop, job_id)
+      end)
+    end)
+    state.job_id = nil
+    return
+  end
+
+  pcall(vim.fn.jobstop, job_id)
+  state.job_id = nil
+end
+
+local function request_resize()
+  if state.mode ~= "serve" or not is_valid_window() then
+    return false
+  end
+
+  local cells = preview_cells()
+  return send_serve_request({
+    type = "resize",
+    columns = cells.columns,
+    rows = cells.rows,
+    width = cells.columns * 10,
+    height = cells.rows * 20,
+  })
+end
+
+local function apply_payload_to_buffer(bufnr, payload, uses_kitty, uses_kitty_unicode, command)
+  state.last_payload = (uses_kitty or uses_kitty_unicode) and payload or nil
+  state.last_payload_is_unicode = uses_kitty_unicode and payload ~= nil
+
+  vim.bo[bufnr].modifiable = true
+  if uses_kitty_unicode then
+    local columns = command_option_value(command, "--columns") or preview_cells().columns
+    local rows = command_option_value(command, "--rows") or preview_cells().rows
+    local lines = kitty_placeholder_lines(columns, rows)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+    apply_kitty_placeholder_highlight(bufnr, #lines)
+  elseif not uses_kitty then
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {})
+    local channel = vim.api.nvim_open_term(bufnr, {})
+    vim.api.nvim_chan_send(channel, payload or "")
+  end
+  vim.bo[bufnr].modifiable = false
 end
 
 local function cursor_position_escape(winid)
@@ -238,14 +359,15 @@ function M.open(command)
   ensure_window()
   command = command_for_window(command)
 
-  if state.job_id ~= nil then
-    pcall(vim.fn.jobstop, state.job_id)
-  end
+  stop_existing_job(false)
 
   state.generation = state.generation + 1
   state.last_payload = nil
   state.last_payload_is_unicode = false
-  state.last_target = command[3]
+  state.last_target = command_target(command)
+  state.stream_buffer = ""
+  state.mode = nil
+  state.next_request_id = 1
   pcall(send_terminal_escape, kitty_delete_escape())
 
   local previous_bufnr = state.bufnr
@@ -261,11 +383,115 @@ function M.open(command)
   vim.bo[state.bufnr].buftype = "nofile"
   vim.bo[state.bufnr].swapfile = false
 
+  if command_uses_serve(command) then
+    state.mode = "serve"
+    local bufnr = state.bufnr
+    local generation = state.generation
+    local target = command_target(command)
+    local uses_kitty = command_uses_kitty_serve(command)
+    local uses_kitty_unicode = command_uses_kitty_unicode_serve(command)
+
+    vim.bo[state.bufnr].modifiable = true
+    vim.api.nvim_buf_set_lines(
+      state.bufnr,
+      0,
+      -1,
+      false,
+      preview_lines("Starting browser session...", target)
+    )
+    vim.bo[state.bufnr].modifiable = false
+
+    local function handle_line(line)
+      if line == "" then
+        return
+      end
+      local ok, response = pcall(vim.json.decode, line)
+      if not ok or type(response) ~= "table" then
+        return
+      end
+      vim.schedule(function()
+        if generation ~= state.generation or state.bufnr ~= bufnr then
+          return
+        end
+        if not vim.api.nvim_buf_is_valid(bufnr) then
+          return
+        end
+
+        if response.status == "ok" and response.payload ~= nil then
+          apply_payload_to_buffer(bufnr, response.payload, uses_kitty, uses_kitty_unicode, command)
+          if uses_kitty then
+            emit_terminal_graphics(response.payload, state.winid)
+          elseif uses_kitty_unicode then
+            send_terminal_escape(response.payload)
+            vim.cmd("redraw")
+          end
+          return
+        end
+
+        if response.status == "error" then
+          vim.bo[bufnr].modifiable = true
+          vim.api.nvim_buf_set_lines(
+            bufnr,
+            0,
+            -1,
+            false,
+            preview_lines("Browser session failed: " .. (response.error or "unknown error"), target)
+          )
+          vim.bo[bufnr].modifiable = false
+        end
+      end)
+    end
+
+    state.job_id = vim.fn.jobstart(command, {
+      stdout_buffered = false,
+      stderr_buffered = true,
+      on_stdout = function(_, data)
+        if not data then
+          return
+        end
+        state.stream_buffer = state.stream_buffer .. table.concat(data, "\n")
+        while true do
+          local newline = state.stream_buffer:find("\n", 1, true)
+          if newline == nil then
+            break
+          end
+          local line = state.stream_buffer:sub(1, newline - 1)
+          state.stream_buffer = state.stream_buffer:sub(newline + 1)
+          handle_line(line)
+        end
+      end,
+      on_exit = function(_, code)
+        vim.schedule(function()
+          if state.stop_timer ~= nil then
+            state.stop_timer:stop()
+            state.stop_timer:close()
+            state.stop_timer = nil
+          end
+          if generation ~= state.generation or state.bufnr ~= bufnr then
+            return
+          end
+          if code ~= 0 and vim.api.nvim_buf_is_valid(bufnr) then
+            vim.bo[bufnr].modifiable = true
+            vim.api.nvim_buf_set_lines(
+              bufnr,
+              0,
+              -1,
+              false,
+              preview_lines("Browser session exited: " .. code, target)
+            )
+            vim.bo[bufnr].modifiable = false
+          end
+        end)
+      end,
+    })
+    return
+  end
+
   if command_uses_captured_browse(command) then
     local bufnr = state.bufnr
     local winid = state.winid
     local generation = state.generation
-    local target = command[3]
+    local target = command_target(command)
     local uses_kitty = command_uses_kitty_browse(command)
     local uses_kitty_unicode = command_uses_kitty_unicode_browse(command)
     vim.bo[state.bufnr].modifiable = true
@@ -297,21 +523,12 @@ function M.open(command)
           end
 
           local payload = code == 0 and table.concat(chunks) or nil
-          state.last_payload = (code == 0 and (uses_kitty or uses_kitty_unicode)) and payload or nil
-          state.last_payload_is_unicode = code == 0 and uses_kitty_unicode and payload ~= nil
-
-          vim.bo[bufnr].modifiable = true
           if code == 0 and not uses_kitty and not uses_kitty_unicode then
-            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {})
-            local channel = vim.api.nvim_open_term(bufnr, {})
-            vim.api.nvim_chan_send(channel, payload or "")
+            apply_payload_to_buffer(bufnr, payload, uses_kitty, uses_kitty_unicode, command)
           elseif code == 0 and uses_kitty_unicode then
-            local columns = command_option_value(command, "--columns") or preview_cells().columns
-            local rows = command_option_value(command, "--rows") or preview_cells().rows
-            local lines = kitty_placeholder_lines(columns, rows)
-            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-            apply_kitty_placeholder_highlight(bufnr, #lines)
+            apply_payload_to_buffer(bufnr, payload, uses_kitty, uses_kitty_unicode, command)
           else
+            vim.bo[bufnr].modifiable = true
             vim.api.nvim_buf_set_lines(
               bufnr,
               0,
@@ -322,8 +539,8 @@ function M.open(command)
                 target
               )
             )
+            vim.bo[bufnr].modifiable = false
           end
-          vim.bo[bufnr].modifiable = false
 
           if code == 0 and uses_kitty then
             emit_terminal_graphics(payload, is_valid_window_id(state.winid) and state.winid or winid)
@@ -360,9 +577,7 @@ end
 
 function M.close()
   state.generation = state.generation + 1
-  if state.job_id ~= nil then
-    pcall(vim.fn.jobstop, state.job_id)
-  end
+  stop_existing_job(false)
   pcall(send_terminal_escape, kitty_delete_escape())
   if is_valid_window() then
     vim.api.nvim_win_close(state.winid, true)
@@ -376,6 +591,34 @@ function M.close()
   state.last_payload = nil
   state.last_payload_is_unicode = false
   state.last_target = nil
+  state.stream_buffer = ""
+  state.mode = nil
+  if state.stop_timer ~= nil then
+    state.stop_timer:stop()
+    state.stop_timer:close()
+    state.stop_timer = nil
+  end
+end
+
+function M.refresh()
+  if request_resize() then
+    return true
+  end
+  return send_serve_request({ type = "capture" })
+end
+
+function M.reload()
+  request_resize()
+  return send_serve_request({ type = "reload" })
+end
+
+function M.scroll(delta_y, delta_x)
+  request_resize()
+  return send_serve_request({
+    type = "scroll",
+    delta_x = delta_x or 0,
+    delta_y = delta_y or 0,
+  })
 end
 
 function M.toggle()
@@ -410,6 +653,7 @@ function M.state()
     has_buffer = is_valid_buffer(),
     has_window = is_valid_window(),
     has_payload = state.last_payload ~= nil,
+    mode = state.mode,
   }
 end
 

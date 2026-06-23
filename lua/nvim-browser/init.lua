@@ -40,6 +40,18 @@ function M.close()
   terminal.close()
 end
 
+function M.refresh()
+  return terminal.refresh()
+end
+
+function M.reload()
+  return terminal.reload()
+end
+
+function M.scroll(delta_y, delta_x)
+  return terminal.scroll(delta_y, delta_x)
+end
+
 function M.toggle()
   return terminal.toggle()
 end
