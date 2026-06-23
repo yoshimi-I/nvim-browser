@@ -294,6 +294,81 @@ assert(vim.tbl_contains(image_command, "--height"), "show-image should receive p
 assert(vim.tbl_contains(image_command, "50"), "show-image columns should come from preview width minus borders")
 assert(vim.tbl_contains(image_command, "12"), "show-image rows should come from preview height minus borders")
 
+terminal._test.set_mode("serve")
+local serve_command = terminal._test.command_for_window({ "nvbrowser", "serve", "--output", "kitty-unicode", "--url", "https://example.com" })
+assert(vim.tbl_contains(serve_command, "--rows"), "serve should receive preview rows")
+assert(vim.tbl_contains(serve_command, "11"), "serve rows should reserve one footer row below the rendered page")
+local ansi_serve_command = terminal._test.command_for_window({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
+assert(vim.tbl_contains(ansi_serve_command, "--rows"), "ansi serve should receive startup preview rows")
+assert(vim.tbl_contains(ansi_serve_command, "--width"), "ansi serve should receive startup preview pixel width")
+assert(vim.tbl_contains(ansi_serve_command, "--height"), "ansi serve should receive startup preview pixel height")
+assert(vim.tbl_contains(ansi_serve_command, "11"), "ansi serve rows should reserve the footer before the first frame")
+
+terminal._test.apply_serve_response({
+  id = 101,
+  status = "ok",
+  url = "https://example.com/long",
+  title = "Example Domain",
+  runtime = {
+    output = "kitty-unicode",
+    cells = { columns = 50, rows = 11 },
+  },
+  page = {
+    scroll_y = 250,
+    viewport_height = 600,
+    document_height = 1600,
+  },
+})
+local footer = terminal._test.preview_footer_line(80)
+assert(footer:match("^ok | Example Domain | scroll 25%%"), "footer should expose status, title, and page scroll")
+assert(footer:find("kitty%-unicode 50x11"), "footer should expose compact runtime geometry")
+assert(terminal._test.preview_footer_line(120):find("https://example%.com/long"), "footer should expose the current URL")
+assert(
+  vim.fn.strchars(terminal._test.preview_footer_line(24)) <= 24,
+  "footer truncation should respect the target column width"
+)
+
+local payload_bufnr = vim.api.nvim_create_buf(false, true)
+terminal._test.apply_payload_to_buffer(
+  payload_bufnr,
+  nil,
+  false,
+  true,
+  serve_command,
+  { columns = 50, rows = 11, width = 500, height = 220 }
+)
+local payload_lines = vim.api.nvim_buf_get_lines(payload_bufnr, 0, -1, false)
+assert(#payload_lines == 12, "kitty unicode serve buffers should include render rows plus one footer row")
+assert(payload_lines[12] == terminal._test.preview_footer_line(50), "footer should be appended after render rows")
+
+local ansi_bufnr = vim.api.nvim_create_buf(false, true)
+terminal._test.apply_payload_to_buffer(
+  ansi_bufnr,
+  "one\ntwo\nthree",
+  false,
+  false,
+  { "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" },
+  { columns = 20, rows = 2, width = 200, height = 40 }
+)
+local ansi_lines = vim.api.nvim_buf_get_lines(ansi_bufnr, 0, -1, false)
+assert(#ansi_lines == 3, "ansi serve buffers should trim render rows and append one footer row")
+assert(ansi_lines[3] == terminal._test.preview_footer_line(20), "ansi footer should be appended after render rows")
+
+terminal._test.set_job_id(99)
+terminal._test.set_cursor_addressable_preview(true)
+vim.api.nvim_set_current_win(image_win)
+vim.api.nvim_win_set_buf(image_win, payload_bufnr)
+vim.api.nvim_win_set_cursor(image_win, { 12, 0 })
+local footer_click_requests = {}
+local original_chansend_for_footer = vim.fn.chansend
+vim.fn.chansend = function(job_id, payload)
+  table.insert(footer_click_requests, { job_id = job_id, payload = payload })
+  return 1
+end
+assert(terminal.click_here() == false, "clicking the footer row should not send a browser click")
+assert(#footer_click_requests == 0, "footer clicks should not reach the serve backend")
+vim.fn.chansend = original_chansend_for_footer
+
 terminal.close()
 local original_jobstart = vim.fn.jobstart
 local original_chansend = vim.fn.chansend

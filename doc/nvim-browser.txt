@@ -122,7 +122,9 @@ COMMANDS                                           *nvim-browser-commands*
 							*:NBrowserClickHere*
 :NBrowserClickHere
 	Click the viewport point under the preview cursor and capture a fresh frame.
-	This requires an ANSI or Kitty Unicode browser preview.
+	This requires an ANSI or Kitty Unicode browser preview. Active browser
+	previews reserve the bottom preview row for a compact status footer; clicks
+	on that footer row are ignored instead of being mapped into page pixels.
 
 							*:NBrowserHints*
 :NBrowserHints
@@ -177,7 +179,9 @@ COMMANDS                                           *nvim-browser-commands*
 	Echo the last serve response status, current title, scroll progress, and
 	current URL. When available, the status line also includes serve runtime
 	diagnostics such as output mode, viewport, cell size, and renderer.
-	The preview buffer name is also kept in sync with the current title or URL.
+	The active browser preview also shows a compact footer with status, title
+	or URL, scroll progress, output mode, cell geometry, and current URL. The
+	preview buffer name is also kept in sync with the current title or URL.
 
 							*:NBrowserReader*
 :NBrowserReader

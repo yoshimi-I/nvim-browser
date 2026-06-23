@@ -24,7 +24,7 @@ This repository is an early MVP scaffold. Today it includes:
 - Neovim commands for opening, navigating, reloading, history, scrolling, finding text, text input, keys, selector focus, point clicks, and hinted element clicks
 - browser element hints overlaid on cursor-addressable previews
 - persistent Neovim preview surface reuse
-- current URL, title, scroll progress, status, runtime diagnostics, and preview buffer naming from the active browser session
+- current URL, title, scroll progress, status, runtime diagnostics, preview footer, and preview buffer naming from the active browser session
 - CLI integration tests for backend command contracts
 - initial OSS packaging and CI
 
@@ -187,7 +187,14 @@ Configure Neovim's default with
 `require("nvim-browser").setup({ image_fit = "contain" })`.
 
 `:NBrowserClickHere` maps the preview cursor to browser viewport pixels. It is
-available for ANSI and Kitty Unicode browser previews.
+available for ANSI and Kitty Unicode browser previews. Active browser previews
+reserve the bottom preview row for a compact status footer, so cursor clicks in
+that footer are not sent to the browser page.
+
+Browser preview footers show the latest serve status, title or URL, scroll
+progress, output mode, cell geometry, and current URL when reported by the
+Chromium/CDP session. `:NBrowserStatus` echoes the same browser-session state in
+the command line.
 
 `:NBrowserHints` echoes the latest keyboard labels and numbered browser
 elements, including link destinations when available. On ANSI and Kitty Unicode

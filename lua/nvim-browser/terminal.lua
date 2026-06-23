@@ -31,6 +31,7 @@ local state = {
 }
 
 local kitty_placeholder = vim.fn.nr2char(0x10eeee)
+local serve_footer_rows = 1
 local kitty_diacritics = {
   0x0305, 0x030d, 0x030e, 0x0310, 0x0312, 0x033d, 0x033e, 0x033f,
   0x0346, 0x034a, 0x034b, 0x034c, 0x0350, 0x0351, 0x0352, 0x0357,
@@ -179,15 +180,17 @@ local function command_option_value(command, option)
   return nil
 end
 
-local function preview_cells()
+local function preview_cells(opts)
+  opts = opts or {}
+  local reserved_rows = opts.reserve_footer and serve_footer_rows or 0
   return {
     columns = math.max(20, vim.api.nvim_win_get_width(state.winid) - 2),
-    rows = math.max(6, vim.api.nvim_win_get_height(state.winid) - 2),
+    rows = math.max(6, vim.api.nvim_win_get_height(state.winid) - 2 - reserved_rows),
   }
 end
 
 local function current_preview_geometry()
-  local cells = preview_cells()
+  local cells = preview_cells({ reserve_footer = state.mode == "serve" })
   return {
     columns = cells.columns,
     rows = cells.rows,
@@ -234,12 +237,14 @@ local function command_for_window(command)
     return adjusted
   end
 
-  if command_uses_ansi_browse(command) or command_uses_ansi_serve(command) then
+  local reserve_footer = command_uses_serve(command)
+
+  if command_uses_ansi_browse(command) and not command_uses_ansi_serve(command) then
     add_option(adjusted, "--columns", preview_cells().columns)
     return adjusted
   end
 
-  local cells = preview_cells()
+  local cells = preview_cells({ reserve_footer = reserve_footer })
   add_option(adjusted, "--columns", cells.columns)
   add_option(adjusted, "--rows", cells.rows)
   add_option(adjusted, "--width", cells.columns * 10)
@@ -707,6 +712,119 @@ local function update_browser_buffer_name(bufnr)
   return set_browser_buffer_name(bufnr, state.current_title, state.current_url or state.last_target)
 end
 
+local function page_scroll_label(metrics)
+  if type(metrics) ~= "table" then
+    return nil
+  end
+  local scroll_y = tonumber(metrics.scroll_y)
+  local viewport_height = tonumber(metrics.viewport_height)
+  local document_height = tonumber(metrics.document_height)
+  if scroll_y == nil or viewport_height == nil or document_height == nil then
+    return nil
+  end
+  local scrollable = document_height - viewport_height
+  if scrollable <= 0 then
+    return "scroll 0%"
+  end
+  local percent = math.floor(math.max(0, math.min(100, (scroll_y / scrollable) * 100)) + 0.5)
+  return "scroll " .. percent .. "%"
+end
+
+local function runtime_footer_label(runtime)
+  if type(runtime) ~= "table" then
+    return nil
+  end
+  local output = runtime.output ~= nil and runtime.output ~= vim.NIL and tostring(runtime.output) or nil
+  if type(runtime.cells) ~= "table" then
+    return output
+  end
+  local columns = runtime.cells.columns
+  local rows = runtime.cells.rows
+  if columns == nil or rows == nil then
+    return output
+  end
+  local cells = tostring(columns) .. "x" .. tostring(rows)
+  return output ~= nil and (output .. " " .. cells) or cells
+end
+
+local function truncate_cells(value, width)
+  width = tonumber(width) or 0
+  if width <= 0 then
+    return ""
+  end
+  value = tostring(value or "")
+  if vim.fn.strchars(value) <= width then
+    return value
+  end
+  return vim.fn.strcharpart(value, 0, width)
+end
+
+local function preview_footer_line(width)
+  local parts = {}
+  table.insert(parts, state.status or "idle")
+
+  local title = state.current_title ~= nil and state.current_title ~= "" and state.current_title or nil
+  local url = state.current_url ~= nil and state.current_url ~= "" and state.current_url or state.last_target
+  if title ~= nil then
+    table.insert(parts, title)
+  elseif url ~= nil and url ~= "" then
+    table.insert(parts, url)
+    url = nil
+  end
+
+  local scroll = page_scroll_label(state.page_metrics)
+  if scroll ~= nil then
+    table.insert(parts, scroll)
+  end
+
+  local runtime = runtime_footer_label(state.runtime_metadata)
+  if runtime ~= nil then
+    table.insert(parts, runtime)
+  end
+
+  if url ~= nil and url ~= "" then
+    table.insert(parts, url)
+  end
+
+  if state.status_error ~= nil and state.status_error ~= vim.NIL and state.status_error ~= "" then
+    table.insert(parts, state.status_error)
+  end
+
+  return truncate_cells(table.concat(parts, " | "), width)
+end
+
+local function append_preview_footer(lines, geometry)
+  if state.mode ~= "serve" then
+    return lines
+  end
+  geometry = geometry or current_preview_geometry()
+  local rows = geometry.rows or #lines
+  local columns = geometry.columns or preview_cells({ reserve_footer = true }).columns
+  local with_footer = {}
+  for index = 1, math.min(#lines, rows) do
+    table.insert(with_footer, lines[index])
+  end
+  while #with_footer < rows do
+    table.insert(with_footer, "")
+  end
+  table.insert(with_footer, preview_footer_line(columns))
+  return with_footer
+end
+
+local function refresh_preview_footer(bufnr, geometry)
+  if state.mode ~= "serve" or not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+  geometry = geometry or current_preview_geometry()
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  if #lines == 0 then
+    return
+  end
+  vim.bo[bufnr].modifiable = true
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, append_preview_footer(lines, geometry))
+  vim.bo[bufnr].modifiable = false
+end
+
 local function apply_payload_to_buffer(bufnr, payload, uses_kitty, uses_kitty_unicode, command, geometry)
   state.last_payload = (uses_kitty or uses_kitty_unicode) and payload or nil
   state.last_payload_is_unicode = uses_kitty_unicode and payload ~= nil
@@ -720,13 +838,18 @@ local function apply_payload_to_buffer(bufnr, payload, uses_kitty, uses_kitty_un
     local rows = (geometry and geometry.rows)
       or command_option_value(command, "--rows")
       or preview_cells().rows
-    local lines = kitty_placeholder_lines(columns, rows)
+    local lines = append_preview_footer(kitty_placeholder_lines(columns, rows), geometry)
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-    apply_kitty_placeholder_highlight(bufnr, #lines)
+    apply_kitty_placeholder_highlight(bufnr, rows)
   elseif not uses_kitty then
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {})
     local channel = vim.api.nvim_open_term(bufnr, {})
     vim.api.nvim_chan_send(channel, payload or "")
+    if command_uses_serve(command) then
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      vim.bo[bufnr].modifiable = true
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, append_preview_footer(lines, geometry))
+    end
   end
   vim.bo[bufnr].modifiable = false
 end
@@ -890,6 +1013,7 @@ function M.open(command)
 
         if response.status == "error" then
           hints_overlay.clear(bufnr)
+          refresh_preview_footer(bufnr, geometry)
           vim.api.nvim_echo({ { "nvim-browser: " .. (response.error or "unknown error"), "WarningMsg" } }, false, {})
         end
         hints_overlay.clear(bufnr)
@@ -1214,10 +1338,14 @@ function M.click_here()
   end
 
   local cursor = vim.api.nvim_win_get_cursor(state.winid)
+  local geometry = current_preview_geometry()
+  if cursor[1] > geometry.rows then
+    return false
+  end
   local column = vim.api.nvim_win_call(state.winid, function()
     return vim.fn.virtcol(".")
   end)
-  local point = M.viewport_point_for_cell(cursor[1], column)
+  local point = M.viewport_point_for_cell(cursor[1], column, geometry)
   return M.click_point(point.x, point.y)
 end
 
@@ -1327,6 +1455,9 @@ M._test = {
   handle_reader_response = handle_reader_response,
   reader_url_at_line = reader_url_at_line,
   apply_serve_response = apply_serve_response_metadata,
+  apply_payload_to_buffer = apply_payload_to_buffer,
+  preview_footer_line = preview_footer_line,
+  append_preview_footer = append_preview_footer,
   kitty_cleanup_escape = kitty_cleanup_escape,
   set_last_find_found = function(value)
     state.last_find_found = value
@@ -1336,6 +1467,9 @@ M._test = {
   end,
   set_job_id = function(value)
     state.job_id = value
+  end,
+  set_cursor_addressable_preview = function(value)
+    state.cursor_addressable_preview = value
   end,
   command_for_window = command_for_window,
   set_test_window = function(winid)
