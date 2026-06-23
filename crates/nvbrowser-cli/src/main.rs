@@ -280,12 +280,16 @@ enum ServeRequest {
     TextInput {
         id: u64,
         text: String,
+        #[serde(default = "default_capture")]
+        capture: bool,
     },
     KeyPress {
         id: u64,
         key: String,
         #[serde(default)]
         modifiers: Vec<String>,
+        #[serde(default = "default_capture")]
+        capture: bool,
     },
     FocusSelector {
         id: u64,
@@ -377,6 +381,10 @@ enum ServeStatus {
 
 fn parse_serve_request(line: &str) -> Result<ServeRequest, serde_json::Error> {
     serde_json::from_str(line)
+}
+
+fn default_capture() -> bool {
+    true
 }
 
 fn encode_serve_response(response: &ServeResponse) -> String {
@@ -676,16 +684,25 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.session.finish_active_page_load();
                 self.capture_payload().map(Some)
             }
-            ServeRequest::TextInput { text, .. } => {
+            ServeRequest::TextInput { text, capture, .. } => {
                 self.renderer.input_text(TextInputRequest::new(
                     self.session.id(),
                     self.session.active_page_id(),
                     text,
                 ))?;
                 self.settle_after_interaction()?;
-                self.capture_payload().map(Some)
+                if capture {
+                    self.capture_payload().map(Some)
+                } else {
+                    Ok(None)
+                }
             }
-            ServeRequest::KeyPress { key, modifiers, .. } => {
+            ServeRequest::KeyPress {
+                key,
+                modifiers,
+                capture,
+                ..
+            } => {
                 let key = key_with_modifiers(key, modifiers);
                 self.renderer.press_key(KeyPressRequest::new(
                     self.session.id(),
@@ -693,7 +710,11 @@ impl<R: Renderer> ServeRuntime<R> {
                     key,
                 ))?;
                 self.settle_after_interaction()?;
-                self.capture_payload().map(Some)
+                if capture {
+                    self.capture_payload().map(Some)
+                } else {
+                    Ok(None)
+                }
             }
             ServeRequest::FocusSelector { selector, .. } => {
                 self.renderer.focus_selector(FocusSelectorRequest::new(
@@ -1767,6 +1788,16 @@ mod tests {
             ServeRequest::TextInput {
                 id: 3,
                 text: "hello \"world\"\n".to_string(),
+                capture: true,
+            }
+        );
+        assert_eq!(
+            parse_serve_request(r#"{"type":"text_input","id":3,"text":"hi","capture":false}"#)
+                .expect("quiet text input request should parse"),
+            ServeRequest::TextInput {
+                id: 3,
+                text: "hi".to_string(),
+                capture: false,
             }
         );
 
@@ -1777,15 +1808,19 @@ mod tests {
                 id: 4,
                 key: "Enter".to_string(),
                 modifiers: Vec::new(),
+                capture: true,
             }
         );
         assert_eq!(
-            parse_serve_request(r#"{"type":"key_press","id":4,"key":"Tab","modifiers":["shift"]}"#)
-                .expect("modified key press request should parse"),
+            parse_serve_request(
+                r#"{"type":"key_press","id":4,"key":"Tab","modifiers":["shift"],"capture":false}"#
+            )
+            .expect("modified key press request should parse"),
             ServeRequest::KeyPress {
                 id: 4,
                 key: "Tab".to_string(),
                 modifiers: vec!["shift".to_string()],
+                capture: false,
             }
         );
     }
@@ -2536,6 +2571,7 @@ mod tests {
         let response = runtime.handle(ServeRequest::TextInput {
             id: 2,
             text: "hello".to_string(),
+            capture: true,
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
@@ -2553,6 +2589,35 @@ mod tests {
                 "hints"
             ]
         );
+    }
+
+    #[test]
+    fn serve_runtime_applies_quiet_text_input_without_capturing_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+            },
+        );
+
+        let response = runtime.handle(ServeRequest::TextInput {
+            id: 2,
+            text: "hello".to_string(),
+            capture: false,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_none());
+        assert!(response.hints.is_empty());
+        assert_eq!(runtime.renderer.text_inputs, vec!["hello"]);
+        assert_eq!(runtime.renderer.captures, 0);
+        assert_eq!(runtime.renderer.operations, vec!["text_input", "settle"]);
     }
 
     #[test]
@@ -2578,6 +2643,7 @@ mod tests {
             id: 2,
             key: "Enter".to_string(),
             modifiers: Vec::new(),
+            capture: true,
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
@@ -2595,6 +2661,36 @@ mod tests {
                 "hints"
             ]
         );
+    }
+
+    #[test]
+    fn serve_runtime_applies_quiet_key_press_without_capturing_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+            },
+        );
+
+        let response = runtime.handle(ServeRequest::KeyPress {
+            id: 2,
+            key: "Tab".to_string(),
+            modifiers: vec!["shift".to_string()],
+            capture: false,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_none());
+        assert!(response.hints.is_empty());
+        assert_eq!(runtime.renderer.key_presses, vec!["Shift+Tab"]);
+        assert_eq!(runtime.renderer.captures, 0);
+        assert_eq!(runtime.renderer.operations, vec!["key_press", "settle"]);
     }
 
     #[test]
@@ -2620,6 +2716,7 @@ mod tests {
             id: 2,
             key: "Tab".to_string(),
             modifiers: vec!["shift".to_string()],
+            capture: true,
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
@@ -2649,6 +2746,7 @@ mod tests {
             id: 2,
             key: "Tab".to_string(),
             modifiers: vec!["ctrl".to_string(), "shift".to_string()],
+            capture: true,
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
@@ -2928,6 +3026,7 @@ mod tests {
             id: 2,
             key: "Enter".to_string(),
             modifiers: Vec::new(),
+            capture: true,
         });
 
         assert_eq!(response.status, ServeStatus::Ok);

@@ -920,26 +920,71 @@ assert(terminal.start_text_mode({
 assert(terminal.state().text_mode_active == false, "browser text mode should exit after Escape")
 local text_mode_text = {}
 local text_mode_keys = {}
+local text_mode_captures = 0
+local text_mode_resizes = 0
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "text_input" then
-    table.insert(text_mode_text, decoded.text)
+    table.insert(text_mode_text, decoded.text .. ":" .. tostring(decoded.capture))
   end
   if ok and decoded.type == "key_press" then
-    table.insert(text_mode_keys, decoded.key .. ":" .. table.concat(decoded.modifiers or {}, "+"))
+    table.insert(text_mode_keys, decoded.key .. ":" .. table.concat(decoded.modifiers or {}, "+") .. ":" .. tostring(decoded.capture))
+  end
+  if ok and decoded.type == "capture" then
+    text_mode_captures = text_mode_captures + 1
+  end
+  if ok and decoded.type == "resize" then
+    text_mode_resizes = text_mode_resizes + 1
   end
 end
-assert(table.concat(text_mode_text, "") == "hi", "browser text mode should send printable keys as text_input")
+assert(table.concat(text_mode_text, ",") == "h:false,i:false", "browser text mode should send printable keys as quiet text_input")
 assert(
-  table.concat(text_mode_keys, ",") == "Enter:,Tab:,Tab:shift,Backspace:",
-  "browser text mode should translate common editing keys to browser key presses"
+  table.concat(text_mode_keys, ",") == "Enter::true,Tab::false,Tab:shift:false,Backspace::false",
+  "browser text mode should capture Enter immediately and keep editing keys quiet"
 )
+assert(text_mode_captures == 1, "browser text mode should capture once when it exits")
+assert(text_mode_resizes == 0, "browser text mode quiet input should not force resize captures for every key")
 assert(terminal._test.text_mode_key_action("\1") == nil, "browser text mode should ignore unmapped control characters")
 assert(terminal._test.text_mode_key_action(vim.keycode("<Del>")).key == "Delete", "browser text mode should translate Delete")
 assert(terminal._test.text_mode_key_action(vim.keycode("<Up>")).key == "ArrowUp", "browser text mode should translate ArrowUp")
 assert(terminal._test.text_mode_key_action(vim.keycode("<Down>")).key == "ArrowDown", "browser text mode should translate ArrowDown")
 assert(terminal._test.text_mode_key_action(vim.keycode("<Left>")).key == "ArrowLeft", "browser text mode should translate ArrowLeft")
 assert(terminal._test.text_mode_key_action(vim.keycode("<Right>")).key == "ArrowRight", "browser text mode should translate ArrowRight")
+
+terminal._test.clear_in_flight_capture()
+sent_requests = {}
+assert(terminal.refresh() == true, "test setup should create an in-flight capture")
+local stale_text_mode_capture_id = terminal.state().live_refresh_request_id
+assert(stale_text_mode_capture_id ~= nil, "test setup should track the in-flight capture")
+sent_requests = {}
+assert(terminal.start_text_mode({
+  getcharstr = (function()
+    local keys = { "x", vim.keycode("<Esc>") }
+    return function()
+      return table.remove(keys, 1)
+    end
+  end)(),
+}) == true, "browser text mode should exit while a capture is in flight")
+local forced_exit_capture = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "capture" then
+    forced_exit_capture = true
+  end
+end
+assert(forced_exit_capture, "browser text mode exit should queue a fresh capture even when another capture is in flight")
+serve_stdout(nil, { vim.json.encode({
+  id = stale_text_mode_capture_id,
+  status = "ok",
+  payload = "stale text mode frame",
+  url = "https://example.com/stale-text-mode",
+  title = "Stale Text Mode",
+}), "" })
+local stale_text_mode_applied = vim.wait(200, function()
+  return terminal.state().current_title == "Stale Text Mode"
+end)
+assert(not stale_text_mode_applied, "browser text mode should ignore the older in-flight capture it replaced")
+terminal._test.clear_in_flight_capture()
 
 terminal._test.set_cursor_addressable_preview(false)
 local text_mode_warning_count = #warnings
@@ -952,6 +997,31 @@ assert(
 )
 assert(#warnings == text_mode_warning_count + 1, "browser text mode should emit one inactive warning")
 terminal._test.set_cursor_addressable_preview(true)
+
+sent_requests = {}
+assert(terminal.start_text_mode({
+  getcharstr = (function()
+    local keys = { "z", vim.keycode("<Esc>") }
+    return function()
+      return table.remove(keys, 1)
+    end
+  end)(),
+}) == true, "test setup should leave a quiet request without a response")
+jobstart_calls = {}
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--markdown", "/tmp/quiet-reset.md" })
+sent_requests = {}
+assert(terminal.refresh() == true, "new serve session should be able to request capture")
+serve_stdout(nil, { vim.json.encode({
+  id = terminal.state().live_refresh_request_id,
+  status = "ok",
+  payload = "fresh frame after quiet reset",
+  url = "https://example.com/quiet-reset",
+  title = "Quiet Reset",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Quiet Reset"
+end), "new serve responses should not be suppressed by stale quiet request ids")
+terminal._test.clear_in_flight_capture()
 
 local reused_bufnr = second_state.bufnr
 terminal.open({ "nvbrowser", "show-image", "/tmp/image.png", "--output", "ansi" })

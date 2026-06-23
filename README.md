@@ -269,7 +269,10 @@ match through the browser's native find behavior, and captures a fresh frame.
 `:NBrowserTextMode` enters an interactive browser text mode for the focused
 preview: printable keys are sent as text, `<CR>`, `<Tab>`, `<S-Tab>`, `<BS>`,
 Delete, and arrow keys are forwarded as browser keys, and `<Esc>` exits the text
-mode locally. Focused preview buffers map `i` to this text mode by default after
+mode locally. Printable input and editing keys use a low-latency path that skips
+per-key screenshot recapture; exiting text mode triggers one fresh capture.
+Enter still requests an immediate captured response because it often submits or
+navigates. Focused preview buffers map `i` to this text mode by default after
 clicking a field or focusing one with hints. Outside text mode, preview buffers
 also forward common browser keys: `<CR>`, `<Tab>`, `<S-Tab>`, `<BS>`, `x`
 Delete, `ge` Escape, `A` Ctrl-A select-all, `gl` Meta-L focus location, and

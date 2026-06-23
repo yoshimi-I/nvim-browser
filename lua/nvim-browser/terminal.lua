@@ -28,6 +28,7 @@ local state = {
   live_refresh_request_id = nil,
   stopped_operation = nil,
   canceled_request_ids = {},
+  quiet_request_ids = {},
   last_find_found = nil,
   response_handlers = {},
   element_hints = {},
@@ -355,6 +356,9 @@ local function send_serve_request(request, on_response)
 
   request.id = state.next_request_id
   state.next_request_id = state.next_request_id + 1
+  if request.capture == false then
+    state.quiet_request_ids[request.id] = true
+  end
   if on_response ~= nil then
     state.response_handlers[request.id] = on_response
   end
@@ -782,7 +786,14 @@ local function start_live_refresh_timer(generation)
   end)
 end
 
-send_capture_request = function()
+send_capture_request = function(opts)
+  opts = opts or {}
+  if opts.force == true then
+    if state.live_refresh_request_id ~= nil then
+      state.canceled_request_ids[state.live_refresh_request_id] = true
+    end
+    clear_in_flight_capture()
+  end
   if state.live_refresh_request_id ~= nil then
     return false
   end
@@ -1218,6 +1229,7 @@ function M.open(command)
   state.live_refresh_request_id = nil
   state.stopped_operation = nil
   state.canceled_request_ids = {}
+  state.quiet_request_ids = {}
   state.last_find_found = nil
   state.response_handlers = {}
   state.element_hints = {}
@@ -1281,6 +1293,12 @@ function M.open(command)
           state.response_handlers[response.id] = nil
           return
         end
+        if state.quiet_request_ids[response.id] and response.status == "ok" then
+          state.quiet_request_ids[response.id] = nil
+          state.response_handlers[response.id] = nil
+          return
+        end
+        state.quiet_request_ids[response.id] = nil
         if response.id == state.live_refresh_request_id and state.pending_operation ~= nil then
           state.live_refresh_request_id = nil
           state.response_handlers[response.id] = nil
@@ -1499,6 +1517,7 @@ function M.close()
   state.live_refresh_request_id = nil
   state.stopped_operation = nil
   state.canceled_request_ids = {}
+  state.quiet_request_ids = {}
   state.last_find_found = nil
   state.response_handlers = {}
   state.element_hints = {}
@@ -1588,14 +1607,18 @@ function M.scroll(delta_y, delta_x)
   })
 end
 
-function M.input_text(text)
+function M.input_text(text, opts)
+  opts = opts or {}
   if text == nil or text == "" then
     return false
   end
-  request_resize()
+  if opts.resize ~= false then
+    request_resize()
+  end
   return send_serve_request({
     type = "text_input",
     text = text,
+    capture = opts.capture,
   })
 end
 
@@ -1604,11 +1627,14 @@ function M.press_key(key, opts)
   if key == nil or key == "" then
     return false
   end
-  request_resize()
+  if opts.resize ~= false then
+    request_resize()
+  end
   return send_serve_request({
     type = "key_press",
     key = key,
     modifiers = opts.modifiers or {},
+    capture = opts.capture,
   })
 end
 
@@ -1683,14 +1709,19 @@ function M.start_text_mode(opts)
       elseif action.type == "exit" then
         state.text_mode_active = false
       elseif action.type == "text" then
-        M.input_text(action.text)
+        M.input_text(action.text, { capture = false, resize = false })
       elseif action.type == "key" then
-        M.press_key(action.key, { modifiers = action.modifiers or {} })
+        M.press_key(action.key, {
+          capture = action.key == "Enter",
+          modifiers = action.modifiers or {},
+          resize = false,
+        })
       end
     end
   end)
   state.text_mode_active = false
   refresh_preview_footer(state.bufnr)
+  send_capture_request({ force = true })
   if not ok then
     error(err)
   end
