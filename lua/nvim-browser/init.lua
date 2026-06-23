@@ -48,6 +48,17 @@ function M.reload()
   return terminal.reload()
 end
 
+function M.navigate(target)
+  if target == nil or target == "" then
+    return false
+  end
+  local ok = terminal.navigate(target)
+  if ok then
+    state.last_target = target
+  end
+  return ok
+end
+
 function M.scroll(delta_y, delta_x)
   return terminal.scroll(delta_y, delta_x)
 end

@@ -94,6 +94,7 @@ Then run:
 :NBrowserOpen https://example.com
 :NBrowserPreview
 :NBrowserReload
+:NBrowserNavigate https://example.org
 :NBrowserScrollDown 400
 :NBrowserFocusSelector input[name="q"]
 :NBrowserInput hello

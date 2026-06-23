@@ -623,6 +623,17 @@ function M.reload()
   return send_serve_request({ type = "reload" })
 end
 
+function M.navigate(url)
+  if url == nil or url == "" then
+    return false
+  end
+  request_resize()
+  return send_serve_request({
+    type = "navigate",
+    url = url,
+  })
+end
+
 function M.scroll(delta_y, delta_x)
   request_resize()
   return send_serve_request({

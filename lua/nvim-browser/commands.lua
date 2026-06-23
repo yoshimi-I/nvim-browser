@@ -35,6 +35,12 @@ function M.register(browser)
     browser.reload()
   end, {})
 
+  vim.api.nvim_create_user_command("NBrowserNavigate", function(opts)
+    browser.navigate(opts.args)
+  end, {
+    nargs = 1,
+  })
+
   vim.api.nvim_create_user_command("NBrowserScrollDown", function(opts)
     browser.scroll(tonumber(opts.args) or 400, 0)
   end, {
