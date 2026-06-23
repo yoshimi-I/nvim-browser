@@ -1815,11 +1815,11 @@ function M.click_point(x, y)
     return false
   end
   request_resize()
-  return send_serve_request({
+  return send_pending_request({
     type = "click_point",
     x = x,
     y = y,
-  })
+  }, state.current_url or state.last_target or "click", "click")
 end
 
 function M.hover_point(x, y)

@@ -523,13 +523,26 @@ end
 local expected_mouse_point = terminal.viewport_point_for_cell(6, 25, { columns = 50, rows = 11, width = 450, height = 165 })
 assert(terminal.click_mouse({ winid = image_win, line = 6, column = 25 }) == true, "mouse click should send a browser click")
 local mouse_click_seen = false
+local mouse_click_request_id = nil
 for _, request in ipairs(footer_click_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "click_point" and decoded.x == expected_mouse_point.x and decoded.y == expected_mouse_point.y then
     mouse_click_seen = true
+    mouse_click_request_id = decoded.id
   end
 end
 assert(mouse_click_seen, "mouse click should map preview cells to viewport pixels")
+assert(terminal.state().pending_operation ~= nil, "mouse click should mark the browser click as pending")
+assert(terminal.state().pending_operation.label == "click", "mouse click pending footer should use a click label")
+assert(#terminal.state().element_hints == 0, "mouse click should clear stale hints while a capture is pending")
+terminal._test.apply_serve_response({
+  id = mouse_click_request_id,
+  status = "ok",
+  payload = "clicked frame",
+  url = "https://example.com/clicked",
+  title = "Clicked",
+})
+assert(terminal.state().pending_operation == nil, "matching click response should clear pending click state")
 
 footer_click_requests = {}
 vim.api.nvim_win_set_cursor(image_win, { 6, 24 })
@@ -648,6 +661,22 @@ end), "live refresh timer should send capture requests for active serve sessions
 local live_capture_id = terminal.state().live_refresh_request_id
 assert(live_capture_id ~= nil, "live refresh should track an in-flight capture request")
 assert(terminal._test.response_handler_count() == 1, "live refresh should register one response handler")
+
+sent_requests = {}
+assert(terminal.click_point(12, 24) == true, "point click should work while live refresh is enabled")
+local point_click_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(point_click_pending_id ~= nil, "point click should mark the browser click as pending")
+sent_requests = {}
+fake_timers[1].callback()
+local live_capture_during_click_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "capture" then
+    live_capture_during_click_seen = true
+  end
+end
+assert(not live_capture_during_click_seen, "live refresh should not capture while a click is pending")
+terminal._test.clear_pending_operation(point_click_pending_id)
 
 terminal._test.apply_serve_response({
   id = live_capture_id,
