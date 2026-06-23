@@ -140,6 +140,26 @@ fn show_image_ansi_contain_respects_rows() {
     assert_eq!(output.lines().count(), 2);
 }
 
+#[test]
+fn capture_rejects_conflicting_stdout_outputs_before_chrome_launch() {
+    let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+    command
+        .args([
+            "capture",
+            "https://example.com",
+            "--output",
+            "-",
+            "--metadata",
+            "-",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "cannot write PNG and metadata to stdout",
+        ));
+}
+
 fn tiny_png() -> Vec<u8> {
     const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, PNG)

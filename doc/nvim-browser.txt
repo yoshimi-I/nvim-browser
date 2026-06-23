@@ -16,6 +16,8 @@ is a Rust binary that classifies web targets and renders styled Markdown
 documents.
 The long-term renderer target is Chromium/CDP output displayed inside Ghostty
 through terminal graphics.
+The nvbrowser capture backend command can also export raw Chromium viewport PNG
+frames plus JSON metadata without terminal rendering.
 
 ==============================================================================
 INSTALLATION                                     *nvim-browser-installation*

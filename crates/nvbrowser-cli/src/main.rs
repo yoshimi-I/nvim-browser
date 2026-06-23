@@ -61,6 +61,17 @@ enum Command {
         #[arg(long)]
         rows: Option<u32>,
     },
+    Capture {
+        url: String,
+        #[arg(long, default_value_t = 1024)]
+        width: u32,
+        #[arg(long, default_value_t = 768)]
+        height: u32,
+        #[arg(long, default_value = "-")]
+        output: PathBuf,
+        #[arg(long)]
+        metadata: Option<PathBuf>,
+    },
     Serve {
         #[arg(long, value_enum, default_value_t = ImageOutput::KittyUnicode)]
         output: ImageOutput,
@@ -177,6 +188,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     print!("{}", image_to_ansi_halfblocks(&image, columns, None));
                 }
             }
+        }
+        Command::Capture {
+            url,
+            width,
+            height,
+            output,
+            metadata,
+        } => {
+            let viewport = Viewport::new(width, height);
+            validate_capture_destinations(&output, metadata.as_deref())?;
+            let frame = render_url_png(&url, viewport, ChromiumOptions::detect())?;
+            let stdout = io::stdout();
+            let mut writer = stdout.lock();
+            write_capture_outputs(&frame, &output, metadata.as_deref(), &mut writer)?;
         }
         Command::Serve {
             output,
@@ -307,6 +332,56 @@ fn parse_serve_request(line: &str) -> Result<ServeRequest, serde_json::Error> {
 
 fn encode_serve_response(response: &ServeResponse) -> String {
     serde_json::to_string(response).expect("serve responses should serialize")
+}
+
+fn write_capture_outputs<W: Write>(
+    frame: &RenderedFrame,
+    output: &Path,
+    metadata: Option<&Path>,
+    stdout: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    validate_capture_destinations(output, metadata)?;
+
+    let FrameArtifact::Png(png) = &frame.artifact else {
+        return Err("Chromium renderer returned a non-PNG artifact".into());
+    };
+
+    if is_stdout_path(output) {
+        stdout.write_all(png)?;
+    } else {
+        fs::write(output, png)?;
+    }
+
+    if let Some(metadata) = metadata {
+        let json = serde_json::to_string_pretty(&frame.metadata)?;
+        if is_stdout_path(metadata) {
+            writeln!(stdout, "{json}")?;
+        } else {
+            fs::write(metadata, format!("{json}\n"))?;
+        }
+    }
+
+    stdout.flush()?;
+    Ok(())
+}
+
+fn validate_capture_destinations(
+    output: &Path,
+    metadata: Option<&Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if is_stdout_path(output) && metadata.is_some_and(is_stdout_path) {
+        return Err("capture cannot write PNG and metadata to stdout simultaneously".into());
+    }
+    if let Some(metadata) = metadata {
+        if !is_stdout_path(output) && !is_stdout_path(metadata) && output == metadata {
+            return Err("capture cannot write PNG and metadata to the same file".into());
+        }
+    }
+    Ok(())
+}
+
+fn is_stdout_path(path: &Path) -> bool {
+    path == Path::new("-")
 }
 
 fn render_markdown_file(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
@@ -919,8 +994,8 @@ mod tests {
     use super::*;
     use nvbrowser_core::{
         ElementHintKind, ElementHintsRequest, FrameId, FrameMetadata, HistoryNavigationResult,
-        InputResult, InteractionSettleResult, NavigationResult, ReloadResult, RendererError,
-        RendererErrorKind, ScrollResult, ShutdownResult,
+        InputResult, InteractionSettleResult, NavigationResult, PageId, ReloadResult,
+        RendererError, RendererErrorKind, ScrollResult, ShutdownResult,
     };
 
     struct FakeRenderer {
@@ -2110,6 +2185,108 @@ mod tests {
                 .url,
             "https://example.com/after-submit"
         );
+    }
+
+    #[test]
+    fn capture_output_writes_png_file_and_metadata_file() {
+        let directory = tempfile::tempdir().expect("tempdir should be created");
+        let png_path = directory.path().join("frame.png");
+        let metadata_path = directory.path().join("frame.json");
+        let frame = fake_capture_frame();
+        let mut stdout = Vec::new();
+
+        write_capture_outputs(&frame, &png_path, Some(&metadata_path), &mut stdout)
+            .expect("capture outputs should be written");
+
+        assert_eq!(
+            std::fs::read(&png_path).expect("png should be readable"),
+            tiny_png()
+        );
+        let metadata =
+            std::fs::read_to_string(&metadata_path).expect("metadata should be readable");
+        let metadata: serde_json::Value =
+            serde_json::from_str(&metadata).expect("metadata should be valid json");
+        assert_eq!(metadata["url"], "https://example.com");
+        assert_eq!(metadata["viewport"]["width"], 320);
+        assert_eq!(metadata["viewport"]["height"], 200);
+        assert_eq!(metadata["captured_at_unix_ms"], 123456);
+        assert!(stdout.is_empty(), "file outputs should not write stdout");
+    }
+
+    #[test]
+    fn capture_output_can_write_png_to_stdout_buffer() {
+        let frame = fake_capture_frame();
+        let mut stdout = Vec::new();
+
+        write_capture_outputs(&frame, Path::new("-"), None, &mut stdout)
+            .expect("stdout capture should be written");
+
+        assert_eq!(stdout, tiny_png());
+    }
+
+    #[test]
+    fn capture_output_can_write_metadata_to_stdout_when_png_is_file() {
+        let directory = tempfile::tempdir().expect("tempdir should be created");
+        let png_path = directory.path().join("frame.png");
+        let frame = fake_capture_frame();
+        let mut stdout = Vec::new();
+
+        write_capture_outputs(&frame, &png_path, Some(Path::new("-")), &mut stdout)
+            .expect("metadata stdout capture should be written");
+
+        assert_eq!(
+            std::fs::read(&png_path).expect("png should be readable"),
+            tiny_png()
+        );
+        let metadata = String::from_utf8(stdout).expect("metadata should be utf-8");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&metadata).expect("metadata stdout should be valid json");
+        assert_eq!(parsed["url"], "https://example.com");
+        assert!(metadata.ends_with('\n'));
+    }
+
+    #[test]
+    fn capture_rejects_png_stdout_and_metadata_stdout_together() {
+        let frame = fake_capture_frame();
+        let mut stdout = Vec::new();
+
+        let error =
+            write_capture_outputs(&frame, Path::new("-"), Some(Path::new("-")), &mut stdout)
+                .expect_err("mixed stdout output should be rejected");
+
+        assert!(error
+            .to_string()
+            .contains("cannot write PNG and metadata to stdout"));
+    }
+
+    #[test]
+    fn capture_rejects_same_file_for_png_and_metadata() {
+        let directory = tempfile::tempdir().expect("tempdir should be created");
+        let output_path = directory.path().join("frame");
+        let frame = fake_capture_frame();
+        let mut stdout = Vec::new();
+
+        let error = write_capture_outputs(&frame, &output_path, Some(&output_path), &mut stdout)
+            .expect_err("same file output should be rejected");
+
+        assert!(error
+            .to_string()
+            .contains("cannot write PNG and metadata to the same file"));
+    }
+
+    fn fake_capture_frame() -> RenderedFrame {
+        RenderedFrame {
+            metadata: FrameMetadata::new(
+                FrameId::new(1),
+                SessionId::new(1),
+                PageId::new(1),
+                "https://example.com",
+                Some("Example Domain".to_string()),
+                Viewport::new(320, 200),
+                123456,
+            ),
+            artifact: FrameArtifact::Png(tiny_png()),
+        }
     }
 
     fn tiny_png() -> Vec<u8> {

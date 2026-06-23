@@ -8,7 +8,7 @@ use std::{
 use headless_chrome::{
     browser::tab::{point::Point, Tab},
     protocol::cdp::types::Method,
-    protocol::cdp::Page::CaptureScreenshotFormatOption,
+    protocol::cdp::Page::{CaptureScreenshotFormatOption, Viewport as CdpViewport},
     types::Bounds,
     Browser, LaunchOptions,
 };
@@ -73,9 +73,15 @@ pub fn render_url_png(
         .navigate_to(url)
         .and_then(|tab| tab.wait_until_navigated())
         .and_then(|tab| {
-            tab.capture_screenshot(CaptureScreenshotFormatOption::Png, None, None, true)
+            tab.capture_screenshot(
+                CaptureScreenshotFormatOption::Png,
+                None,
+                Some(viewport_clip(viewport)),
+                true,
+            )
         })
         .map_err(render_error)?;
+    let url = tab.get_url();
 
     Ok(RenderedFrame {
         metadata: FrameMetadata::new(
@@ -85,7 +91,7 @@ pub fn render_url_png(
             url,
             None,
             viewport,
-            0,
+            unix_time_ms(),
         ),
         artifact: FrameArtifact::Png(png),
     })
@@ -172,7 +178,12 @@ impl Renderer for ChromiumRenderer {
         resize_tab(&self.tab, request.viewport)?;
         let png = self
             .tab
-            .capture_screenshot(CaptureScreenshotFormatOption::Png, None, None, true)
+            .capture_screenshot(
+                CaptureScreenshotFormatOption::Png,
+                None,
+                Some(viewport_clip(request.viewport)),
+                true,
+            )
             .map_err(render_error)?;
         self.current_url = Some(self.tab.get_url());
         if let Some(title) = self.read_current_title() {
@@ -591,6 +602,16 @@ fn resize_tab(tab: &Tab, viewport: Viewport) -> Result<(), RendererError> {
     Ok(())
 }
 
+fn viewport_clip(viewport: Viewport) -> CdpViewport {
+    CdpViewport {
+        x: 0.0,
+        y: 0.0,
+        width: viewport.width as f64,
+        height: viewport.height as f64,
+        scale: 1.0,
+    }
+}
+
 fn unix_time_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -621,5 +642,16 @@ mod tests {
     #[test]
     fn unix_time_ms_returns_nonzero_timestamp() {
         assert!(unix_time_ms() > 0);
+    }
+
+    #[test]
+    fn viewport_clip_matches_requested_viewport() {
+        let clip = viewport_clip(Viewport::new(640, 480));
+
+        assert_eq!(clip.x, 0.0);
+        assert_eq!(clip.y, 0.0);
+        assert_eq!(clip.width, 640.0);
+        assert_eq!(clip.height, 480.0);
+        assert_eq!(clip.scale, 1.0);
     }
 }

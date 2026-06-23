@@ -110,11 +110,15 @@ Try the backend:
 cargo run -p nvbrowser -- inspect https://example.com
 cargo run -p nvbrowser -- render-md README.md
 cargo run -p nvbrowser -- show-image path/to/image.png
+cargo run -p nvbrowser -- capture https://example.com --output /tmp/frame.png --metadata /tmp/frame.json
 cargo run -p nvbrowser -- browse https://example.com
 ```
 
-The `browse` command requires Chrome or Chromium. Set `NVBROWSER_CHROME` when
-auto-detection cannot find the browser binary.
+The `browse` and `capture` commands require Chrome or Chromium. Set
+`NVBROWSER_CHROME` when auto-detection cannot find the browser binary.
+The `capture` command writes raw Chromium viewport PNG frames independently
+from terminal rendering. Use `--output -` for PNG bytes on stdout, and
+`--metadata -` for JSON metadata on stdout when `--output` is a file.
 
 Try the plugin from this checkout:
 
