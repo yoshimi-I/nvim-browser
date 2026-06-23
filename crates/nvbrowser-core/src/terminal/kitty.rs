@@ -47,6 +47,18 @@ impl KittyImageTransfer {
             self.base64_png
         )
     }
+
+    pub fn virtual_placement_escape(&self, columns: u32, rows: u32) -> String {
+        format!(
+            "\x1b_Ga=T,q=2,U=1,i={},c={},r={},f=100,s={},v={},m=0;{}\x1b\\",
+            self.image_id,
+            columns.max(1),
+            rows.max(1),
+            self.width_px,
+            self.height_px,
+            self.base64_png
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -158,6 +170,16 @@ mod tests {
         assert_eq!(
             transfer.placed_escape(7, 80, 24),
             "\x1b_Ga=T,i=42,p=7,c=80,r=24,f=100,s=800,v=600,m=0;iVBORw0KGgo=\x1b\\"
+        );
+    }
+
+    #[test]
+    fn image_transfer_can_create_virtual_unicode_placement() {
+        let transfer = KittyImageTransfer::new(42, 800, 600, "iVBORw0KGgo=");
+
+        assert_eq!(
+            transfer.virtual_placement_escape(80, 24),
+            "\x1b_Ga=T,q=2,U=1,i=42,c=80,r=24,f=100,s=800,v=600,m=0;iVBORw0KGgo=\x1b\\"
         );
     }
 

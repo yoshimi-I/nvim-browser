@@ -10,7 +10,7 @@ end
 
 local function graphics_output(opts)
   local graphics = opts and opts.graphics or "auto"
-  if graphics == "kitty" or graphics == "ansi" then
+  if graphics == "kitty" or graphics == "kitty-unicode" or graphics == "ansi" then
     return graphics
   end
 

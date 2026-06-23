@@ -7,7 +7,27 @@ local state = {
   image_id = 1,
   generation = 0,
   last_payload = nil,
+  last_payload_is_unicode = false,
   last_target = nil,
+}
+
+local kitty_placeholder = vim.fn.nr2char(0x10eeee)
+local kitty_diacritics = {
+  0x0305, 0x030d, 0x030e, 0x0310, 0x0312, 0x033d, 0x033e, 0x033f,
+  0x0346, 0x034a, 0x034b, 0x034c, 0x0350, 0x0351, 0x0352, 0x0357,
+  0x035b, 0x0363, 0x0364, 0x0365, 0x0366, 0x0367, 0x0368, 0x0369,
+  0x036a, 0x036b, 0x036c, 0x036d, 0x036e, 0x036f, 0x0483, 0x0484,
+  0x0485, 0x0486, 0x0487, 0x0592, 0x0593, 0x0594, 0x0595, 0x0597,
+  0x0598, 0x0599, 0x059c, 0x059d, 0x059e, 0x059f, 0x05a0, 0x05a1,
+  0x05a8, 0x05a9, 0x05ab, 0x05ac, 0x05af, 0x05c4, 0x0610, 0x0611,
+  0x0612, 0x0613, 0x0614, 0x0615, 0x0616, 0x0617, 0x0657, 0x0658,
+  0x0659, 0x065a, 0x065b, 0x065d, 0x065e, 0x06d6, 0x06d7, 0x06d8,
+  0x06d9, 0x06da, 0x06db, 0x06dc, 0x06df, 0x06e0, 0x06e1, 0x06e2,
+  0x06e4, 0x06e7, 0x06e8, 0x06eb, 0x06ec, 0x0730, 0x0732, 0x0733,
+  0x0735, 0x0736, 0x073a, 0x073d, 0x073f, 0x0740, 0x0741, 0x0743,
+  0x0745, 0x0747, 0x0749, 0x074a, 0x07eb, 0x07ec, 0x07ed, 0x07ee,
+  0x07ef, 0x07f0, 0x07f1, 0x0816, 0x0817, 0x0818, 0x0819, 0x081b,
+  0x081c, 0x081d, 0x081e, 0x081f, 0x0820, 0x0821, 0x0822, 0x0823,
 }
 
 local function preview_width()
@@ -54,8 +74,14 @@ local function command_uses_kitty_browse(command)
   return command_uses_browse_output(command, "kitty")
 end
 
+local function command_uses_kitty_unicode_browse(command)
+  return command_uses_browse_output(command, "kitty-unicode")
+end
+
 local function command_uses_captured_browse(command)
-  return command_uses_ansi_browse(command) or command_uses_kitty_browse(command)
+  return command_uses_ansi_browse(command)
+    or command_uses_kitty_browse(command)
+    or command_uses_kitty_unicode_browse(command)
 end
 
 local function command_has_columns(command)
@@ -70,6 +96,15 @@ local function command_has_option(command, option)
   end
 
   return false
+end
+
+local function command_option_value(command, option)
+  for index, value in ipairs(command) do
+    if value == option then
+      return tonumber(command[index + 1])
+    end
+  end
+  return nil
 end
 
 local function preview_cells()
@@ -89,7 +124,11 @@ local function add_option(command, option, value)
 end
 
 local function command_for_window(command)
-  if not command_uses_ansi_browse(command) and not command_uses_kitty_browse(command) then
+  if
+    not command_uses_ansi_browse(command)
+    and not command_uses_kitty_browse(command)
+    and not command_uses_kitty_unicode_browse(command)
+  then
     return command
   end
 
@@ -106,6 +145,33 @@ local function command_for_window(command)
   add_option(adjusted, "--width", cells.columns * 10)
   add_option(adjusted, "--height", cells.rows * 20)
   return adjusted
+end
+
+local function kitty_placeholder_lines(columns, rows)
+  local max_index = #kitty_diacritics
+  columns = math.max(1, math.min(columns, max_index))
+  rows = math.max(1, math.min(rows, max_index))
+
+  local lines = {}
+  for row = 0, rows - 1 do
+    local row_mark = vim.fn.nr2char(kitty_diacritics[row + 1])
+    local cells = {}
+    for column = 0, columns - 1 do
+      local column_mark = vim.fn.nr2char(kitty_diacritics[column + 1])
+      table.insert(cells, kitty_placeholder .. row_mark .. column_mark)
+    end
+    table.insert(lines, table.concat(cells))
+  end
+  return lines
+end
+
+local function apply_kitty_placeholder_highlight(bufnr, rows)
+  vim.api.nvim_set_hl(0, "NBrowserKittyImage", { fg = "#000001", ctermfg = 1 })
+  local namespace = vim.api.nvim_create_namespace("nvim-browser-kitty-image")
+  vim.api.nvim_buf_clear_namespace(bufnr, namespace, 0, -1)
+  for row = 0, rows - 1 do
+    vim.api.nvim_buf_add_highlight(bufnr, namespace, "NBrowserKittyImage", row, 0, -1)
+  end
 end
 
 local function kitty_delete_escape()
@@ -178,6 +244,7 @@ function M.open(command)
 
   state.generation = state.generation + 1
   state.last_payload = nil
+  state.last_payload_is_unicode = false
   state.last_target = command[3]
   pcall(send_terminal_escape, kitty_delete_escape())
 
@@ -200,6 +267,7 @@ function M.open(command)
     local generation = state.generation
     local target = command[3]
     local uses_kitty = command_uses_kitty_browse(command)
+    local uses_kitty_unicode = command_uses_kitty_unicode_browse(command)
     vim.bo[state.bufnr].modifiable = true
     vim.api.nvim_buf_set_lines(
       state.bufnr,
@@ -229,13 +297,20 @@ function M.open(command)
           end
 
           local payload = code == 0 and table.concat(chunks) or nil
-          state.last_payload = uses_kitty and payload or nil
+          state.last_payload = (code == 0 and (uses_kitty or uses_kitty_unicode)) and payload or nil
+          state.last_payload_is_unicode = code == 0 and uses_kitty_unicode and payload ~= nil
 
           vim.bo[bufnr].modifiable = true
-          if code == 0 and not uses_kitty then
+          if code == 0 and not uses_kitty and not uses_kitty_unicode then
             vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {})
             local channel = vim.api.nvim_open_term(bufnr, {})
             vim.api.nvim_chan_send(channel, payload or "")
+          elseif code == 0 and uses_kitty_unicode then
+            local columns = command_option_value(command, "--columns") or preview_cells().columns
+            local rows = command_option_value(command, "--rows") or preview_cells().rows
+            local lines = kitty_placeholder_lines(columns, rows)
+            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+            apply_kitty_placeholder_highlight(bufnr, #lines)
           else
             vim.api.nvim_buf_set_lines(
               bufnr,
@@ -252,6 +327,9 @@ function M.open(command)
 
           if code == 0 and uses_kitty then
             emit_terminal_graphics(payload, is_valid_window_id(state.winid) and state.winid or winid)
+          elseif code == 0 and uses_kitty_unicode then
+            send_terminal_escape(payload)
+            vim.cmd("redraw")
           end
         end)
       end,
@@ -271,7 +349,12 @@ function M.focus()
   end
 
   vim.api.nvim_set_current_win(state.winid)
-  emit_terminal_graphics(state.last_payload, state.winid)
+  if state.last_payload_is_unicode and state.last_payload ~= nil then
+    send_terminal_escape(state.last_payload)
+    vim.cmd("redraw")
+  else
+    emit_terminal_graphics(state.last_payload, state.winid)
+  end
   return true
 end
 
@@ -291,6 +374,7 @@ function M.close()
   state.winid = nil
   state.job_id = nil
   state.last_payload = nil
+  state.last_payload_is_unicode = false
   state.last_target = nil
 end
 
@@ -305,7 +389,12 @@ function M.toggle()
   if is_valid_buffer() then
     create_window()
     vim.api.nvim_win_set_buf(state.winid, state.bufnr)
-    emit_terminal_graphics(state.last_payload, state.winid)
+    if state.last_payload_is_unicode and state.last_payload ~= nil then
+      send_terminal_escape(state.last_payload)
+      vim.cmd("redraw")
+    else
+      emit_terminal_graphics(state.last_payload, state.winid)
+    end
     return true
   end
 

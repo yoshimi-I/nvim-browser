@@ -50,6 +50,7 @@ enum Command {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum ImageOutput {
     Kitty,
+    KittyUnicode,
     Ansi,
 }
 
@@ -77,6 +78,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let encoded = general_purpose::STANDARD.encode(png.into_inner());
                     print!("{}", kitty_image_escape(&encoded));
                 }
+                ImageOutput::KittyUnicode => {
+                    return Err("kitty-unicode output is only supported by browse".into());
+                }
                 ImageOutput::Ansi => {
                     print!("{}", image_to_ansi_halfblocks(&image, columns));
                 }
@@ -99,6 +103,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ImageOutput::Kitty => {
                     let encoded = general_purpose::STANDARD.encode(png);
                     print!("{}", kitty_browse_escape(encoded, viewport, columns, rows));
+                }
+                ImageOutput::KittyUnicode => {
+                    let encoded = general_purpose::STANDARD.encode(png);
+                    print!(
+                        "{}",
+                        kitty_unicode_browse_escape(encoded, viewport, columns, rows)
+                    );
                 }
                 ImageOutput::Ansi => {
                     let image = image::load_from_memory_with_format(&png, ImageFormat::Png)?;
@@ -123,6 +134,16 @@ fn kitty_browse_escape(
     };
 
     transfer.placed_escape(1, columns, rows)
+}
+
+fn kitty_unicode_browse_escape(
+    encoded_png: String,
+    viewport: Viewport,
+    columns: u32,
+    rows: Option<u32>,
+) -> String {
+    let transfer = KittyImageTransfer::new(1, viewport.width, viewport.height, encoded_png);
+    transfer.virtual_placement_escape(columns, rows.unwrap_or(1))
 }
 
 fn image_to_ansi_halfblocks(image: &DynamicImage, columns: u32) -> String {
@@ -199,5 +220,21 @@ mod tests {
 
         assert!(escape.contains("a=T,i=1"));
         assert!(!escape.contains("a=p"));
+    }
+
+    #[test]
+    fn kitty_unicode_browse_escape_creates_quiet_virtual_placement() {
+        let escape = kitty_unicode_browse_escape(
+            "iVBORw0KGgo=".to_string(),
+            Viewport::new(800, 600),
+            80,
+            Some(24),
+        );
+
+        assert!(escape.contains("a=T"));
+        assert!(escape.contains("q=2"));
+        assert!(escape.contains("U=1"));
+        assert!(escape.contains("i=1,c=80,r=24"));
+        assert!(escape.contains("s=800,v=600"));
     }
 }
