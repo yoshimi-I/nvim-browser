@@ -240,6 +240,8 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
     <style>
       #hover-menu {{ display: none; margin-top: 8px; }}
       #hover-source:hover + #hover-menu {{ display: inline-block; }}
+      #wheel-box {{ position: fixed; left: 16px; top: 220px; width: 220px; height: 60px; overflow: auto; border: 1px solid #333; }}
+      #wheel-box-inner {{ height: 240px; }}
     </style>
   </head>
   <body>
@@ -255,6 +257,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
       <a id="hover-menu" href="#hovered">Hover Docs</a>
       <div contenteditable="true">Editable target</div>
       <p id="out">empty</p>
+      <div id="wheel-box" onwheel="document.getElementById('out').textContent='wheel box wheeled'" onscroll="document.getElementById('out').textContent='wheel box scrolled'"><button id="wheel-button">Wheel Target</button><div id="wheel-box-inner">Wheel space</div></div>
       <section id="docs">Docs section</section>
       <section id="hovered">Hovered section</section>
     </main>
@@ -488,8 +491,32 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         "hover_hint should reveal hover-only link hints"
     );
 
-    let resized = serve.request(serde_json::json!({
+    let wheel_hint = hovered["hints"]
+        .as_array()
+        .expect("hover response should include fresh hints")
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Wheel Target")
+        .expect("real Chromium hints should include the nested wheel target button");
+    let wheeled = serve.request(serde_json::json!({
         "id": 13,
+        "type": "wheel_point",
+        "x": wheel_hint["x"].as_f64().expect("wheel target should include x"),
+        "y": wheel_hint["y"].as_f64().expect("wheel target should include y"),
+        "delta_x": 0.0,
+        "delta_y": 160.0
+    }));
+    assert_eq!(wheeled["status"], "ok", "wheel_point should succeed");
+    let wheeled_text = serve.request(serde_json::json!({ "id": 14, "type": "page_text" }));
+    let wheeled_page_text = wheeled_text["text"]["text"]
+        .as_str()
+        .expect("page_text after wheel should include text");
+    assert!(
+        wheeled_page_text.contains("wheel box scrolled"),
+        "wheel_point should scroll the nested element at the target coordinates; page text was {wheeled_page_text:?}"
+    );
+
+    let resized = serve.request(serde_json::json!({
+        "id": 15,
         "type": "resize",
         "columns": 32,
         "rows": 10,
@@ -508,7 +535,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         .as_u64()
         .expect("target blank link hint should include id");
     let adopted_blank = serve.request(serde_json::json!({
-        "id": 14,
+        "id": 16,
         "type": "click_hint",
         "hint_id": blank_target_hint
     }));
@@ -526,7 +553,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
             .is_some_and(|url| url.ends_with("blank-target.html")),
         "target blank response should use the adopted page URL"
     );
-    let adopted_blank_text = serve.request(serde_json::json!({ "id": 15, "type": "page_text" }));
+    let adopted_blank_text = serve.request(serde_json::json!({ "id": 17, "type": "page_text" }));
     assert!(
         adopted_blank_text["text"]["text"]
             .as_str()
@@ -543,7 +570,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         .as_u64()
         .expect("adopted alert hint should include id");
     let adopted_alert = serve.request(serde_json::json!({
-        "id": 16,
+        "id": 18,
         "type": "click_hint",
         "hint_id": adopted_alert_hint
     }));
@@ -551,7 +578,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         adopted_alert["status"], "ok",
         "adopted tab alert should not hang"
     );
-    let adopted_alert_text = serve.request(serde_json::json!({ "id": 17, "type": "page_text" }));
+    let adopted_alert_text = serve.request(serde_json::json!({ "id": 19, "type": "page_text" }));
     assert!(
         adopted_alert_text["text"]["text"]
             .as_str()
@@ -568,7 +595,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         .as_u64()
         .expect("window open button hint should include id");
     let adopted_window = serve.request(serde_json::json!({
-        "id": 18,
+        "id": 20,
         "type": "click_hint",
         "hint_id": open_window_hint
     }));
@@ -580,7 +607,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         adopted_window["title"], "Window Open Adopted",
         "window.open click should adopt the newly opened page target"
     );
-    let adopted_window_text = serve.request(serde_json::json!({ "id": 19, "type": "page_text" }));
+    let adopted_window_text = serve.request(serde_json::json!({ "id": 21, "type": "page_text" }));
     assert!(
         adopted_window_text["text"]["text"]
             .as_str()
@@ -588,8 +615,8 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         "page_text should read from the adopted window.open page"
     );
 
-    let quit = serve.request(serde_json::json!({ "id": 20, "type": "quit" }));
-    assert_eq!(quit["id"], 20);
+    let quit = serve.request(serde_json::json!({ "id": 22, "type": "quit" }));
+    assert_eq!(quit["id"], 22);
     assert_eq!(quit["status"], "ok");
 
     serve.wait_success();

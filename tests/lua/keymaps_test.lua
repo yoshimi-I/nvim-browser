@@ -63,6 +63,10 @@ local browser = {
   click_mouse = function()
     table.insert(calls, "click_mouse")
   end,
+  wheel_mouse = function(delta_y, delta_x)
+    table.insert(calls, "wheel:" .. tostring(delta_y) .. ":" .. tostring(delta_x))
+    return true
+  end,
   click_here = function()
     table.insert(calls, "click_here")
   end,
@@ -297,9 +301,27 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,address,find:local,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,text_mode,paste:+,yank:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,hover_here,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,address,find:local,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,text_mode,paste:+,yank:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,hover_here,close,click_mouse,wheel:120:0,wheel:-120:0,stop",
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
+
+local original_wheel_mouse = browser.wheel_mouse
+browser.wheel_mouse = function(delta_y, delta_x)
+  table.insert(calls, "wheel:false:" .. tostring(delta_y) .. ":" .. tostring(delta_x))
+  return false
+end
+local fallback_start = #calls
+trigger_buffer(first_bufnr, "<ScrollWheelDown>")
+trigger_buffer(first_bufnr, "<ScrollWheelUp>")
+local fallback_calls = {}
+for index = fallback_start + 1, #calls do
+  table.insert(fallback_calls, calls[index])
+end
+assert(
+  table.concat(fallback_calls, ",") == "wheel:false:120:0,scroll:120:0,wheel:false:-120:0,scroll:-120:0",
+  "buffer-local wheel controls should fall back to page scroll when native wheel coordinates are unavailable"
+)
+browser.wheel_mouse = original_wheel_mouse
 
 vim.keymap.set("n", "x", function()
   table.insert(calls, "buffer-existing")

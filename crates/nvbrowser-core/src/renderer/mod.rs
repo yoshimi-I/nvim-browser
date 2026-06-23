@@ -43,6 +43,8 @@ pub trait Renderer {
 
     fn hover_point(&mut self, request: HoverPointRequest) -> Result<InputResult, RendererError>;
 
+    fn wheel_point(&mut self, request: WheelPointRequest) -> Result<InputResult, RendererError>;
+
     fn find_text(&mut self, request: FindTextRequest) -> Result<FindTextResult, RendererError>;
 
     fn page_text(&mut self, _request: PageTextRequest) -> Result<PageTextSnapshot, RendererError> {
@@ -372,6 +374,16 @@ pub struct HoverPointRequest {
     pub y: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct WheelPointRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub x: f64,
+    pub y: f64,
+    pub delta_x: f64,
+    pub delta_y: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FindTextRequest {
     pub session_id: SessionId,
@@ -504,6 +516,26 @@ impl HoverPointRequest {
             page_id,
             x,
             y,
+        }
+    }
+}
+
+impl WheelPointRequest {
+    pub const fn new(
+        session_id: SessionId,
+        page_id: PageId,
+        x: f64,
+        y: f64,
+        delta_x: f64,
+        delta_y: f64,
+    ) -> Self {
+        Self {
+            session_id,
+            page_id,
+            x,
+            y,
+            delta_x,
+            delta_y,
         }
     }
 }
@@ -718,6 +750,16 @@ mod tests {
             })
         }
 
+        fn wheel_point(
+            &mut self,
+            request: WheelPointRequest,
+        ) -> Result<InputResult, RendererError> {
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
         fn find_text(&mut self, request: FindTextRequest) -> Result<FindTextResult, RendererError> {
             Ok(FindTextResult {
                 session_id: request.session_id,
@@ -870,6 +912,11 @@ mod tests {
         let hover = renderer
             .hover_point(HoverPointRequest::new(session_id, page_id, 12.5, 24.25))
             .expect("point hover should succeed");
+        let wheel = renderer
+            .wheel_point(WheelPointRequest::new(
+                session_id, page_id, 12.5, 24.25, 0.0, 120.0,
+            ))
+            .expect("point wheel should succeed");
         let focus_hint = renderer
             .focus_hint(FocusHintRequest::new(session_id, page_id, 2))
             .expect("hint focus should succeed");
@@ -892,6 +939,8 @@ mod tests {
         assert_eq!(click.page_id, page_id);
         assert_eq!(hover.session_id, session_id);
         assert_eq!(hover.page_id, page_id);
+        assert_eq!(wheel.session_id, session_id);
+        assert_eq!(wheel.page_id, page_id);
     }
 
     #[test]

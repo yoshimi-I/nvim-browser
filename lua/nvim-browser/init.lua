@@ -199,6 +199,10 @@ function M.hover_point(x, y)
   return terminal.hover_point(x, y)
 end
 
+function M.wheel_point(x, y, delta_y, delta_x)
+  return terminal.wheel_point(x, y, delta_y, delta_x)
+end
+
 function M.type_point(x, y, text, opts)
   return terminal.type_point(x, y, text, opts)
 end
@@ -234,6 +238,10 @@ end
 
 function M.click_mouse(mousepos)
   return terminal.click_mouse(mousepos)
+end
+
+function M.wheel_mouse(delta_y, delta_x, mousepos)
+  return terminal.wheel_mouse(delta_y, delta_x, mousepos)
 end
 
 function M.click_hint(id)

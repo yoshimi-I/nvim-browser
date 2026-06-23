@@ -10,6 +10,7 @@ use std::{
 use headless_chrome::{
     browser::tab::{point::Point, ModifierKey, Tab},
     protocol::cdp::types::{Event, Method},
+    protocol::cdp::Input,
     protocol::cdp::Page::{CaptureScreenshotFormatOption, DialogType, Viewport as CdpViewport},
     types::Bounds,
     Browser, LaunchOptions,
@@ -25,7 +26,7 @@ use crate::{
         PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
         ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
         RendererErrorKind, ScrollRequest, ScrollResult, SelectionTextRequest, SelectionTextResult,
-        ShutdownResult, TextInputRequest,
+        ShutdownResult, TextInputRequest, WheelPointRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -421,6 +422,39 @@ impl Renderer for ChromiumRenderer {
             .move_mouse_to_point(Point {
                 x: request.x,
                 y: request.y,
+            })
+            .map_err(render_error)?;
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn wheel_point(&mut self, request: WheelPointRequest) -> Result<InputResult, RendererError> {
+        self.tab
+            .move_mouse_to_point(Point {
+                x: request.x,
+                y: request.y,
+            })
+            .map_err(render_error)?;
+        self.tab
+            .call_method(Input::DispatchMouseEvent {
+                Type: Input::DispatchMouseEventTypeOption::MouseWheel,
+                x: request.x,
+                y: request.y,
+                modifiers: None,
+                timestamp: None,
+                button: None,
+                buttons: None,
+                click_count: None,
+                force: None,
+                tangential_pressure: None,
+                tilt_x: None,
+                tilt_y: None,
+                twist: None,
+                delta_x: Some(request.delta_x),
+                delta_y: Some(request.delta_y),
+                pointer_Type: None,
             })
             .map_err(render_error)?;
         Ok(InputResult {

@@ -12,6 +12,8 @@ assert(type(browser.transient_hint_mode) == "function", "transient_hint_mode API
 assert(type(browser.hover_point) == "function", "hover_point API should exist")
 assert(type(browser.hover_here) == "function", "hover_here API should exist")
 assert(type(browser.hover_hint) == "function", "hover_hint API should exist")
+assert(type(browser.wheel_point) == "function", "wheel_point API should exist")
+assert(type(browser.wheel_mouse) == "function", "wheel_mouse API should exist")
 assert(type(browser.type_point) == "function", "type_point API should exist")
 assert(type(browser.type_here) == "function", "type_here API should exist")
 assert(type(browser.type_hint) == "function", "type_hint API should exist")
@@ -51,6 +53,8 @@ local original_input_text = browser.input_text
 local original_press_key = browser.press_key
 local original_terminal_follow_hint = terminal.follow_hint
 local original_terminal_click_mouse = terminal.click_mouse
+local original_terminal_wheel_point = terminal.wheel_point
+local original_terminal_wheel_mouse = terminal.wheel_mouse
 local original_terminal_type_hint = terminal.type_hint
 local original_terminal_hover_point = terminal.hover_point
 local original_terminal_hover_here = terminal.hover_here
@@ -195,6 +199,16 @@ local mousepos = { winid = 10, line = 3, column = 8 }
 assert(browser.click_mouse(mousepos) == "clicked", "click_mouse should delegate to terminal mouse click semantics")
 assert(clicked_mouse == mousepos, "click_mouse should pass explicit mouse position to terminal")
 
+local wheeled_mouse = nil
+terminal.wheel_mouse = function(delta_y, delta_x, explicit_mousepos)
+  wheeled_mouse = { delta_y = delta_y, delta_x = delta_x, mousepos = explicit_mousepos }
+  return "wheeled"
+end
+assert(browser.wheel_mouse(120, 0, mousepos) == "wheeled", "wheel_mouse should delegate to terminal mouse wheel semantics")
+assert(wheeled_mouse.delta_y == 120, "wheel_mouse should pass vertical wheel delta to terminal")
+assert(wheeled_mouse.delta_x == 0, "wheel_mouse should pass horizontal wheel delta to terminal")
+assert(wheeled_mouse.mousepos == mousepos, "wheel_mouse should pass explicit mouse position to terminal")
+
 local typed_hint = nil
 terminal.type_hint = function(label, text, opts)
   typed_hint = {
@@ -217,6 +231,17 @@ end
 assert(browser.hover_point(12.5, 24.25) == true, "hover_point should delegate to terminal point hover")
 assert(hovered_point.x == 12.5, "hover_point should pass x coordinate to terminal")
 assert(hovered_point.y == 24.25, "hover_point should pass y coordinate to terminal")
+
+local wheeled_point = nil
+terminal.wheel_point = function(x, y, delta_y, delta_x)
+  wheeled_point = { x = x, y = y, delta_y = delta_y, delta_x = delta_x }
+  return true
+end
+assert(browser.wheel_point(12.5, 24.25, 120, 0) == true, "wheel_point should delegate to terminal point wheel")
+assert(wheeled_point.x == 12.5, "wheel_point should pass x coordinate to terminal")
+assert(wheeled_point.y == 24.25, "wheel_point should pass y coordinate to terminal")
+assert(wheeled_point.delta_y == 120, "wheel_point should pass vertical wheel delta to terminal")
+assert(wheeled_point.delta_x == 0, "wheel_point should pass horizontal wheel delta to terminal")
 
 local hovered_here = false
 terminal.hover_here = function()
@@ -402,6 +427,8 @@ browser.input_text = original_input_text
 browser.press_key = original_press_key
 terminal.follow_hint = original_terminal_follow_hint
 terminal.click_mouse = original_terminal_click_mouse
+terminal.wheel_point = original_terminal_wheel_point
+terminal.wheel_mouse = original_terminal_wheel_mouse
 terminal.type_hint = original_terminal_type_hint
 terminal.hover_point = original_terminal_hover_point
 terminal.hover_here = original_terminal_hover_here

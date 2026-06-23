@@ -1914,6 +1914,24 @@ function M.hover_point(x, y)
   }, state.current_url or state.last_target or "hover", "hover")
 end
 
+function M.wheel_point(x, y, delta_y, delta_x)
+  x = tonumber(x)
+  y = tonumber(y)
+  delta_y = tonumber(delta_y)
+  delta_x = tonumber(delta_x) or 0
+  if x == nil or y == nil or delta_y == nil then
+    return false
+  end
+  request_resize()
+  return send_pending_request({
+    type = "wheel_point",
+    x = x,
+    y = y,
+    delta_x = delta_x,
+    delta_y = delta_y,
+  }, state.current_url or state.last_target or "scroll", "scroll")
+end
+
 function M.type_point(x, y, text, opts)
   x = tonumber(x)
   y = tonumber(y)
@@ -2080,6 +2098,34 @@ function M.click_mouse(mousepos)
 
   local point = M.viewport_point_for_cell(row, column, geometry)
   return M.click_point(point.x, point.y)
+end
+
+function M.wheel_mouse(delta_y, delta_x, mousepos)
+  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+    return false
+  end
+  mousepos = mousepos or vim.fn.getmousepos()
+  if type(mousepos) ~= "table" or mousepos.winid ~= state.winid then
+    return false
+  end
+
+  local row = tonumber(mousepos.line)
+  local column = tonumber(mousepos.column)
+  if row == nil or column == nil or row <= 0 or column <= 0 then
+    return false
+  end
+
+  local geometry = current_preview_geometry()
+  if not cell_within_geometry(row, column, geometry) then
+    return false
+  end
+  geometry = current_rendered_frame_geometry()
+  if geometry == nil then
+    return false
+  end
+
+  local point = M.viewport_point_for_cell(row, column, geometry)
+  return M.wheel_point(point.x, point.y, delta_y, delta_x)
 end
 
 local function send_click_hint_request(hint)

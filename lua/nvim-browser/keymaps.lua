@@ -301,11 +301,15 @@ function M.setup_buffer(browser, bufnr, opts)
   end, "nvim-browser: click preview", buffer_opts)
 
   set_mapping(nil, mapping_lhs(mappings, "wheel_down", "<ScrollWheelDown>"), function()
-    browser.scroll(scroll_pixels, 0)
+    if not browser.wheel_mouse(scroll_pixels, 0) then
+      browser.scroll(scroll_pixels, 0)
+    end
   end, "nvim-browser: wheel down", buffer_opts)
 
   set_mapping(nil, mapping_lhs(mappings, "wheel_up", "<ScrollWheelUp>"), function()
-    browser.scroll(-scroll_pixels, 0)
+    if not browser.wheel_mouse(-scroll_pixels, 0) then
+      browser.scroll(-scroll_pixels, 0)
+    end
   end, "nvim-browser: wheel up", buffer_opts)
 
   set_mapping(nil, mapping_lhs(mappings, "close", "q"), function()

@@ -398,8 +398,8 @@ gc       click browser viewport at cursor
 gh       hover browser viewport at cursor
 <Esc> stop pending load
 <LeftMouse>        click browser viewport
-<ScrollWheelDown> scroll down
-<ScrollWheelUp>   scroll up
+<ScrollWheelDown> native browser wheel down at mouse position
+<ScrollWheelUp>   native browser wheel up at mouse position
 q  close preview
 <
 Disable or remap these with:

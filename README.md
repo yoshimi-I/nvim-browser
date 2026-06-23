@@ -252,7 +252,10 @@ reserve the bottom preview row for a compact status footer, so cursor clicks in
 that footer are not sent to the browser page.
 `:NBrowserHoverHere` sends a real Chromium mouse-move event to the browser
 viewport point under the preview cursor. Use it to reveal CSS `:hover` menus or
-tooltips without leaving Neovim.
+tooltips without leaving Neovim. Preview scroll-wheel events are also sent as
+native Chromium mouse-wheel input at the mouse position when the preview is
+cursor-addressable, then fall back to page-level scrolling if coordinates are
+not available.
 
 Browser preview footers show the latest serve status, title or URL, scroll
 progress, output mode, cell geometry, and current URL when reported by the
@@ -358,8 +361,8 @@ browser text mode, `p` paste the selected register into the focused element,
 Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` Meta-L
 focus location, arrow keys, `gc` click the browser viewport at the cursor, `gh`
 hover the browser viewport at the cursor, `<Esc>` stop a pending load, left
-click to click the browser viewport, scroll wheel to scroll the page, and `q`
-close.
+click to click the browser viewport, scroll wheel to send a native browser
+wheel event at the mouse position, and `q` close.
 Disable or remap them with
 `preview_keymaps = { enabled = false }` or `preview_keymaps.mappings`.
 

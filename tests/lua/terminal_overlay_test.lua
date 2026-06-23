@@ -183,7 +183,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   url = "https://example.com/long",
   runtime = {
-    protocol_version = 5,
+    protocol_version = 6,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -205,7 +205,7 @@ assert(page_metrics.scroll_y == 250, "stored page metrics should preserve scroll
 assert(page_metrics.document_height == 1600, "stored page metrics should preserve document size")
 local runtime_info = terminal.state().runtime_metadata
 assert(runtime_info ~= nil, "serve responses should store runtime metadata")
-assert(runtime_info.protocol_version == 5, "runtime metadata should preserve protocol version")
+assert(runtime_info.protocol_version == 6, "runtime metadata should preserve protocol version")
 assert(runtime_info.output == "kitty-unicode", "runtime metadata should preserve output mode")
 assert(runtime_info.cells.columns == 80, "runtime metadata should preserve preview columns")
 assert(runtime_info.viewport.width == 800, "runtime metadata should preserve viewport width")
@@ -214,7 +214,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "runtime frame",
   runtime = {
-    protocol_version = 5,
+    protocol_version = 6,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -548,7 +548,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "interactive frame",
   runtime = {
-    protocol_version = 5,
+    protocol_version = 6,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -565,7 +565,7 @@ end
 
 local function interactive_runtime(width, height)
   return {
-    protocol_version = 5,
+    protocol_version = 6,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -598,6 +598,37 @@ terminal._test.apply_serve_response({
   runtime = interactive_runtime(450, 165),
 })
 assert(terminal.state().pending_operation == nil, "matching click response should clear pending click state")
+
+footer_click_requests = {}
+assert(terminal.wheel_mouse(120, 0, { winid = image_win, line = 6, column = 25 }) == true, "mouse wheel should send a browser wheel")
+local mouse_wheel_seen = false
+local mouse_wheel_request_id = nil
+for _, request in ipairs(footer_click_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if
+    ok
+    and decoded.type == "wheel_point"
+    and decoded.x == expected_mouse_point.x
+    and decoded.y == expected_mouse_point.y
+    and decoded.delta_y == 120
+    and decoded.delta_x == 0
+  then
+    mouse_wheel_seen = true
+    mouse_wheel_request_id = decoded.id
+  end
+end
+assert(mouse_wheel_seen, "mouse wheel should map preview cells and deltas to a native wheel request")
+assert(terminal.state().pending_operation ~= nil, "mouse wheel should mark the browser wheel as pending")
+assert(terminal.state().pending_operation.label == "scroll", "mouse wheel pending footer should use a scroll label")
+terminal._test.apply_serve_response({
+  id = mouse_wheel_request_id,
+  status = "ok",
+  payload = "wheeled frame",
+  url = "https://example.com/wheeled",
+  title = "Wheeled",
+  runtime = interactive_runtime(450, 165),
+})
+assert(terminal.state().pending_operation == nil, "matching wheel response should clear pending wheel state")
 
 footer_click_requests = {}
 vim.api.nvim_win_set_cursor(image_win, { 6, 24 })
@@ -680,6 +711,7 @@ assert(terminal.click_here() == false, "stale rendered frame geometry should blo
 assert(terminal.hover_here() == false, "stale rendered frame geometry should block cursor hover")
 assert(terminal.type_here("stale text") == false, "stale rendered frame geometry should block cursor typing")
 assert(terminal.click_mouse({ winid = image_win, line = 6, column = 25 }) == false, "stale rendered frame geometry should block mouse click")
+assert(terminal.wheel_mouse(120, 0, { winid = image_win, line = 6, column = 25 }) == false, "stale rendered frame geometry should block mouse wheel")
 local stale_resize_seen = false
 local stale_point_seen = false
 for _, request in ipairs(footer_click_requests) do
@@ -687,7 +719,7 @@ for _, request in ipairs(footer_click_requests) do
   if ok and decoded.type == "resize" then
     stale_resize_seen = true
   end
-  if ok and (decoded.type == "click_point" or decoded.type == "hover_point" or decoded.type == "type_point") then
+  if ok and (decoded.type == "click_point" or decoded.type == "hover_point" or decoded.type == "type_point" or decoded.type == "wheel_point") then
     stale_point_seen = true
   end
 end
@@ -700,7 +732,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "refreshed interactive frame",
   runtime = {
-    protocol_version = 5,
+    protocol_version = 6,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -716,7 +748,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "column guard frame",
   runtime = {
-    protocol_version = 5,
+    protocol_version = 6,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -742,14 +774,17 @@ assert(#footer_click_requests == 0, "out-of-column cursor actions should not rea
 
 footer_click_requests = {}
 assert(terminal.click_mouse({ winid = image_win, line = 6, column = 51 }) == false, "mouse click beyond rendered columns should be ignored")
+assert(terminal.wheel_mouse(120, 0, { winid = image_win, line = 6, column = 51 }) == false, "mouse wheel beyond rendered columns should be ignored")
 assert(#footer_click_requests == 0, "out-of-column mouse clicks should not reach the serve backend")
 
 footer_click_requests = {}
 assert(terminal.click_mouse({ winid = image_win, line = 12, column = 25 }) == false, "mouse click on footer should be ignored")
+assert(terminal.wheel_mouse(120, 0, { winid = image_win, line = 12, column = 25 }) == false, "mouse wheel on footer should be ignored")
 assert(#footer_click_requests == 0, "footer mouse clicks should not reach the serve backend")
 
 footer_click_requests = {}
 assert(terminal.click_mouse({ winid = second_bufnr, line = 6, column = 25 }) == false, "mouse click from another window should be ignored")
+assert(terminal.wheel_mouse(120, 0, { winid = second_bufnr, line = 6, column = 25 }) == false, "mouse wheel from another window should be ignored")
 assert(#footer_click_requests == 0, "wrong-window mouse clicks should not reach the serve backend")
 
 vim.api.nvim_win_set_cursor(image_win, { 12, 0 })
