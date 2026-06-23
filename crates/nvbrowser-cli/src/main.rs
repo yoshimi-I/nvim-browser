@@ -222,6 +222,7 @@ struct ServeResponse {
     payload: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
+    title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
@@ -277,6 +278,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 status: ServeStatus::Ok,
                 payload,
                 url: self.session.active_page().url().map(str::to_string),
+                title: self.session.active_page().title().map(str::to_string),
                 error: None,
             },
             Err(error) => ServeResponse {
@@ -284,6 +286,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 status: ServeStatus::Error,
                 payload: None,
                 url: self.session.active_page().url().map(str::to_string),
+                title: self.session.active_page().title().map(str::to_string),
                 error: Some(error.to_string()),
             },
         }
@@ -300,7 +303,8 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.active_page_id(),
                     url,
                 ))?;
-                self.session.navigate_active_page(navigation.url);
+                self.session
+                    .navigate_active_page_with_title(navigation.url, navigation.title);
                 self.session.finish_active_page_load();
                 self.capture_payload().map(Some)
             }
@@ -321,7 +325,8 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.id(),
                     self.session.active_page_id(),
                 ))?;
-                self.session.navigate_active_page(reload.url);
+                self.session
+                    .navigate_active_page_with_title(reload.url, reload.title);
                 self.session.finish_active_page_load();
                 self.capture_payload().map(Some)
             }
@@ -330,7 +335,8 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.id(),
                     self.session.active_page_id(),
                 ))?;
-                self.session.navigate_active_page(navigation.url);
+                self.session
+                    .navigate_active_page_with_title(navigation.url, navigation.title);
                 self.session.finish_active_page_load();
                 self.capture_payload().map(Some)
             }
@@ -339,7 +345,8 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.id(),
                     self.session.active_page_id(),
                 ))?;
-                self.session.navigate_active_page(navigation.url);
+                self.session
+                    .navigate_active_page_with_title(navigation.url, navigation.title);
                 self.session.finish_active_page_load();
                 self.capture_payload().map(Some)
             }
@@ -412,7 +419,8 @@ impl<R: Renderer> ServeRuntime<R> {
 
     fn settle_after_interaction(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let settled = self.renderer.settle_after_interaction()?;
-        self.session.navigate_active_page(settled.url);
+        self.session
+            .navigate_active_page_with_title(settled.url, settled.title);
         self.session.finish_active_page_load();
         Ok(())
     }
@@ -498,6 +506,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         status: ServeStatus::Error,
                         payload: None,
                         url: None,
+                        title: None,
                         error: Some(error.to_string()),
                     })
                 )?;
@@ -607,6 +616,8 @@ mod tests {
         settled_url: Option<String>,
         final_navigation_url: Option<String>,
         final_reload_url: Option<String>,
+        next_frame_url: Option<String>,
+        next_frame_title: Option<String>,
         shutdown: bool,
     }
 
@@ -626,6 +637,8 @@ mod tests {
                 settled_url: None,
                 final_navigation_url: None,
                 final_reload_url: None,
+                next_frame_url: None,
+                next_frame_title: None,
                 shutdown: false,
             }
         }
@@ -646,6 +659,7 @@ mod tests {
             Ok(NavigationResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
+                title: Some(url.clone()),
                 url,
             })
         }
@@ -659,12 +673,18 @@ mod tests {
             })?;
             self.operations.push("capture");
             self.captures += 1;
+            let frame_url = self.next_frame_url.clone().unwrap_or(url.clone());
+            let title = self
+                .next_frame_title
+                .clone()
+                .or_else(|| Some(frame_url.clone()));
             Ok(RenderedFrame {
                 metadata: FrameMetadata::new(
                     FrameId::new(self.captures),
                     request.session_id,
                     request.page_id,
-                    url,
+                    frame_url,
+                    title,
                     request.viewport,
                     1000 + self.captures,
                 ),
@@ -692,6 +712,7 @@ mod tests {
             Ok(ReloadResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
+                title: Some(url.clone()),
                 url,
             })
         }
@@ -713,6 +734,7 @@ mod tests {
             Ok(HistoryNavigationResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
+                title: Some(url.clone()),
                 url,
             })
         }
@@ -738,6 +760,7 @@ mod tests {
             Ok(HistoryNavigationResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
+                title: Some(url.clone()),
                 url,
             })
         }
@@ -792,7 +815,7 @@ mod tests {
                     .unwrap_or_else(|| "about:blank".to_string())
             });
             self.url = Some(url.clone());
-            Ok(InteractionSettleResult::new(url))
+            Ok(InteractionSettleResult::new(url.clone(), Some(url)))
         }
 
         fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
@@ -935,12 +958,13 @@ mod tests {
             status: ServeStatus::Ok,
             payload: Some("frame".to_string()),
             url: None,
+            title: None,
             error: None,
         };
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":7,"status":"ok","payload":"frame"}"#
+            r#"{"id":7,"status":"ok","payload":"frame","title":null}"#
         );
     }
 
@@ -951,12 +975,13 @@ mod tests {
             status: ServeStatus::Ok,
             payload: Some("frame".to_string()),
             url: Some("https://example.com".to_string()),
+            title: Some("Example Domain".to_string()),
             error: None,
         };
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":8,"status":"ok","payload":"frame","url":"https://example.com"}"#
+            r#"{"id":8,"status":"ok","payload":"frame","url":"https://example.com","title":"Example Domain"}"#
         );
     }
 
@@ -981,7 +1006,59 @@ mod tests {
         assert_eq!(response.id, 3);
         assert_eq!(response.status, ServeStatus::Ok);
         assert_eq!(response.url, Some("https://example.com".to_string()));
+        assert_eq!(response.title, Some("https://example.com".to_string()));
         assert!(response.payload.expect("payload").contains("▀"));
+    }
+
+    #[test]
+    fn serve_runtime_refreshes_title_from_captured_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+        let navigate = runtime.handle(ServeRequest::Navigate {
+            id: 3,
+            url: "https://example.com".to_string(),
+        });
+        assert_eq!(navigate.title, Some("https://example.com".to_string()));
+
+        runtime.renderer.next_frame_title = Some("Async Title".to_string());
+        let capture = runtime.handle(ServeRequest::Capture { id: 4 });
+
+        assert_eq!(capture.status, ServeStatus::Ok);
+        assert_eq!(capture.title, Some("Async Title".to_string()));
+    }
+
+    #[test]
+    fn serve_runtime_refreshes_url_from_captured_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+        let navigate = runtime.handle(ServeRequest::Navigate {
+            id: 3,
+            url: "https://example.com".to_string(),
+        });
+        assert_eq!(navigate.url, Some("https://example.com".to_string()));
+
+        runtime.renderer.next_frame_url = Some("https://example.com/spa".to_string());
+        let capture = runtime.handle(ServeRequest::Capture { id: 4 });
+
+        assert_eq!(capture.status, ServeStatus::Ok);
+        assert_eq!(capture.url, Some("https://example.com/spa".to_string()));
+        assert_eq!(capture.title, Some("https://example.com/spa".to_string()));
     }
 
     #[test]

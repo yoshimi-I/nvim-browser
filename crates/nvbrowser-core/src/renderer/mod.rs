@@ -62,6 +62,7 @@ pub struct NavigationResult {
     pub session_id: SessionId,
     pub page_id: PageId,
     pub url: String,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -140,6 +141,7 @@ pub struct ReloadResult {
     pub session_id: SessionId,
     pub page_id: PageId,
     pub url: String,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -162,6 +164,7 @@ pub struct HistoryNavigationResult {
     pub session_id: SessionId,
     pub page_id: PageId,
     pub url: String,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -207,11 +210,15 @@ pub struct InputResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct InteractionSettleResult {
     pub url: String,
+    pub title: Option<String>,
 }
 
 impl InteractionSettleResult {
-    pub fn new(url: impl Into<String>) -> Self {
-        Self { url: url.into() }
+    pub fn new(url: impl Into<String>, title: Option<String>) -> Self {
+        Self {
+            url: url.into(),
+            title,
+        }
     }
 }
 
@@ -324,6 +331,7 @@ mod tests {
                 session_id: request.session_id,
                 page_id: request.page_id,
                 url: request.url,
+                title: Some("Example Domain".to_string()),
             })
         }
 
@@ -343,6 +351,7 @@ mod tests {
                     request.session_id,
                     request.page_id,
                     url,
+                    Some("Example Domain".to_string()),
                     request.viewport,
                     1000,
                 ),
@@ -364,6 +373,7 @@ mod tests {
                 session_id: request.session_id,
                 page_id: request.page_id,
                 url: "https://example.com".to_string(),
+                title: Some("Example Domain".to_string()),
             })
         }
 
@@ -376,6 +386,7 @@ mod tests {
                 session_id: request.session_id,
                 page_id: request.page_id,
                 url: "https://example.com/back".to_string(),
+                title: Some("Back".to_string()),
             })
         }
 
@@ -388,6 +399,7 @@ mod tests {
                 session_id: request.session_id,
                 page_id: request.page_id,
                 url: "https://example.com/forward".to_string(),
+                title: Some("Forward".to_string()),
             })
         }
 
@@ -427,7 +439,10 @@ mod tests {
 
         fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
             self.settled = true;
-            Ok(InteractionSettleResult::new("https://example.com"))
+            Ok(InteractionSettleResult::new(
+                "https://example.com",
+                Some("Example Domain".to_string()),
+            ))
         }
 
         fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
@@ -456,8 +471,10 @@ mod tests {
 
         assert_eq!(navigation.session_id, session_id);
         assert_eq!(navigation.url, "https://example.com");
+        assert_eq!(navigation.title, Some("Example Domain".to_string()));
         assert_eq!(frame.metadata.session_id, session_id);
         assert_eq!(frame.metadata.page_id, page_id);
+        assert_eq!(frame.metadata.title, Some("Example Domain".to_string()));
         assert_eq!(frame.metadata.viewport, viewport);
         assert_eq!(frame.artifact, FrameArtifact::Png(vec![1, 2, 3]));
     }
@@ -487,12 +504,15 @@ mod tests {
         assert_eq!(reload.session_id, session_id);
         assert_eq!(reload.page_id, page_id);
         assert_eq!(reload.url, "https://example.com");
+        assert_eq!(reload.title, Some("Example Domain".to_string()));
         assert_eq!(back.session_id, session_id);
         assert_eq!(back.page_id, page_id);
         assert_eq!(back.url, "https://example.com/back");
+        assert_eq!(back.title, Some("Back".to_string()));
         assert_eq!(forward.session_id, session_id);
         assert_eq!(forward.page_id, page_id);
         assert_eq!(forward.url, "https://example.com/forward");
+        assert_eq!(forward.title, Some("Forward".to_string()));
         assert!(shutdown.is_ok());
         assert!(renderer.shutdown);
     }

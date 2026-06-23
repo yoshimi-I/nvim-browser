@@ -14,6 +14,7 @@ local state = {
   next_request_id = 1,
   stop_timer = nil,
   current_url = nil,
+  current_title = nil,
   status = nil,
   status_error = nil,
 }
@@ -372,6 +373,7 @@ function M.open(command)
   state.mode = nil
   state.next_request_id = 1
   state.current_url = nil
+  state.current_title = nil
   state.status = nil
   pcall(send_terminal_escape, kitty_delete_escape())
 
@@ -426,6 +428,9 @@ function M.open(command)
         state.status_error = response.error
         if response.url ~= nil then
           state.current_url = response.url
+        end
+        if response.title ~= nil then
+          state.current_title = response.title ~= vim.NIL and response.title or nil
         end
 
         if response.status == "ok" and response.payload ~= nil then
@@ -597,6 +602,7 @@ function M.close()
   state.stream_buffer = ""
   state.mode = nil
   state.current_url = nil
+  state.current_title = nil
   state.status = nil
   state.status_error = nil
   if state.stop_timer ~= nil then
@@ -729,6 +735,7 @@ function M.state()
     has_payload = state.last_payload ~= nil,
     mode = state.mode,
     current_url = state.current_url,
+    current_title = state.current_title,
     status = state.status,
     status_error = state.status_error,
   }

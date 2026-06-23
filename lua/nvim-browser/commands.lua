@@ -90,11 +90,22 @@ function M.register(browser)
     vim.api.nvim_echo({ { browser.current_url() or "" } }, false, {})
   end, {})
 
+  vim.api.nvim_create_user_command("NBrowserCurrentTitle", function()
+    vim.api.nvim_echo({ { browser.current_title() or "" } }, false, {})
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserStatus", function()
     local status = browser.status() or "unknown"
     local url = browser.current_url() or ""
+    local title = browser.current_title and browser.current_title() or nil
     local error = browser.status_error and browser.status_error() or nil
-    local message = status .. (url ~= "" and (" " .. url) or "")
+    local message = status
+    if title ~= nil and title ~= "" then
+      message = message .. " " .. title
+    end
+    if url ~= "" then
+      message = message .. " " .. url
+    end
     if error ~= nil and error ~= "" then
       message = message .. " " .. error
     end

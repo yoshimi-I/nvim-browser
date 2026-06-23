@@ -75,9 +75,13 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserCurrentUrl
 	Echo the current URL reported by the active browser session.
 
+							*:NBrowserCurrentTitle*
+:NBrowserCurrentTitle
+	Echo the current page title reported by the active browser session.
+
 							*:NBrowserStatus*
 :NBrowserStatus
-	Echo the last serve response status and current URL.
+	Echo the last serve response status, current title, and current URL.
 
 							*:NBrowserPreview*
 :NBrowserPreview

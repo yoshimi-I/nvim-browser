@@ -77,6 +77,7 @@ pub struct FrameMetadata {
     pub session_id: SessionId,
     pub page_id: PageId,
     pub url: String,
+    pub title: Option<String>,
     pub viewport: Viewport,
     pub captured_at_unix_ms: u64,
 }
@@ -87,6 +88,7 @@ impl FrameMetadata {
         session_id: SessionId,
         page_id: PageId,
         url: impl Into<String>,
+        title: Option<String>,
         viewport: Viewport,
         captured_at_unix_ms: u64,
     ) -> Self {
@@ -95,6 +97,7 @@ impl FrameMetadata {
             session_id,
             page_id,
             url: url.into(),
+            title,
             viewport,
             captured_at_unix_ms,
         }
@@ -105,6 +108,7 @@ impl FrameMetadata {
 pub struct PageState {
     id: PageId,
     url: Option<String>,
+    title: Option<String>,
     loading_state: LoadingState,
     viewport: Viewport,
     last_frame: Option<FrameMetadata>,
@@ -115,6 +119,7 @@ impl PageState {
         Self {
             id,
             url: None,
+            title: None,
             loading_state: LoadingState::Idle,
             viewport,
             last_frame: None,
@@ -129,6 +134,10 @@ impl PageState {
         self.url.as_deref()
     }
 
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
     pub const fn loading_state(&self) -> LoadingState {
         self.loading_state
     }
@@ -141,8 +150,9 @@ impl PageState {
         self.last_frame.as_ref()
     }
 
-    fn navigate(&mut self, url: impl Into<String>) {
+    fn navigate(&mut self, url: impl Into<String>, title: Option<String>) {
         self.url = Some(url.into());
+        self.title = title;
         self.loading_state = LoadingState::Loading;
     }
 
@@ -155,6 +165,8 @@ impl PageState {
     }
 
     fn set_frame(&mut self, frame: FrameMetadata) {
+        self.url = Some(frame.url.clone());
+        self.title = frame.title.clone();
         self.last_frame = Some(frame);
     }
 }
@@ -189,7 +201,15 @@ impl BrowserSession {
     }
 
     pub fn navigate_active_page(&mut self, url: impl Into<String>) {
-        self.active_page.navigate(url);
+        self.navigate_active_page_with_title(url, None);
+    }
+
+    pub fn navigate_active_page_with_title(
+        &mut self,
+        url: impl Into<String>,
+        title: Option<String>,
+    ) {
+        self.active_page.navigate(url, title);
     }
 
     pub fn finish_active_page_load(&mut self) {
@@ -216,6 +236,7 @@ mod tests {
         assert_eq!(session.id(), SessionId::new(7));
         assert_eq!(session.active_page_id(), PageId::new(1));
         assert_eq!(session.active_page().url(), None);
+        assert_eq!(session.active_page().title(), None);
         assert_eq!(session.active_page().loading_state(), LoadingState::Idle);
         assert_eq!(session.active_page().viewport(), Viewport::new(800, 600));
         assert_eq!(session.active_page().last_frame(), None);
@@ -227,7 +248,18 @@ mod tests {
 
         session.navigate_active_page("https://example.com");
         assert_eq!(session.active_page().url(), Some("https://example.com"));
+        assert_eq!(session.active_page().title(), None);
         assert_eq!(session.active_page().loading_state(), LoadingState::Loading);
+
+        session.navigate_active_page_with_title(
+            "https://example.com/titled",
+            Some("Example Domain".to_string()),
+        );
+        assert_eq!(
+            session.active_page().url(),
+            Some("https://example.com/titled")
+        );
+        assert_eq!(session.active_page().title(), Some("Example Domain"));
 
         session.finish_active_page_load();
         assert_eq!(session.active_page().loading_state(), LoadingState::Idle);
@@ -237,12 +269,30 @@ mod tests {
             session.id(),
             session.active_page_id(),
             "https://example.com",
+            Some("Example Domain".to_string()),
             Viewport::new(1024, 768),
             1234,
         );
         session.set_active_page_frame(frame.clone());
 
         assert_eq!(session.active_page().last_frame(), Some(&frame));
+        assert_eq!(session.active_page().url(), Some("https://example.com"));
+        assert_eq!(session.active_page().title(), Some("Example Domain"));
+
+        session.set_active_page_frame(FrameMetadata::new(
+            FrameId::new(11),
+            session.id(),
+            session.active_page_id(),
+            "https://example.com/updated",
+            None,
+            Viewport::new(1024, 768),
+            1235,
+        ));
+        assert_eq!(
+            session.active_page().url(),
+            Some("https://example.com/updated")
+        );
+        assert_eq!(session.active_page().title(), None);
     }
 
     #[test]

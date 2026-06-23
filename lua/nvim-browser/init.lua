@@ -99,6 +99,10 @@ function M.current_url()
   return terminal.state().current_url
 end
 
+function M.current_title()
+  return terminal.state().current_title
+end
+
 function M.status()
   return terminal.state().status
 end

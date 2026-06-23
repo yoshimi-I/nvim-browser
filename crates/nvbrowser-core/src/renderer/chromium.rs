@@ -83,6 +83,7 @@ pub fn render_url_png(
             SessionId::new(1),
             PageId::new(1),
             url,
+            None,
             viewport,
             0,
         ),
@@ -94,6 +95,7 @@ pub struct ChromiumRenderer {
     _browser: Browser,
     tab: Arc<Tab>,
     current_url: Option<String>,
+    current_title: Option<String>,
     next_frame_id: u64,
 }
 
@@ -114,6 +116,7 @@ impl ChromiumRenderer {
             _browser: browser,
             tab,
             current_url: None,
+            current_title: None,
             next_frame_id: 1,
         })
     }
@@ -137,6 +140,7 @@ impl ChromiumRenderer {
             session_id,
             page_id,
             url,
+            self.current_title.clone(),
             viewport,
             unix_time_ms(),
         ))
@@ -150,11 +154,14 @@ impl Renderer for ChromiumRenderer {
             .and_then(|tab| tab.wait_until_navigated())
             .map_err(render_error)?;
         let url = self.tab.get_url();
+        let title = self.read_current_title().unwrap_or(None);
         self.current_url = Some(url.clone());
+        self.current_title = title.clone();
         Ok(NavigationResult {
             session_id: request.session_id,
             page_id: request.page_id,
             url,
+            title,
         })
     }
 
@@ -167,6 +174,10 @@ impl Renderer for ChromiumRenderer {
             .tab
             .capture_screenshot(CaptureScreenshotFormatOption::Png, None, None, true)
             .map_err(render_error)?;
+        self.current_url = Some(self.tab.get_url());
+        if let Some(title) = self.read_current_title() {
+            self.current_title = title;
+        }
         let metadata =
             self.next_frame_metadata(request.session_id, request.page_id, request.viewport)?;
 
@@ -196,11 +207,14 @@ impl Renderer for ChromiumRenderer {
         self.tab.reload(false, None).map_err(render_error)?;
         self.tab.wait_until_navigated().map_err(render_error)?;
         let url = self.tab.get_url();
+        let title = self.read_current_title().unwrap_or(None);
         self.current_url = Some(url.clone());
+        self.current_title = title.clone();
         Ok(ReloadResult {
             session_id: request.session_id,
             page_id: request.page_id,
             url,
+            title,
         })
     }
 
@@ -266,8 +280,10 @@ impl Renderer for ChromiumRenderer {
         thread::sleep(Duration::from_millis(75));
         self.tab.wait_until_navigated().map_err(render_error)?;
         let url = self.tab.get_url();
+        let title = self.read_current_title().unwrap_or(None);
         self.current_url = Some(url.clone());
-        Ok(InteractionSettleResult::new(url))
+        self.current_title = title.clone();
+        Ok(InteractionSettleResult::new(url, title))
     }
 
     fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
@@ -312,12 +328,32 @@ impl ChromiumRenderer {
             .map_err(render_error)?;
         let url = self.wait_for_current_url(&target_url)?;
         self.tab.wait_until_navigated().map_err(render_error)?;
+        let title = self.read_current_title().unwrap_or(None);
         self.current_url = Some(url.clone());
+        self.current_title = title.clone();
         Ok(HistoryNavigationResult {
             session_id: request.session_id,
             page_id: request.page_id,
             url,
+            title,
         })
+    }
+
+    fn read_current_title(&self) -> Option<Option<String>> {
+        self.tab
+            .evaluate("document.title", false)
+            .ok()
+            .and_then(|remote_object| remote_object.value)
+            .map(|value| {
+                value.as_str().and_then(|title| {
+                    let title = title.trim();
+                    if title.is_empty() {
+                        None
+                    } else {
+                        Some(title.to_string())
+                    }
+                })
+            })
     }
 
     fn wait_for_current_url(&self, target_url: &str) -> Result<String, RendererError> {
