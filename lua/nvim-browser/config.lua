@@ -1,12 +1,18 @@
 local M = {}
 
-local function default_binary()
-  local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h")
-  local candidate = root .. "/target/debug/nvbrowser"
-  if vim.fn.executable(candidate) == 1 then
-    return candidate
+local function default_binary_for_root(root)
+  for _, profile in ipairs({ "release", "debug" }) do
+    local candidate = root .. "/target/" .. profile .. "/nvbrowser"
+    if vim.fn.executable(candidate) == 1 then
+      return candidate
+    end
   end
   return "nvbrowser"
+end
+
+local function default_binary()
+  local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h")
+  return default_binary_for_root(root)
 end
 
 M.options = {
@@ -35,5 +41,9 @@ function M.setup(opts)
   M.options = vim.tbl_deep_extend("force", M.options, opts or {})
   return M.options
 end
+
+M._test = {
+  default_binary_for_root = default_binary_for_root,
+}
 
 return M

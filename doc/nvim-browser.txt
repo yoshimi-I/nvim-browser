@@ -4,8 +4,9 @@
 CONTENTS                                             *nvim-browser-contents*
 
 1. Introduction                                      |nvim-browser-intro|
-2. Commands                                          |nvim-browser-commands|
-3. Keymaps                                           |nvim-browser-keymaps|
+2. Installation                                      |nvim-browser-installation|
+3. Commands                                          |nvim-browser-commands|
+4. Keymaps                                           |nvim-browser-keymaps|
 
 ==============================================================================
 INTRODUCTION                                           *nvim-browser-intro*
@@ -15,6 +16,35 @@ is a Rust binary that classifies web targets and renders styled Markdown
 documents.
 The long-term renderer target is Chromium/CDP output displayed inside Ghostty
 through terminal graphics.
+
+==============================================================================
+INSTALLATION                                     *nvim-browser-installation*
+
+Example lazy.nvim setup:
+>
+{
+  "yoshimi-I/nvim-browser",
+  tag = "v0.1.0",
+  build = "cargo build --release",
+  config = function()
+    require("nvim-browser").setup({
+      graphics = "auto",
+      image_fit = "contain",
+    })
+  end,
+}
+<
+The plugin searches for target/release/nvbrowser in the plugin checkout, then
+target/debug/nvbrowser, then nvbrowser on $PATH. Set a custom backend binary
+path when using an externally installed release:
+>
+require("nvim-browser").setup({
+  binary = vim.fn.expand("~/.local/bin/nvbrowser"),
+})
+<
+Release tags use vMAJOR.MINOR.PATCH; replace v0.1.0 with the latest release
+tag when installing. Until v1.0.0, pin the plugin and backend binary to the
+same tag or commit.
 
 ==============================================================================
 COMMANDS                                           *nvim-browser-commands*

@@ -56,6 +56,39 @@ See [docs/architecture.md](docs/architecture.md) for module boundaries.
 - Rust stable
 - Ghostty for the intended terminal graphics experience
 
+## Installation
+
+With lazy.nvim:
+
+```lua
+{
+  "yoshimi-I/nvim-browser",
+  tag = "v0.1.0",
+  build = "cargo build --release",
+  config = function()
+    require("nvim-browser").setup({
+      graphics = "auto",
+      image_fit = "contain",
+    })
+  end,
+}
+```
+
+The plugin looks for `target/release/nvbrowser` in the plugin checkout first,
+then `target/debug/nvbrowser`, then `nvbrowser` on `$PATH`. To use a binary from
+a GitHub Release or a package manager, set an explicit path:
+
+```lua
+require("nvim-browser").setup({
+  binary = vim.fn.expand("~/.local/bin/nvbrowser"),
+})
+```
+
+Release tags use `vMAJOR.MINOR.PATCH`; replace `v0.1.0` with the latest release
+tag when installing. Until `v1.0.0`, plugin and backend compatibility is
+guaranteed only within the same tag or commit; pin the Neovim plugin and
+`nvbrowser` binary together.
+
 ## Development
 
 Build the backend:

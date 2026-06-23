@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  pull_request:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: macos-14
+            target: aarch64-apple-darwin
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --locked --target ${{ matrix.target }} -p nvbrowser
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="nvbrowser-${{ matrix.target }}"
+          mkdir -p "$artifact"
+          cp "target/${{ matrix.target }}/release/nvbrowser" "$artifact/"
+          cp README.md LICENSE "$artifact/"
+          tar -czf "$artifact.tar.gz" "$artifact"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvbrowser-${{ matrix.target }}
+          path: nvbrowser-${{ matrix.target }}.tar.gz
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.tar.gz
