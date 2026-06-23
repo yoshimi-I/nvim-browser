@@ -185,19 +185,50 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
 
     let directory = tempdir().expect("tempdir should be created");
     let fixture_path = directory.path().join("serve-loop.html");
+    let blank_path = directory.path().join("blank-target.html");
+    let opened_path = directory.path().join("window-open-target.html");
+    let blank_url = format!("file://{}", blank_path.display());
+    let opened_url = format!("file://{}", opened_path.display());
+    std::fs::write(
+        &blank_path,
+        format!(
+            r##"<!doctype html>
+<html>
+  <head><title>Blank Target Adopted</title></head>
+  <body>
+    <main>
+      <p>blank target adopted text</p>
+      <button onclick="setTimeout(() => window.open('{opened_url}', '_blank'), 150)">Open Window Target</button>
+    </main>
+  </body>
+</html>"##
+        ),
+    )
+    .expect("blank target fixture should be written");
+    std::fs::write(
+        &opened_path,
+        r##"<!doctype html>
+<html>
+  <head><title>Window Open Adopted</title></head>
+  <body><main><p>window open adopted text</p></main></body>
+</html>"##,
+    )
+    .expect("window open target fixture should be written");
     std::fs::write(
         &fixture_path,
-        r##"<!doctype html>
+        format!(
+            r##"<!doctype html>
 <html>
   <head>
     <title>NBrowser E2E Fixture</title>
     <style>
-      #hover-menu { display: none; margin-top: 8px; }
-      #hover-source:hover + #hover-menu { display: inline-block; }
+      #hover-menu {{ display: none; margin-top: 8px; }}
+      #hover-source:hover + #hover-menu {{ display: inline-block; }}
     </style>
   </head>
   <body>
     <main>
+      <a target="_blank" href="{blank_url}" onpointerdown="window.open(this.href, this.target); event.preventDefault(); return false;">Open Blank Target</a>
       <label>Search <input aria-label="Search" oninput="document.getElementById('out').textContent=this.value"></label>
       <a href="#docs">Docs</a>
       <button onpointerdown="document.getElementById('out').textContent='clicked from jsonl'">Go</button>
@@ -209,7 +240,8 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
       <section id="hovered">Hovered section</section>
     </main>
   </body>
-</html>"##,
+</html>"##
+        ),
     )
     .expect("html fixture should be written");
     let fixture_url = format!("file://{}", fixture_path.display());
@@ -379,8 +411,72 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
     assert_eq!(resized["runtime"]["cells"]["columns"], 32);
     assert_eq!(resized["runtime"]["viewport"]["width"], 320);
 
-    let quit = serve.request(serde_json::json!({ "id": 8, "type": "quit" }));
-    assert_eq!(quit["id"], 8);
+    let blank_target_hint = resized["hints"]
+        .as_array()
+        .expect("resized response should include hints")
+        .iter()
+        .find(|hint| hint["kind"] == "link" && hint["label"] == "Open Blank Target")
+        .expect("real Chromium hints should include the target blank link")["id"]
+        .as_u64()
+        .expect("target blank link hint should include id");
+    let adopted_blank = serve.request(serde_json::json!({
+        "id": 8,
+        "type": "click_hint",
+        "hint_id": blank_target_hint
+    }));
+    assert_eq!(
+        adopted_blank["status"], "ok",
+        "target blank click should succeed"
+    );
+    assert_eq!(
+        adopted_blank["title"], "Blank Target Adopted",
+        "target blank click should adopt the new page target"
+    );
+    assert!(
+        adopted_blank["url"]
+            .as_str()
+            .is_some_and(|url| url.ends_with("blank-target.html")),
+        "target blank response should use the adopted page URL"
+    );
+    let adopted_blank_text = serve.request(serde_json::json!({ "id": 9, "type": "page_text" }));
+    assert!(
+        adopted_blank_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("blank target adopted text")),
+        "page_text should read from the adopted target blank page"
+    );
+
+    let open_window_hint = adopted_blank["hints"]
+        .as_array()
+        .expect("adopted blank response should include hints")
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Open Window Target")
+        .expect("adopted blank page should expose window.open button")["id"]
+        .as_u64()
+        .expect("window open button hint should include id");
+    let adopted_window = serve.request(serde_json::json!({
+        "id": 10,
+        "type": "click_hint",
+        "hint_id": open_window_hint
+    }));
+    assert_eq!(
+        adopted_window["status"], "ok",
+        "window.open click should succeed"
+    );
+    assert_eq!(
+        adopted_window["title"], "Window Open Adopted",
+        "window.open click should adopt the newly opened page target"
+    );
+    let adopted_window_text = serve.request(serde_json::json!({ "id": 11, "type": "page_text" }));
+    assert!(
+        adopted_window_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("window open adopted text")),
+        "page_text should read from the adopted window.open page"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 12, "type": "quit" }));
+    assert_eq!(quit["id"], 12);
     assert_eq!(quit["status"], "ok");
 
     serve.wait_success();

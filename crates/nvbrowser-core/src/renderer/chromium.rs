@@ -1,4 +1,6 @@
 use std::{
+    collections::HashSet,
+    ffi::OsStr,
     path::{Path, PathBuf},
     sync::Arc,
     thread,
@@ -124,8 +126,10 @@ pub fn render_url_png(
 }
 
 pub struct ChromiumRenderer {
-    _browser: Browser,
+    browser: Browser,
     tab: Arc<Tab>,
+    known_target_ids: HashSet<String>,
+    active_viewport: Viewport,
     current_url: Option<String>,
     current_title: Option<String>,
     next_frame_id: u64,
@@ -136,10 +140,14 @@ impl ChromiumRenderer {
         let browser = open_browser(&options, viewport)?;
         let tab = browser.new_tab().map_err(render_error)?;
         resize_tab(&tab, viewport)?;
+        browser.register_missing_tabs();
+        let known_target_ids = collect_tab_target_ids(&browser);
 
         Ok(Self {
-            _browser: browser,
+            browser,
             tab,
+            known_target_ids,
+            active_viewport: viewport,
             current_url: None,
             current_title: None,
             next_frame_id: 1,
@@ -182,6 +190,7 @@ impl Renderer for ChromiumRenderer {
         let title = self.read_current_title().unwrap_or(None);
         self.current_url = Some(url.clone());
         self.current_title = title.clone();
+        self.refresh_known_target_ids();
         Ok(NavigationResult {
             session_id: request.session_id,
             page_id: request.page_id,
@@ -194,6 +203,7 @@ impl Renderer for ChromiumRenderer {
         &mut self,
         request: RenderFrameRequest,
     ) -> Result<RenderedFrame, RendererError> {
+        self.active_viewport = request.viewport;
         resize_tab(&self.tab, request.viewport)?;
         let png = self
             .tab
@@ -208,6 +218,7 @@ impl Renderer for ChromiumRenderer {
         if let Some(title) = self.read_current_title() {
             self.current_title = title;
         }
+        self.refresh_known_target_ids();
         let metadata =
             self.next_frame_metadata(request.session_id, request.page_id, request.viewport)?;
 
@@ -456,6 +467,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
+        self.adopt_new_page_target_after_interaction()?;
         let settled = self.wait_for_interaction_settle()?;
         let url = settled.url;
         let title = settled.title;
@@ -471,12 +483,103 @@ impl Renderer for ChromiumRenderer {
 }
 
 impl ChromiumRenderer {
-    fn wait_for_interaction_settle(&self) -> Result<InteractionSettleSample, RendererError> {
+    fn adopt_new_page_target_after_interaction(&mut self) -> Result<(), RendererError> {
+        let deadline = std::time::Instant::now() + Duration::from_millis(750);
+        let new_target_deadline = std::time::Instant::now() + Duration::from_millis(250);
+        loop {
+            let (tabs, candidates) = self.current_target_candidates();
+            if !has_unknown_targets(&candidates) {
+                if std::time::Instant::now() >= new_target_deadline {
+                    return Ok(());
+                }
+                thread::sleep(Duration::from_millis(25));
+                continue;
+            }
+            if self.try_adopt_target_from_candidates(&tabs, &candidates)? {
+                return Ok(());
+            }
+
+            if std::time::Instant::now() >= deadline {
+                mark_observed_targets_known(&mut self.known_target_ids, &candidates);
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    fn try_adopt_target_from_candidates(
+        &mut self,
+        tabs: &[Arc<Tab>],
+        candidates: &[TargetCandidate],
+    ) -> Result<bool, RendererError> {
+        let active_id = self.tab.get_target_id().clone();
+        let Some(target_id) = choose_new_page_target_id(&active_id, candidates) else {
+            return Ok(false);
+        };
+        let Some(tab) = tabs
+            .iter()
+            .find(|tab| tab.get_target_id().as_str() == target_id)
+            .cloned()
+        else {
+            return Ok(false);
+        };
+        tab.activate().map_err(render_error)?;
+        resize_tab(&tab, self.active_viewport)?;
+        self.tab = tab;
+        self.known_target_ids = tabs
+            .iter()
+            .map(|tab| tab.get_target_id().clone())
+            .collect::<HashSet<_>>();
+        Ok(true)
+    }
+
+    fn current_target_candidates(&self) -> (Vec<Arc<Tab>>, Vec<TargetCandidate>) {
+        self.browser.register_missing_tabs();
+        let tabs = self.current_tabs();
+        let candidates = tabs
+            .iter()
+            .map(|tab| TargetCandidate {
+                id: tab.get_target_id().clone(),
+                url: tab.get_url(),
+                previously_known: self.known_target_ids.contains(tab.get_target_id()),
+            })
+            .collect::<Vec<_>>();
+        (tabs, candidates)
+    }
+
+    fn current_tabs(&self) -> Vec<Arc<Tab>> {
+        self.browser
+            .get_tabs()
+            .lock()
+            .map(|tabs| tabs.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn refresh_known_target_ids(&mut self) {
+        self.browser.register_missing_tabs();
+        self.known_target_ids = collect_tab_target_ids(&self.browser);
+    }
+
+    fn wait_for_interaction_settle(&mut self) -> Result<InteractionSettleSample, RendererError> {
         let deadline = std::time::Instant::now() + Duration::from_millis(750);
         let mut samples = Vec::new();
         let _ = self.wait_for_dom_quiet();
 
         loop {
+            let (tabs, candidates) = self.current_target_candidates();
+            if self.try_adopt_target_from_candidates(&tabs, &candidates)? {
+                samples.clear();
+                let _ = self.wait_for_dom_quiet();
+                continue;
+            }
+            if has_unknown_targets(&candidates) {
+                if std::time::Instant::now() < deadline {
+                    samples.clear();
+                    thread::sleep(Duration::from_millis(50));
+                    continue;
+                }
+                mark_observed_targets_known(&mut self.known_target_ids, &candidates);
+            }
             samples.push(self.read_interaction_settle_sample()?);
             if let Some(sample) = choose_interaction_settle_sample(&samples, 2) {
                 return Ok(sample);
@@ -1004,6 +1107,7 @@ fn launch_browser(binary: &Path, viewport: Viewport) -> Result<Browser, Renderer
         .path(Some(binary.to_path_buf()))
         .window_size(Some((viewport.width, viewport.height)))
         .sandbox(false)
+        .args(vec![OsStr::new("--disable-popup-blocking")])
         .build()
         .map_err(|error| {
             RendererError::new(
@@ -1181,6 +1285,62 @@ fn latest_interaction_settle_sample(
     samples: &[InteractionSettleSample],
 ) -> Option<InteractionSettleSample> {
     samples.last().cloned()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TargetCandidate {
+    id: String,
+    url: String,
+    previously_known: bool,
+}
+
+fn choose_new_page_target_id(
+    active_target_id: &str,
+    candidates: &[TargetCandidate],
+) -> Option<String> {
+    candidates
+        .iter()
+        .rev()
+        .find(|candidate| {
+            candidate.id != active_target_id
+                && !candidate.previously_known
+                && is_adoptable_page_url(&candidate.url)
+        })
+        .map(|candidate| candidate.id.clone())
+}
+
+fn mark_observed_targets_known(
+    known_target_ids: &mut HashSet<String>,
+    candidates: &[TargetCandidate],
+) {
+    known_target_ids.extend(candidates.iter().map(|candidate| candidate.id.clone()));
+}
+
+fn has_unknown_targets(candidates: &[TargetCandidate]) -> bool {
+    candidates
+        .iter()
+        .any(|candidate| !candidate.previously_known)
+}
+
+fn is_adoptable_page_url(url: &str) -> bool {
+    let url = url.trim();
+    !url.is_empty()
+        && url != "about:blank"
+        && !url.starts_with("devtools:")
+        && !url.starts_with("chrome:")
+        && !url.starts_with("chrome-extension:")
+}
+
+fn collect_tab_target_ids(browser: &Browser) -> HashSet<String> {
+    browser
+        .get_tabs()
+        .lock()
+        .map(|tabs| {
+            tabs.iter()
+                .map(|tab| tab.get_target_id().clone())
+                .collect::<HashSet<_>>()
+        })
+        .unwrap_or_default()
 }
 
 fn non_empty_string(value: String) -> Option<String> {
@@ -1413,6 +1573,92 @@ mod tests {
         ];
 
         assert!(choose_interaction_settle_sample(&samples, 2).is_none());
+    }
+
+    #[test]
+    fn new_page_target_selection_prefers_new_navigated_pages() {
+        let active_id = "active".to_string();
+        let candidates = vec![
+            TargetCandidate {
+                id: "active".to_string(),
+                url: "https://example.com/start".to_string(),
+                previously_known: true,
+            },
+            TargetCandidate {
+                id: "new-blank".to_string(),
+                url: "about:blank".to_string(),
+                previously_known: false,
+            },
+            TargetCandidate {
+                id: "new-page".to_string(),
+                url: "https://example.com/new".to_string(),
+                previously_known: false,
+            },
+        ];
+
+        assert_eq!(
+            choose_new_page_target_id(&active_id, &candidates).as_deref(),
+            Some("new-page")
+        );
+    }
+
+    #[test]
+    fn new_page_target_selection_ignores_existing_and_internal_targets() {
+        let active_id = "active".to_string();
+        let candidates = vec![
+            TargetCandidate {
+                id: "old-page".to_string(),
+                url: "https://example.com/old".to_string(),
+                previously_known: true,
+            },
+            TargetCandidate {
+                id: "devtools".to_string(),
+                url: "devtools://devtools/bundled/inspector.html".to_string(),
+                previously_known: false,
+            },
+            TargetCandidate {
+                id: "blank".to_string(),
+                url: "about:blank".to_string(),
+                previously_known: false,
+            },
+        ];
+
+        assert!(choose_new_page_target_id(&active_id, &candidates).is_none());
+    }
+
+    #[test]
+    fn observed_blank_targets_become_known_after_non_adopting_scan() {
+        let mut known_target_ids = HashSet::from(["active".to_string()]);
+        let first_scan = vec![
+            TargetCandidate {
+                id: "active".to_string(),
+                url: "https://example.com/current".to_string(),
+                previously_known: true,
+            },
+            TargetCandidate {
+                id: "late-popup".to_string(),
+                url: "about:blank".to_string(),
+                previously_known: false,
+            },
+        ];
+
+        assert!(choose_new_page_target_id("active", &first_scan).is_none());
+        mark_observed_targets_known(&mut known_target_ids, &first_scan);
+
+        let second_scan = vec![
+            TargetCandidate {
+                id: "active".to_string(),
+                url: "https://example.com/current".to_string(),
+                previously_known: true,
+            },
+            TargetCandidate {
+                id: "late-popup".to_string(),
+                url: "https://example.com/late".to_string(),
+                previously_known: known_target_ids.contains("late-popup"),
+            },
+        ];
+
+        assert!(choose_new_page_target_id("active", &second_scan).is_none());
     }
 
     #[test]
