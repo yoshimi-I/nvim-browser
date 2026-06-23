@@ -452,6 +452,17 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
     if (element.isContentEditable) return 'editable';
     return 'other';
   };
+  const hrefFor = (element) => {
+    if (kindFor(element) !== 'link') return null;
+    if (typeof element.href === 'string' && element.href.trim().length > 0) return element.href;
+    const raw = element.getAttribute('href');
+    if (typeof raw !== 'string' || raw.trim().length === 0) return null;
+    try {
+      return new URL(raw, document.baseURI).href;
+    } catch (_) {
+      return raw.trim();
+    }
+  };
   const isFocusable = (element) => {
     const tag = element.tagName.toLowerCase();
     return ['input', 'textarea', 'select', 'button', 'a'].includes(tag)
@@ -492,6 +503,7 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
         id: index + 1,
         kind: kindFor(element),
         label: labelFor(element),
+        href: hrefFor(element),
         x,
         y,
         width: Math.max(0, right - left),

@@ -313,6 +313,8 @@ pub struct ElementHint {
     pub id: u32,
     pub kind: ElementHintKind,
     pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub href: Option<String>,
     pub x: f64,
     pub y: f64,
     pub width: f64,
@@ -674,6 +676,7 @@ mod tests {
             id: 1,
             kind: ElementHintKind::Link,
             label: "Docs".to_string(),
+            href: Some("https://example.com/docs".to_string()),
             x: 120.5,
             y: 240.0,
             width: 80.0,
@@ -684,6 +687,18 @@ mod tests {
         let json = serde_json::to_string(&hint).expect("hint should serialize");
         assert!(json.contains(r#""kind":"link""#));
         assert!(json.contains(r#""label":"Docs""#));
+        assert!(json.contains(r#""href":"https://example.com/docs""#));
+    }
+
+    #[test]
+    fn element_hint_deserializes_without_href() {
+        let hint: ElementHint = serde_json::from_str(
+            r#"{"id":1,"kind":"link","label":"Docs","x":120.5,"y":240.0,"width":80.0,"height":24.0,"clickable":true,"focusable":false}"#,
+        )
+        .expect("legacy hint JSON without href should deserialize");
+
+        assert_eq!(hint.label, "Docs");
+        assert_eq!(hint.href, None);
     }
 
     #[test]

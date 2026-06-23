@@ -123,8 +123,9 @@ Then run:
 available for ANSI and Kitty Unicode browser previews.
 
 `:NBrowserHints` echoes the latest keyboard labels and numbered browser
-elements. On ANSI and Kitty Unicode browser previews, the same labels are also
-overlaid on the preview. `:NBrowserClickHint {id-or-label}` and
+elements, including link destinations when available. On ANSI and Kitty Unicode
+browser previews, the same labels are also overlaid on the preview.
+`:NBrowserClickHint {id-or-label}` and
 `:NBrowserFollowHint {label}` click the matching element. `:NBrowserHintMode`
 prompts for a label and follows it.
 `:NBrowserTypeHint {id-or-label} {text}` clicks a hinted element and types text

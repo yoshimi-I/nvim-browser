@@ -14,7 +14,7 @@ local submitted_hint = nil
 local browser = {
   hints = function()
     return {
-      { id = 1, hint_label = "a", kind = "link", label = "Docs", x = 10, y = 20 },
+      { id = 1, hint_label = "a", kind = "link", label = "Docs", href = "https://example.com/docs", x = 10, y = 20 },
       { id = 2, hint_label = "s", kind = "input", label = "Search", x = 30, y = 40 },
     }
   end,
@@ -61,7 +61,8 @@ commands.register(browser, {
 })
 vim.cmd("NBrowserHints")
 
-assert(echoed:match("^a%s+1%s+link%s+Docs%s+@%s+10,20"), "NBrowserHints should show keyboard label before numeric id")
+assert(echoed:match("^a%s+1%s+link%s+Docs%s+%->%s+https://example%.com/docs%s+@%s+10,20"), "NBrowserHints should show keyboard label before numeric id and href")
+assert(echoed:match("https://example%.com/docs"), "NBrowserHints should show structured link hrefs")
 assert(echoed:match("\ns%s+2%s+input%s+Search%s+@%s+30,40"), "NBrowserHints should show all keyboard labels")
 
 vim.cmd("NBrowserAddress")

@@ -89,8 +89,8 @@ COMMANDS                                           *nvim-browser-commands*
 							*:NBrowserHints*
 :NBrowserHints
 	Echo keyboard labels and numbered links/form controls from the latest
-	browser frame. On ANSI and Kitty Unicode browser previews, the same labels
-	are overlaid on the preview.
+	browser frame, including link destinations when available. On ANSI and Kitty
+	Unicode browser previews, the same labels are overlaid on the preview.
 
 							*:NBrowserClickHint*
 :NBrowserClickHint {id-or-label}

@@ -158,12 +158,16 @@ function M.register(browser, opts)
     end
     local lines = {}
     for _, hint in ipairs(hints) do
+      local label = hint.label or ""
+      if hint.href ~= nil and hint.href ~= "" then
+        label = label .. " -> " .. hint.href
+      end
       table.insert(lines, string.format(
         "%s %d %s %s @ %.0f,%.0f",
         hint.hint_label or tostring(hint.id),
         hint.id,
         hint.kind or "other",
-        hint.label or "",
+        label,
         hint.x or 0,
         hint.y or 0
       ))
