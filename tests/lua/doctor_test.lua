@@ -53,8 +53,20 @@ local stale_session = doctor.run({
   has_buffer = true,
   has_window = true,
   status = "ok",
+  runtime_metadata = {
+    protocol_version = 1,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = 80, rows = 24 },
+    viewport = { width = 800, height = 480, device_scale_factor = 1 },
+  },
 })
 assert(contains_line(stale_session, "active session: serve output=ansi status=ok"), "active serve state should be reported")
+assert(
+  contains_line(stale_session, "runtime: protocol=1 transport=stdio-jsonl renderer=chromium-cdp output=ansi cells=80x24 viewport=800x480@1"),
+  "runtime metadata should be reported"
+)
 assert(contains_line(stale_session, "warning: active session output differs"), "doctor should warn about stale active output")
 
 vim.env.ZELLIJ = original_zellij

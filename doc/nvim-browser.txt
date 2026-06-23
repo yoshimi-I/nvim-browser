@@ -163,7 +163,8 @@ COMMANDS                                           *nvim-browser-commands*
 							*:NBrowserStatus*
 :NBrowserStatus
 	Echo the last serve response status, current title, scroll progress, and
-	current URL.
+	current URL. When available, the status line also includes serve runtime
+	diagnostics such as output mode, viewport, cell size, and renderer.
 	The preview buffer name is also kept in sync with the current title or URL.
 
 							*:NBrowserReader*
@@ -181,7 +182,8 @@ COMMANDS                                           *nvim-browser-commands*
 							*:NBrowserDoctor*
 :NBrowserDoctor
 	Echo a diagnostic report for backend binary resolution, selected graphics
-	output, Zellij/terminal environment, and the active preview session.
+	output, Zellij/terminal environment, active preview session, and serve
+	runtime metadata.
 
 							*:NBrowserPreview*
 :NBrowserPreview

@@ -159,6 +159,14 @@ terminal._test.apply_serve_response({
   id = 99,
   status = "ok",
   url = "https://example.com/long",
+  runtime = {
+    protocol_version = 1,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "kitty-unicode",
+    cells = { columns = 80, rows = 24 },
+    viewport = { width = 800, height = 600, device_scale_factor = 1 },
+  },
   page = {
     scroll_x = 0,
     scroll_y = 250,
@@ -172,8 +180,15 @@ local page_metrics = terminal.state().page_metrics
 assert(page_metrics ~= nil, "serve responses should store page metrics")
 assert(page_metrics.scroll_y == 250, "stored page metrics should preserve scroll position")
 assert(page_metrics.document_height == 1600, "stored page metrics should preserve document size")
+local runtime_info = terminal.state().runtime_metadata
+assert(runtime_info ~= nil, "serve responses should store runtime metadata")
+assert(runtime_info.protocol_version == 1, "runtime metadata should preserve protocol version")
+assert(runtime_info.output == "kitty-unicode", "runtime metadata should preserve output mode")
+assert(runtime_info.cells.columns == 80, "runtime metadata should preserve preview columns")
+assert(runtime_info.viewport.width == 800, "runtime metadata should preserve viewport width")
 terminal.close()
 assert(terminal.state().page_metrics == nil, "closing a browser session should clear page metrics")
+assert(terminal.state().runtime_metadata == nil, "closing a browser session should clear runtime metadata")
 terminal._test.apply_serve_response({ id = 100, status = "error", error = "navigation failed" })
 assert(terminal.state().page_metrics == nil, "responses without page metrics should clear stale page metrics")
 

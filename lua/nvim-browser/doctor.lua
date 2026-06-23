@@ -25,6 +25,36 @@ local function active_session_line(state)
   return "active session: " .. state.mode .. " output=" .. output .. " status=" .. status
 end
 
+local function runtime_line(state)
+  local runtime = state and state.runtime_metadata or nil
+  if type(runtime) ~= "table" then
+    return nil
+  end
+  local cells = "unknown"
+  if type(runtime.cells) == "table" and runtime.cells.columns ~= nil and runtime.cells.rows ~= nil then
+    cells = tostring(runtime.cells.columns) .. "x" .. tostring(runtime.cells.rows)
+  end
+  local viewport = "unknown"
+  if type(runtime.viewport) == "table" and runtime.viewport.width ~= nil and runtime.viewport.height ~= nil then
+    viewport = tostring(runtime.viewport.width) .. "x" .. tostring(runtime.viewport.height)
+    if runtime.viewport.device_scale_factor ~= nil then
+      viewport = viewport .. "@" .. tostring(runtime.viewport.device_scale_factor)
+    end
+  end
+  return "runtime: protocol="
+    .. tostring(runtime.protocol_version or "unknown")
+    .. " transport="
+    .. tostring(runtime.transport or "unknown")
+    .. " renderer="
+    .. tostring(runtime.renderer or "unknown")
+    .. " output="
+    .. tostring(runtime.output or "unknown")
+    .. " cells="
+    .. cells
+    .. " viewport="
+    .. viewport
+end
+
 function M.run(config, terminal_state)
   config = config or {}
   terminal_state = terminal_state or {}
@@ -43,6 +73,10 @@ function M.run(config, terminal_state)
       active_session_line(terminal_state),
     },
   }
+  local runtime = runtime_line(terminal_state)
+  if runtime ~= nil then
+    table.insert(report.lines, runtime)
+  end
 
   if vim.fn.executable(config.binary or "nvbrowser") == 1 then
     add_item(report, "ok", "binary is executable")
@@ -56,7 +90,8 @@ function M.run(config, terminal_state)
     add_item(report, "warning", "ZELLIJ detected with explicit Kitty graphics; images may not render unless the multiplexer passes graphics through")
   end
 
-  if terminal_state.mode == "serve" and terminal_state.serve_output ~= nil and terminal_state.serve_output ~= browser_output then
+  local active_output = terminal_state.runtime_metadata and terminal_state.runtime_metadata.output or terminal_state.serve_output
+  if terminal_state.mode == "serve" and active_output ~= nil and active_output ~= browser_output then
     add_item(report, "warning", "active session output differs from current config; reopen the preview to use " .. browser_output)
   end
 

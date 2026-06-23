@@ -71,6 +71,16 @@ local browser = {
       document_height = 1600,
     }
   end,
+  runtime_metadata = function()
+    return {
+      protocol_version = 1,
+      transport = "stdio-jsonl",
+      renderer = "chromium-cdp",
+      output = "kitty-unicode",
+      cells = { columns = 80, rows = 24 },
+      viewport = { width = 800, height = 600, device_scale_factor = 1 },
+    }
+  end,
   reader = function()
     reader_called = true
     return true
@@ -108,6 +118,10 @@ assert(echoed == "nvim-browser doctor\nbrowser output: kitty-unicode", "NBrowser
 
 vim.cmd("NBrowserStatus")
 assert(echoed:match("scroll 25%%"), "NBrowserStatus should include scroll progress when page metrics exist")
+assert(echoed:match("output=kitty%-unicode"), "NBrowserStatus should include runtime output when available")
+assert(echoed:match("viewport=800x600"), "NBrowserStatus should include runtime viewport when available")
+assert(echoed:match("cells=80x24"), "NBrowserStatus should include runtime cell size when available")
+assert(echoed:match("renderer=chromium%-cdp"), "NBrowserStatus should include runtime renderer when available")
 
 vim.cmd("NBrowserReader")
 assert(reader_called == true, "NBrowserReader should call browser.reader")

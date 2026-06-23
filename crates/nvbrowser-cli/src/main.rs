@@ -98,7 +98,8 @@ enum Command {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ValueEnum)]
+#[serde(rename_all = "kebab-case")]
 enum ImageOutput {
     Kitty,
     KittyUnicode,
@@ -324,6 +325,8 @@ struct ServeResponse {
     id: u64,
     status: ServeStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
+    runtime: Option<ServeRuntimeInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     payload: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
@@ -338,6 +341,29 @@ struct ServeResponse {
     found: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+struct RuntimeCells {
+    columns: u32,
+    rows: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+struct RuntimeViewport {
+    width: u32,
+    height: u32,
+    device_scale_factor: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct ServeRuntimeInfo {
+    protocol_version: u32,
+    transport: &'static str,
+    renderer: &'static str,
+    output: ImageOutput,
+    cells: RuntimeCells,
+    viewport: RuntimeViewport,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -544,6 +570,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 ServeResponse {
                     id,
                     status: ServeStatus::Ok,
+                    runtime: Some(self.runtime_info()),
                     payload,
                     url: self.session.active_page().url().map(str::to_string),
                     title: self.session.active_page().title().map(str::to_string),
@@ -557,6 +584,7 @@ impl<R: Renderer> ServeRuntime<R> {
             Err(error) => ServeResponse {
                 id,
                 status: ServeStatus::Error,
+                runtime: Some(self.runtime_info()),
                 payload: None,
                 url: self.session.active_page().url().map(str::to_string),
                 title: self.session.active_page().title().map(str::to_string),
@@ -565,6 +593,25 @@ impl<R: Renderer> ServeRuntime<R> {
                 hints: Vec::new(),
                 found: None,
                 error: Some(error.to_string()),
+            },
+        }
+    }
+
+    fn runtime_info(&self) -> ServeRuntimeInfo {
+        let viewport = self.session.active_page().viewport();
+        ServeRuntimeInfo {
+            protocol_version: 1,
+            transport: "stdio-jsonl",
+            renderer: "chromium-cdp",
+            output: self.output,
+            cells: RuntimeCells {
+                columns: self.columns,
+                rows: self.rows,
+            },
+            viewport: RuntimeViewport {
+                width: viewport.width,
+                height: viewport.height,
+                device_scale_factor: viewport.device_scale_factor,
             },
         }
     }
@@ -884,6 +931,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                     encode_serve_response(&ServeResponse {
                         id: 0,
                         status: ServeStatus::Error,
+                        runtime: None,
                         payload: None,
                         url: None,
                         title: None,
@@ -1762,6 +1810,7 @@ mod tests {
         let response = ServeResponse {
             id: 7,
             status: ServeStatus::Ok,
+            runtime: None,
             payload: Some("frame".to_string()),
             url: None,
             title: None,
@@ -1783,6 +1832,7 @@ mod tests {
         let response = ServeResponse {
             id: 8,
             status: ServeStatus::Ok,
+            runtime: None,
             payload: Some("frame".to_string()),
             url: Some("https://example.com".to_string()),
             title: Some("Example Domain".to_string()),
@@ -1815,6 +1865,7 @@ mod tests {
         let response = ServeResponse {
             id: 12,
             status: ServeStatus::Ok,
+            runtime: None,
             payload: Some("frame".to_string()),
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
@@ -1836,6 +1887,7 @@ mod tests {
         let response = ServeResponse {
             id: 13,
             status: ServeStatus::Ok,
+            runtime: None,
             payload: Some("frame".to_string()),
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
@@ -1864,6 +1916,7 @@ mod tests {
         let response = ServeResponse {
             id: 14,
             status: ServeStatus::Ok,
+            runtime: None,
             payload: None,
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
@@ -1885,6 +1938,119 @@ mod tests {
             encode_serve_response(&response),
             r##"{"id":14,"status":"ok","url":"https://example.com","title":"Example","text":{"session_id":1,"page_id":1,"url":"https://example.com","title":"Example","text":"# Example\n\nBody","truncated":false}}"##
         );
+    }
+
+    #[test]
+    fn serve_response_encodes_runtime_metadata_when_present() {
+        let response = ServeResponse {
+            id: 15,
+            status: ServeStatus::Ok,
+            runtime: Some(ServeRuntimeInfo {
+                protocol_version: 1,
+                transport: "stdio-jsonl",
+                renderer: "chromium-cdp",
+                output: ImageOutput::KittyUnicode,
+                cells: RuntimeCells {
+                    columns: 80,
+                    rows: 24,
+                },
+                viewport: RuntimeViewport {
+                    width: 800,
+                    height: 480,
+                    device_scale_factor: 1.0,
+                },
+            }),
+            payload: Some("frame".to_string()),
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            page: None,
+            text: None,
+            hints: Vec::new(),
+            found: None,
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":1,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+        );
+    }
+
+    #[test]
+    fn serve_runtime_attaches_runtime_metadata_to_ok_and_error_responses() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 80,
+                rows: 24,
+                viewport: Viewport::new(800, 480),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+            },
+        );
+
+        let ok = runtime.handle(ServeRequest::Navigate {
+            id: 21,
+            url: "https://example.com".to_string(),
+        });
+        let runtime_info = ok
+            .runtime
+            .expect("ok responses should include runtime metadata");
+        assert_eq!(runtime_info.protocol_version, 1);
+        assert_eq!(runtime_info.transport, "stdio-jsonl");
+        assert_eq!(runtime_info.renderer, "chromium-cdp");
+        assert_eq!(runtime_info.output, ImageOutput::Ansi);
+        assert_eq!(runtime_info.cells.columns, 80);
+        assert_eq!(runtime_info.cells.rows, 24);
+        assert_eq!(runtime_info.viewport.width, 800);
+        assert_eq!(runtime_info.viewport.height, 480);
+        assert_eq!(runtime_info.viewport.device_scale_factor, 1.0);
+
+        let error = runtime.handle(ServeRequest::Back { id: 22 });
+        assert_eq!(error.status, ServeStatus::Error);
+        assert!(
+            error.runtime.is_some(),
+            "error responses should keep runtime diagnostics available"
+        );
+    }
+
+    #[test]
+    fn serve_runtime_resize_updates_cells_and_viewport_metadata() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::KittyUnicode,
+                columns: 80,
+                rows: 24,
+                viewport: Viewport::new(800, 480),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+            },
+        );
+        runtime.handle(ServeRequest::Navigate {
+            id: 23,
+            url: "https://example.com".to_string(),
+        });
+
+        let resized = runtime.handle(ServeRequest::Resize {
+            id: 24,
+            columns: 100,
+            rows: 30,
+            width: 1000,
+            height: 600,
+        });
+        let runtime_info = resized
+            .runtime
+            .expect("resize responses should include updated runtime metadata");
+
+        assert_eq!(runtime_info.output, ImageOutput::KittyUnicode);
+        assert_eq!(runtime_info.cells.columns, 100);
+        assert_eq!(runtime_info.cells.rows, 30);
+        assert_eq!(runtime_info.viewport.width, 1000);
+        assert_eq!(runtime_info.viewport.height, 600);
     }
 
     #[test]

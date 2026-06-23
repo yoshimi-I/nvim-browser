@@ -19,6 +19,7 @@ local state = {
   current_url = nil,
   current_title = nil,
   page_metrics = nil,
+  runtime_metadata = nil,
   status = nil,
   status_error = nil,
   last_find_found = nil,
@@ -497,6 +498,9 @@ local function apply_serve_response_metadata(response)
   else
     state.page_metrics = nil
   end
+  if response.runtime ~= nil and response.runtime ~= vim.NIL then
+    state.runtime_metadata = response.runtime
+  end
 end
 
 local function stop_existing_job(force)
@@ -793,6 +797,7 @@ function M.open(command)
   state.current_url = nil
   state.current_title = nil
   state.page_metrics = nil
+  state.runtime_metadata = nil
   state.status = nil
   state.status_error = nil
   state.last_find_found = nil
@@ -922,6 +927,7 @@ function M.open(command)
           state.job_id = nil
           state.mode = nil
           state.serve_output = nil
+          state.runtime_metadata = nil
           state.element_hints = {}
           state.element_hints_geometry = nil
           state.cursor_addressable_preview = false
@@ -1055,6 +1061,7 @@ function M.close()
   state.current_url = nil
   state.current_title = nil
   state.page_metrics = nil
+  state.runtime_metadata = nil
   state.status = nil
   state.status_error = nil
   state.last_find_found = nil
@@ -1297,6 +1304,7 @@ function M.state()
     current_url = state.current_url,
     current_title = state.current_title,
     page_metrics = state.page_metrics,
+    runtime_metadata = state.runtime_metadata,
     status = state.status,
     status_error = state.status_error,
     last_find_found = state.last_find_found,

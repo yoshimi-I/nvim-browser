@@ -26,6 +26,37 @@ function M.register(browser, opts)
     return "scroll " .. percent .. "%"
   end
 
+  local function runtime_status_label(runtime)
+    if type(runtime) ~= "table" then
+      return nil
+    end
+    local parts = {}
+    if runtime.output ~= nil and runtime.output ~= vim.NIL then
+      table.insert(parts, "output=" .. tostring(runtime.output))
+    end
+    if type(runtime.viewport) == "table" then
+      local width = runtime.viewport.width
+      local height = runtime.viewport.height
+      if width ~= nil and height ~= nil then
+        table.insert(parts, "viewport=" .. tostring(width) .. "x" .. tostring(height))
+      end
+    end
+    if type(runtime.cells) == "table" then
+      local columns = runtime.cells.columns
+      local rows = runtime.cells.rows
+      if columns ~= nil and rows ~= nil then
+        table.insert(parts, "cells=" .. tostring(columns) .. "x" .. tostring(rows))
+      end
+    end
+    if runtime.renderer ~= nil and runtime.renderer ~= vim.NIL then
+      table.insert(parts, "renderer=" .. tostring(runtime.renderer))
+    end
+    if #parts == 0 then
+      return nil
+    end
+    return table.concat(parts, " ")
+  end
+
   local function warn_hint_input_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: hint input failed, stale, or browser session is inactive", "WarningMsg" } }, false, {})
   end
@@ -266,12 +297,16 @@ function M.register(browser, opts)
     local title = browser.current_title and browser.current_title() or nil
     local error = browser.status_error and browser.status_error() or nil
     local scroll = browser.page_metrics and page_scroll_label(browser.page_metrics()) or nil
+    local runtime = browser.runtime_metadata and runtime_status_label(browser.runtime_metadata()) or nil
     local message = status
     if title ~= nil and title ~= "" then
       message = message .. " " .. title
     end
     if scroll ~= nil then
       message = message .. " " .. scroll
+    end
+    if runtime ~= nil then
+      message = message .. " " .. runtime
     end
     if url ~= "" then
       message = message .. " " .. url

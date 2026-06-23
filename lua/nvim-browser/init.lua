@@ -205,6 +205,10 @@ function M.page_metrics()
   return terminal.state().page_metrics
 end
 
+function M.runtime_metadata()
+  return terminal.state().runtime_metadata
+end
+
 function M.status()
   return terminal.state().status
 end
