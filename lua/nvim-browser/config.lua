@@ -59,6 +59,7 @@ M.options = {
       address = "a",
       find = "/",
       hints = "f",
+      click_here = "gc",
       hover_here = "gh",
       type_hint_mode = "t",
       submit_hint_mode = "s",

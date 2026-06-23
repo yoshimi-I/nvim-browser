@@ -67,6 +67,7 @@ assert(configured.preview_keymaps.mappings.key_left == "<Left>", "preview-local 
 assert(configured.preview_keymaps.mappings.key_right == "<Right>", "preview-local keymaps should include ArrowRight forwarding")
 assert(configured.preview_keymaps.mappings.page_down == "<PageDown>", "preview-local keymaps should include page-down")
 assert(configured.preview_keymaps.mappings.page_up == "<PageUp>", "preview-local keymaps should include page-up")
+assert(configured.preview_keymaps.mappings.click_here == "gc", "preview-local keymaps should include cursor click")
 assert(configured.preview_keymaps.mappings.hover_here == "gh", "preview-local keymaps should include cursor hover")
 assert(
   configured.keymaps.mappings.type_hint_mode == "t",
@@ -111,6 +112,10 @@ assert(
 assert(
   remapped.preview_keymaps.mappings.hover_here == "gh",
   "preview-local partial remaps should retain cursor hover"
+)
+assert(
+  remapped.preview_keymaps.mappings.click_here == "gc",
+  "preview-local partial remaps should retain cursor click"
 )
 assert(
   remapped.preview_keymaps.mappings.stop == "<Esc>",

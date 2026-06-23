@@ -359,6 +359,7 @@ gl       press Meta-L to focus the browser location
 <Down>   press ArrowDown
 <Left>   press ArrowLeft
 <Right>  press ArrowRight
+gc       click browser viewport at cursor
 gh       hover browser viewport at cursor
 <Esc> stop pending load
 <LeftMouse>        click browser viewport
@@ -372,6 +373,7 @@ require("nvim-browser").setup({
   preview_keymaps = {
     enabled = false,
     mappings = {
+      click_here = "gc",
       left_click = false,
       scroll_down = "<C-d>",
       scroll_up = "<C-u>",

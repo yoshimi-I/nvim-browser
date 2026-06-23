@@ -326,8 +326,10 @@ by 90% of the browser viewport, `a` address, `/` find, `f` hint mode, `t` type
 into a hinted field, `s` type and submit, `i` type into the focused element with
 browser text mode, `<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
 Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` Meta-L
-focus location, arrow keys, `<Esc>` stop a pending load, left click to click the
-browser viewport, scroll wheel to scroll the page, and `q` close.
+focus location, arrow keys, `gc` click the browser viewport at the cursor, `gh`
+hover the browser viewport at the cursor, `<Esc>` stop a pending load, left
+click to click the browser viewport, scroll wheel to scroll the page, and `q`
+close.
 Disable or remap them with
 `preview_keymaps = { enabled = false }` or `preview_keymaps.mappings`.
 

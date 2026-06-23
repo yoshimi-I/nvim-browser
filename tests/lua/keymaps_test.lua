@@ -55,6 +55,9 @@ local browser = {
   click_mouse = function()
     table.insert(calls, "click_mouse")
   end,
+  click_here = function()
+    table.insert(calls, "click_here")
+  end,
   hover_here = function()
     table.insert(calls, "hover_here")
   end,
@@ -232,6 +235,7 @@ assert_buffer_mapping(first_bufnr, "<Up>", "buffer-local controls should install
 assert_buffer_mapping(first_bufnr, "<Down>", "buffer-local controls should install ArrowDown forwarding")
 assert_buffer_mapping(first_bufnr, "<Left>", "buffer-local controls should install ArrowLeft forwarding")
 assert_buffer_mapping(first_bufnr, "<Right>", "buffer-local controls should install ArrowRight forwarding")
+assert_buffer_mapping(first_bufnr, "gc", "buffer-local controls should install cursor click mapping")
 assert_buffer_mapping(first_bufnr, "gh", "buffer-local controls should install cursor hover mapping")
 assert_buffer_mapping(first_bufnr, "q", "buffer-local controls should install close mapping")
 assert_buffer_mapping(first_bufnr, "<LeftMouse>", "buffer-local controls should install left-click mouse mapping")
@@ -266,6 +270,7 @@ trigger_buffer(first_bufnr, "<Up>")
 trigger_buffer(first_bufnr, "<Down>")
 trigger_buffer(first_bufnr, "<Left>")
 trigger_buffer(first_bufnr, "<Right>")
+trigger_buffer(first_bufnr, "gc")
 trigger_buffer(first_bufnr, "gh")
 trigger_buffer(first_bufnr, "q")
 trigger_buffer(first_bufnr, "<LeftMouse>")
@@ -279,7 +284,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,address,find:local,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,text_mode,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,hover_here,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,address,find:local,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,text_mode,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,hover_here,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
 
@@ -295,6 +300,7 @@ keymaps.setup_buffer(browser, first_bufnr, {
     submit_hint_mode = false,
     page_down = "<C-f>",
     page_up = false,
+    click_here = "cc",
     input_text_mode = "I",
     key_enter = false,
   },
@@ -306,6 +312,7 @@ assert_buffer_mapping(first_bufnr, "i", "custom buffer-local hinted input mappin
 assert_no_buffer_mapping(first_bufnr, "s", "false buffer-local hinted submit mapping should disable default")
 assert_buffer_mapping(first_bufnr, "<C-f>", "custom buffer-local page-down mapping should be installed")
 assert_no_buffer_mapping(first_bufnr, "<PageUp>", "false buffer-local page-up mapping should disable default")
+assert_buffer_mapping(first_bufnr, "cc", "custom buffer-local cursor click mapping should be installed")
 assert_buffer_mapping(first_bufnr, "I", "custom buffer-local focused input mapping should be installed")
 assert_no_buffer_mapping(first_bufnr, "<CR>", "false buffer-local browser key mappings should disable defaults")
 assert_buffer_mapping(first_bufnr, "<LeftMouse>", "mouse mappings should remain enabled by default after reinstall")
@@ -319,6 +326,27 @@ keymaps.setup_buffer(browser, second_bufnr, {
 })
 trigger_buffer(second_bufnr, "<LeftMouse>")
 assert(calls[#calls] == "mouse-existing", "buffer-local mouse controls should not overwrite existing mouse mappings")
+
+vim.keymap.set("n", "gc", function()
+  table.insert(calls, "cursor-click-existing")
+end, { buffer = second_bufnr })
+keymaps.setup_buffer(browser, second_bufnr, {
+  enabled = true,
+})
+trigger_buffer(second_bufnr, "gc")
+assert(calls[#calls] == "cursor-click-existing", "buffer-local cursor click should not overwrite existing mappings")
+
+local disabled_click_bufnr = vim.api.nvim_create_buf(false, true)
+keymaps.setup_buffer(browser, disabled_click_bufnr, {
+  enabled = true,
+  mappings = {
+    click_here = false,
+  },
+})
+assert(
+  buffer_mapping(disabled_click_bufnr, "gc").buffer ~= 1,
+  "false cursor click mapping should disable the default buffer-local mapping"
+)
 
 keymaps.setup_buffer(browser, first_bufnr, {
   enabled = false,
