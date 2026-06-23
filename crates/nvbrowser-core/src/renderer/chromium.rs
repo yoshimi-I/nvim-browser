@@ -18,11 +18,11 @@ use crate::{
     renderer::{
         ClickHintRequest, ClickPointRequest, ElementHint, ElementHintsRequest, FindTextRequest,
         FindTextResult, FocusHintRequest, FocusSelectorRequest, FrameArtifact,
-        HistoryNavigationRequest, HistoryNavigationResult, HoverPointRequest, InputResult,
-        InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult, PageMetrics,
-        PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest, ReloadResult,
-        RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
-        ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
+        HistoryNavigationRequest, HistoryNavigationResult, HoverHintRequest, HoverPointRequest,
+        InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
+        PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
+        ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
+        RendererErrorKind, ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -339,6 +339,33 @@ impl Renderer for ChromiumRenderer {
             .and_then(parse_hint_point_json)?;
         self.tab
             .click_point(Point {
+                x: point.x,
+                y: point.y,
+            })
+            .map_err(render_error)?;
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn hover_hint(&mut self, request: HoverHintRequest) -> Result<InputResult, RendererError> {
+        let hint_id = serde_json::to_string(&request.hint_id).map_err(render_error)?;
+        let script = CLICK_HINT_POINT_SCRIPT.replace("__HINT_ID__", &hint_id);
+        let point = self
+            .tab
+            .evaluate(&script, true)
+            .map_err(render_error)?
+            .value
+            .ok_or_else(|| {
+                RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "hint id was not found or is stale",
+                )
+            })
+            .and_then(parse_hint_point_json)?;
+        self.tab
+            .move_mouse_to_point(Point {
                 x: point.x,
                 y: point.y,
             })

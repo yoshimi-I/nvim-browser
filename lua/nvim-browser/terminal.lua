@@ -1965,7 +1965,11 @@ function M.hover_hint(id)
   end
   local hint = find_hint(state.element_hints, id)
   if hint ~= nil then
-    return M.hover_point(hint.x, hint.y)
+    cancel_in_flight_capture()
+    return send_pending_request({
+      type = "hover_hint",
+      hint_id = hint.id,
+    }, state.current_url or state.last_target or "hover", "hover")
   end
   return false
 end

@@ -342,19 +342,19 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         .iter()
         .find(|hint| hint["kind"] == "button" && hint["label"] == "Menu")
         .expect("real Chromium hints should include the hover trigger button");
-    let menu_x = menu_hint["x"].as_f64().expect("menu hint should include x");
-    let menu_y = menu_hint["y"].as_f64().expect("menu hint should include y");
+    let menu_hint_id = menu_hint["id"]
+        .as_u64()
+        .expect("menu hint should include id");
     let hovered = serve.request(serde_json::json!({
         "id": 6,
-        "type": "hover_point",
-        "x": menu_x,
-        "y": menu_y
+        "type": "hover_hint",
+        "hint_id": menu_hint_id
     }));
     assert_eq!(
         hovered["id"], 6,
-        "hover_point response should preserve request id"
+        "hover_hint response should preserve request id"
     );
-    assert_eq!(hovered["status"], "ok", "hover_point should succeed");
+    assert_eq!(hovered["status"], "ok", "hover_hint should succeed");
     assert!(
         hovered["hints"]
             .as_array()
@@ -365,7 +365,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
                         .as_str()
                         .is_some_and(|href| href.ends_with("#hovered"))
             })),
-        "hover_point should reveal hover-only link hints"
+        "hover_hint should reveal hover-only link hints"
     );
 
     let resized = serve.request(serde_json::json!({
