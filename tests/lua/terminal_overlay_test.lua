@@ -519,6 +519,21 @@ end
 assert(mouse_click_seen, "mouse click should map preview cells to viewport pixels")
 
 footer_click_requests = {}
+vim.api.nvim_win_set_cursor(image_win, { 6, 24 })
+local expected_cursor_hover_point = terminal.viewport_point_for_cell(6, vim.api.nvim_win_call(image_win, function()
+  return vim.fn.virtcol(".")
+end), { columns = 50, rows = 11, width = 450, height = 165 })
+assert(terminal.hover_here() == true, "cursor hover should send a browser hover")
+local cursor_hover_seen = false
+for _, request in ipairs(footer_click_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "hover_point" and decoded.x == expected_cursor_hover_point.x and decoded.y == expected_cursor_hover_point.y then
+    cursor_hover_seen = true
+  end
+end
+assert(cursor_hover_seen, "cursor hover should map preview cells to viewport pixels")
+
+footer_click_requests = {}
 assert(terminal.click_mouse({ winid = image_win, line = 12, column = 25 }) == false, "mouse click on footer should be ignored")
 assert(#footer_click_requests == 0, "footer mouse clicks should not reach the serve backend")
 
@@ -528,6 +543,7 @@ assert(#footer_click_requests == 0, "wrong-window mouse clicks should not reach 
 
 vim.api.nvim_win_set_cursor(image_win, { 12, 0 })
 assert(terminal.click_here() == false, "clicking the footer row should not send a browser click")
+assert(terminal.hover_here() == false, "hovering the footer row should not send a browser hover")
 assert(#footer_click_requests == 0, "footer clicks should not reach the serve backend")
 vim.fn.chansend = original_chansend_for_footer
 
@@ -858,6 +874,33 @@ for _, request in ipairs(sent_requests) do
   end
 end
 assert(fallback_click_seen, "non-link follow fallback should send a coordinate click")
+
+sent_requests = {}
+serve_stdout(nil, { hints_response, "" })
+assert(vim.wait(1000, function()
+  return #terminal.state().element_hints == 2
+end), "serve hint response should repopulate element hints before hover")
+assert(terminal.hover_hint("s") == true, "hover_hint should hover hints by coordinates")
+local hover_hint_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "hover_point" and decoded.x == 30 and decoded.y == 40 then
+    hover_hint_seen = true
+  end
+end
+assert(hover_hint_seen, "hover_hint should send a coordinate hover")
+local hover_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(hover_pending_id ~= nil, "hover_hint should mark the hover capture as pending")
+serve_stdout(nil, { vim.json.encode({
+  id = hover_pending_id,
+  status = "ok",
+  payload = "hovered frame",
+  url = "https://example.com",
+  title = "Example",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil
+end), "hover response should clear the pending hover operation")
 
 sent_requests = {}
 vim.cmd("doautocmd VimResized")

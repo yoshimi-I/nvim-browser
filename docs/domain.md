@@ -56,13 +56,17 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Opens URLs, Markdown files, HTML/SVG files, and raster images.
 - Runs persistent Chromium/CDP browser sessions over a JSONL `serve` protocol.
 - Supports navigation, reload, stop, back/forward, scroll, find, focused input,
-  key presses, selector focus, point clicks, hints, and direct href following.
+  key presses, selector focus, point clicks, CDP mouse-move hovers, hints, and
+  direct href following.
 - Shows live browser state in a preview footer: status, title/URL, scroll
   progress, output mode, cells, viewport, and errors.
 - Performs live recapture while idle and suppresses background recapture while a
   navigation-like operation is pending.
 - Extracts a reader buffer from the current browser page and resolves reader
   links against the page URL.
+- Hover interactions are first-class browser input, not DOM-only simulation:
+  `hover_point`, `hover_here`, and `hover_hint` move the Chromium mouse cursor
+  so CSS `:hover` and hover menus can change the next captured frame.
 
 ## Current Risks
 

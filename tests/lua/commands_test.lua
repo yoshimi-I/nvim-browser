@@ -19,6 +19,8 @@ local doctor_called = false
 local reader_called = false
 local reader_follow_called = false
 local stop_called = false
+local hovered_here = false
+local hovered_hint = nil
 local browser = {
   hints = function()
     return {
@@ -32,6 +34,14 @@ local browser = {
   end,
   follow_hint = function(identifier)
     followed = identifier
+    return true
+  end,
+  hover_here = function()
+    hovered_here = true
+    return true
+  end,
+  hover_hint = function(identifier)
+    hovered_hint = identifier
     return true
   end,
   address = function(input)
@@ -246,6 +256,12 @@ commands.register(browser, {
 vim.cmd("NBrowserFollowHint a")
 assert(followed == "a", "NBrowserFollowHint should pass the label to follow_hint")
 assert(clicked == nil, "NBrowserFollowHint should not call click_hint when follow_hint exists")
+
+vim.cmd("NBrowserHoverHere")
+assert(hovered_here == true, "NBrowserHoverHere should call hover_here")
+
+vim.cmd("NBrowserHoverHint m")
+assert(hovered_hint == "m", "NBrowserHoverHint should pass the label to hover_hint")
 
 followed = nil
 vim.cmd("NBrowserHintMode")

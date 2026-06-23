@@ -35,6 +35,8 @@ pub trait Renderer {
 
     fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError>;
 
+    fn hover_point(&mut self, request: HoverPointRequest) -> Result<InputResult, RendererError>;
+
     fn find_text(&mut self, request: FindTextRequest) -> Result<FindTextResult, RendererError>;
 
     fn page_text(&mut self, _request: PageTextRequest) -> Result<PageTextSnapshot, RendererError> {
@@ -295,6 +297,14 @@ pub struct ClickPointRequest {
     pub y: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct HoverPointRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub x: f64,
+    pub y: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FindTextRequest {
     pub session_id: SessionId,
@@ -388,6 +398,17 @@ pub struct ElementHint {
 }
 
 impl ClickPointRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId, x: f64, y: f64) -> Self {
+        Self {
+            session_id,
+            page_id,
+            x,
+            y,
+        }
+    }
+}
+
+impl HoverPointRequest {
     pub const fn new(session_id: SessionId, page_id: PageId, x: f64, y: f64) -> Self {
         Self {
             session_id,
@@ -577,6 +598,16 @@ mod tests {
             })
         }
 
+        fn hover_point(
+            &mut self,
+            request: HoverPointRequest,
+        ) -> Result<InputResult, RendererError> {
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
         fn find_text(&mut self, request: FindTextRequest) -> Result<FindTextResult, RendererError> {
             Ok(FindTextResult {
                 session_id: request.session_id,
@@ -700,7 +731,7 @@ mod tests {
     }
 
     #[test]
-    fn renderer_contract_supports_selector_focus_and_point_click() {
+    fn renderer_contract_supports_selector_focus_click_and_hover() {
         let mut renderer = FakeRenderer::new();
         let session_id = SessionId::new(6);
         let page_id = PageId::new(9);
@@ -715,11 +746,16 @@ mod tests {
         let click = renderer
             .click_point(ClickPointRequest::new(session_id, page_id, 12.5, 24.25))
             .expect("point click should succeed");
+        let hover = renderer
+            .hover_point(HoverPointRequest::new(session_id, page_id, 12.5, 24.25))
+            .expect("point hover should succeed");
 
         assert_eq!(focus.session_id, session_id);
         assert_eq!(focus.page_id, page_id);
         assert_eq!(click.session_id, session_id);
         assert_eq!(click.page_id, page_id);
+        assert_eq!(hover.session_id, session_id);
+        assert_eq!(hover.page_id, page_id);
     }
 
     #[test]

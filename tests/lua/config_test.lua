@@ -65,6 +65,7 @@ assert(configured.preview_keymaps.mappings.key_up == "<Up>", "preview-local keym
 assert(configured.preview_keymaps.mappings.key_down == "<Down>", "preview-local keymaps should include ArrowDown forwarding")
 assert(configured.preview_keymaps.mappings.key_left == "<Left>", "preview-local keymaps should include ArrowLeft forwarding")
 assert(configured.preview_keymaps.mappings.key_right == "<Right>", "preview-local keymaps should include ArrowRight forwarding")
+assert(configured.preview_keymaps.mappings.hover_here == "gh", "preview-local keymaps should include cursor hover")
 assert(
   configured.keymaps.mappings.type_hint_mode == "t",
   "global keymaps should include a hinted input mapping"
@@ -104,6 +105,10 @@ assert(
 assert(
   remapped.preview_keymaps.mappings.type_hint_mode == "t",
   "preview-local partial remaps should retain hinted input mapping"
+)
+assert(
+  remapped.preview_keymaps.mappings.hover_here == "gh",
+  "preview-local partial remaps should retain cursor hover"
 )
 assert(
   remapped.preview_keymaps.mappings.stop == "<Esc>",

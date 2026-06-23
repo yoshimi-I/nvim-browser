@@ -8,6 +8,9 @@ local terminal = require("nvim-browser.terminal")
 assert(type(browser.click_hint) == "function", "click_hint API should exist")
 assert(type(browser.follow_hint) == "function", "follow_hint API should exist")
 assert(type(browser.hint_mode) == "function", "hint_mode API should exist")
+assert(type(browser.hover_point) == "function", "hover_point API should exist")
+assert(type(browser.hover_here) == "function", "hover_here API should exist")
+assert(type(browser.hover_hint) == "function", "hover_hint API should exist")
 assert(type(browser.type_hint) == "function", "type_hint API should exist")
 assert(type(browser.type_hint_mode) == "function", "type_hint_mode API should exist")
 assert(type(browser.input_text_mode) == "function", "focused input text mode API should exist")
@@ -40,6 +43,9 @@ local original_press_key = browser.press_key
 local original_terminal_follow_hint = terminal.follow_hint
 local original_terminal_click_mouse = terminal.click_mouse
 local original_terminal_type_hint = terminal.type_hint
+local original_terminal_hover_point = terminal.hover_point
+local original_terminal_hover_here = terminal.hover_here
+local original_terminal_hover_hint = terminal.hover_hint
 local original_terminal_stop = terminal.stop
 local original_terminal_input_text = terminal.input_text
 local original_terminal_press_key = terminal.press_key
@@ -110,6 +116,31 @@ assert(browser.type_hint("s", "hello world", { submit = true }) == true, "type_h
 assert(typed_hint.label == "s", "type_hint should pass hint label to terminal")
 assert(typed_hint.text == "hello world", "type_hint should pass text to terminal")
 assert(typed_hint.submit == true, "type_hint should pass submit option to terminal")
+
+local hovered_point = nil
+terminal.hover_point = function(x, y)
+  hovered_point = { x = x, y = y }
+  return true
+end
+assert(browser.hover_point(12.5, 24.25) == true, "hover_point should delegate to terminal point hover")
+assert(hovered_point.x == 12.5, "hover_point should pass x coordinate to terminal")
+assert(hovered_point.y == 24.25, "hover_point should pass y coordinate to terminal")
+
+local hovered_here = false
+terminal.hover_here = function()
+  hovered_here = true
+  return "hovered"
+end
+assert(browser.hover_here() == "hovered", "hover_here should delegate to terminal cursor hover")
+assert(hovered_here == true, "hover_here should call terminal.hover_here")
+
+local hovered_hint = nil
+terminal.hover_hint = function(label)
+  hovered_hint = label
+  return true
+end
+assert(browser.hover_hint("m") == true, "hover_hint should delegate to terminal hint hover")
+assert(hovered_hint == "m", "hover_hint should pass hint label to terminal")
 
 local focused_input = nil
 terminal.input_text = function(text)
@@ -213,6 +244,9 @@ browser.press_key = original_press_key
 terminal.follow_hint = original_terminal_follow_hint
 terminal.click_mouse = original_terminal_click_mouse
 terminal.type_hint = original_terminal_type_hint
+terminal.hover_point = original_terminal_hover_point
+terminal.hover_here = original_terminal_hover_here
+terminal.hover_hint = original_terminal_hover_hint
 terminal.stop = original_terminal_stop
 terminal.input_text = original_terminal_input_text
 terminal.press_key = original_terminal_press_key

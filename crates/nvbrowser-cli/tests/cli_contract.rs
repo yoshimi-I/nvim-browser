@@ -189,15 +189,24 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         &fixture_path,
         r##"<!doctype html>
 <html>
-  <head><title>NBrowser E2E Fixture</title></head>
+  <head>
+    <title>NBrowser E2E Fixture</title>
+    <style>
+      #hover-menu { display: none; margin-top: 8px; }
+      #hover-source:hover + #hover-menu { display: inline-block; }
+    </style>
+  </head>
   <body>
     <main>
       <label>Search <input aria-label="Search" oninput="document.getElementById('out').textContent=this.value"></label>
       <a href="#docs">Docs</a>
       <button>Go</button>
+      <button id="hover-source">Menu</button>
+      <a id="hover-menu" href="#hovered">Hover Docs</a>
       <div contenteditable="true">Editable target</div>
       <p id="out">empty</p>
       <section id="docs">Docs section</section>
+      <section id="hovered">Hovered section</section>
     </main>
   </body>
 </html>"##,
@@ -258,6 +267,10 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
             .any(|hint| hint["kind"] == "link" && hint["href"].as_str().is_some()),
         "real Chromium hints should include direct hrefs for links"
     );
+    assert!(
+        !hints.iter().any(|hint| hint["label"] == "Hover Docs"),
+        "hidden hover links should not be hinted before hover"
+    );
     let input_hint = hints
         .iter()
         .find(|hint| hint["kind"] == "input" && hint["label"] == "Search")
@@ -300,8 +313,38 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         "find_text should report the typed text"
     );
 
-    let resized = serve.request(serde_json::json!({
+    let menu_hint = hints
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Menu")
+        .expect("real Chromium hints should include the hover trigger button");
+    let menu_x = menu_hint["x"].as_f64().expect("menu hint should include x");
+    let menu_y = menu_hint["y"].as_f64().expect("menu hint should include y");
+    let hovered = serve.request(serde_json::json!({
         "id": 4,
+        "type": "hover_point",
+        "x": menu_x,
+        "y": menu_y
+    }));
+    assert_eq!(
+        hovered["id"], 4,
+        "hover_point response should preserve request id"
+    );
+    assert_eq!(hovered["status"], "ok", "hover_point should succeed");
+    assert!(
+        hovered["hints"]
+            .as_array()
+            .is_some_and(|hints| hints.iter().any(|hint| {
+                hint["kind"] == "link"
+                    && hint["label"] == "Hover Docs"
+                    && hint["href"]
+                        .as_str()
+                        .is_some_and(|href| href.ends_with("#hovered"))
+            })),
+        "hover_point should reveal hover-only link hints"
+    );
+
+    let resized = serve.request(serde_json::json!({
+        "id": 5,
         "type": "resize",
         "columns": 32,
         "rows": 10,
@@ -311,8 +354,8 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
     assert_eq!(resized["runtime"]["cells"]["columns"], 32);
     assert_eq!(resized["runtime"]["viewport"]["width"], 320);
 
-    let quit = serve.request(serde_json::json!({ "id": 5, "type": "quit" }));
-    assert_eq!(quit["id"], 5);
+    let quit = serve.request(serde_json::json!({ "id": 6, "type": "quit" }));
+    assert_eq!(quit["id"], 6);
     assert_eq!(quit["status"], "ok");
 
     serve.wait_success();

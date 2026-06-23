@@ -167,6 +167,10 @@ function M.click_point(x, y)
   return terminal.click_point(x, y)
 end
 
+function M.hover_point(x, y)
+  return terminal.hover_point(x, y)
+end
+
 function M.find_text(query)
   return terminal.find_text(query)
 end
@@ -188,12 +192,20 @@ function M.click_here()
   return terminal.click_here()
 end
 
+function M.hover_here()
+  return terminal.hover_here()
+end
+
 function M.click_mouse(mousepos)
   return terminal.click_mouse(mousepos)
 end
 
 function M.click_hint(id)
   return terminal.click_hint(id)
+end
+
+function M.hover_hint(id)
+  return terminal.hover_hint(id)
 end
 
 function M.follow_hint(id)

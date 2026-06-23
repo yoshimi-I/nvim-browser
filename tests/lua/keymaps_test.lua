@@ -46,6 +46,9 @@ local browser = {
   click_mouse = function()
     table.insert(calls, "click_mouse")
   end,
+  hover_here = function()
+    table.insert(calls, "hover_here")
+  end,
   stop = function()
     table.insert(calls, "stop")
   end,
@@ -218,6 +221,7 @@ assert_buffer_mapping(first_bufnr, "<Up>", "buffer-local controls should install
 assert_buffer_mapping(first_bufnr, "<Down>", "buffer-local controls should install ArrowDown forwarding")
 assert_buffer_mapping(first_bufnr, "<Left>", "buffer-local controls should install ArrowLeft forwarding")
 assert_buffer_mapping(first_bufnr, "<Right>", "buffer-local controls should install ArrowRight forwarding")
+assert_buffer_mapping(first_bufnr, "gh", "buffer-local controls should install cursor hover mapping")
 assert_buffer_mapping(first_bufnr, "q", "buffer-local controls should install close mapping")
 assert_buffer_mapping(first_bufnr, "<LeftMouse>", "buffer-local controls should install left-click mouse mapping")
 assert_buffer_mapping(first_bufnr, "<ScrollWheelDown>", "buffer-local controls should install wheel-down mapping")
@@ -249,6 +253,7 @@ trigger_buffer(first_bufnr, "<Up>")
 trigger_buffer(first_bufnr, "<Down>")
 trigger_buffer(first_bufnr, "<Left>")
 trigger_buffer(first_bufnr, "<Right>")
+trigger_buffer(first_bufnr, "gh")
 trigger_buffer(first_bufnr, "q")
 trigger_buffer(first_bufnr, "<LeftMouse>")
 trigger_buffer(first_bufnr, "<ScrollWheelDown>")
@@ -261,7 +266,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,address,find:local,hints,type_hints:type:buffer text,type_hints:submit:buffer text,text_mode,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,address,find:local,hints,type_hints:type:buffer text,type_hints:submit:buffer text,text_mode,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,hover_here,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
   "buffer-local controls should call browser APIs"
 )
 

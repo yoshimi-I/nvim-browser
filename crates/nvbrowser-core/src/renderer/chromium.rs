@@ -18,9 +18,9 @@ use crate::{
     renderer::{
         ClickPointRequest, ElementHint, ElementHintsRequest, FindTextRequest, FindTextResult,
         FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest, HistoryNavigationResult,
-        InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
-        PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
-        ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
+        HoverPointRequest, InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest,
+        NavigationResult, PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot,
+        ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
         RendererErrorKind, ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
@@ -302,6 +302,19 @@ impl Renderer for ChromiumRenderer {
     fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError> {
         self.tab
             .click_point(Point {
+                x: request.x,
+                y: request.y,
+            })
+            .map_err(render_error)?;
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn hover_point(&mut self, request: HoverPointRequest) -> Result<InputResult, RendererError> {
+        self.tab
+            .move_mouse_to_point(Point {
                 x: request.x,
                 y: request.y,
             })

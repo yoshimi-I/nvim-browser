@@ -262,6 +262,12 @@ function M.register(browser, opts)
     end
   end, {})
 
+  vim.api.nvim_create_user_command("NBrowserHoverHere", function()
+    if not browser.hover_here() then
+      vim.api.nvim_echo({ { "nvim-browser: cursor hover requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+    end
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserHints", function()
     local hints = browser.hints()
     if #hints == 0 then
@@ -289,6 +295,14 @@ function M.register(browser, opts)
 
   vim.api.nvim_create_user_command("NBrowserClickHint", function(opts)
     if not browser.click_hint(opts.args) then
+      warn_hint_unavailable()
+    end
+  end, {
+    nargs = 1,
+  })
+
+  vim.api.nvim_create_user_command("NBrowserHoverHint", function(opts)
+    if not browser.hover_hint(opts.args) then
       warn_hint_unavailable()
     end
   end, {

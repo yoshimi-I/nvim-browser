@@ -1119,10 +1119,10 @@ local function clear_pending_operation(id)
   end
 end
 
-function send_pending_request(request, target)
+function send_pending_request(request, target, label)
   local ok, id = send_serve_request(request)
   if ok then
-    mark_pending_operation(id, "loading", target)
+    mark_pending_operation(id, label or "loading", target)
   end
   return ok
 end
@@ -1756,6 +1756,20 @@ function M.click_point(x, y)
   })
 end
 
+function M.hover_point(x, y)
+  x = tonumber(x)
+  y = tonumber(y)
+  if x == nil or y == nil then
+    return false
+  end
+  request_resize()
+  return send_pending_request({
+    type = "hover_point",
+    x = x,
+    y = y,
+  }, state.current_url or state.last_target or "hover", "hover")
+end
+
 function M.find_text(query)
   if query == nil or query == "" then
     return false
@@ -1813,6 +1827,23 @@ function M.click_here()
   return M.click_point(point.x, point.y)
 end
 
+function M.hover_here()
+  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+    return false
+  end
+
+  local cursor = vim.api.nvim_win_get_cursor(state.winid)
+  local geometry = current_preview_geometry()
+  if cursor[1] > geometry.rows then
+    return false
+  end
+  local column = vim.api.nvim_win_call(state.winid, function()
+    return vim.fn.virtcol(".")
+  end)
+  local point = M.viewport_point_for_cell(cursor[1], column, geometry)
+  return M.hover_point(point.x, point.y)
+end
+
 function M.click_mouse(mousepos)
   if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
     return false
@@ -1847,6 +1878,20 @@ function M.click_hint(id)
   local hint = find_hint(state.element_hints, id)
   if hint ~= nil then
     return M.click_point(hint.x, hint.y)
+  end
+  return false
+end
+
+function M.hover_hint(id)
+  if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
+    return false
+  end
+  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+    return false
+  end
+  local hint = find_hint(state.element_hints, id)
+  if hint ~= nil then
+    return M.hover_point(hint.x, hint.y)
   end
   return false
 end

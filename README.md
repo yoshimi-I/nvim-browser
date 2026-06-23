@@ -21,7 +21,7 @@ This repository is an early MVP scaffold. Today it includes:
   with cursor-addressable placeholder cells
 - large literal Kitty browser frames are split into stable image tiles to keep
   oversized transfers replaceable inside the preview surface
-- Neovim commands for opening, navigating, reloading, stopping pending loads, history, scrolling, finding text, text input, keys, selector focus, point clicks, and hinted element clicks
+- Neovim commands for opening, navigating, reloading, stopping pending loads, history, scrolling, finding text, text input, keys, selector focus, point clicks, point hovers, and hinted element actions
 - browser element hints overlaid on cursor-addressable previews
 - persistent Neovim preview surface reuse
 - current URL, title, scroll progress, status, runtime diagnostics, preview footer, live recapture, and preview buffer naming from the active browser session
@@ -195,8 +195,10 @@ Then run:
 :NBrowserKey A ctrl
 :NBrowserClick 120 240
 :NBrowserClickHere
+:NBrowserHoverHere
 :NBrowserHints
 :NBrowserClickHint 1
+:NBrowserHoverHint 1
 :NBrowserFollowHint a
 :NBrowserTypeHint s hello world
 :NBrowserSubmitHint s hello world
@@ -223,6 +225,9 @@ Configure Neovim's default with
 available for ANSI and Kitty Unicode browser previews. Active browser previews
 reserve the bottom preview row for a compact status footer, so cursor clicks in
 that footer are not sent to the browser page.
+`:NBrowserHoverHere` sends a real Chromium mouse-move event to the browser
+viewport point under the preview cursor. Use it to reveal CSS `:hover` menus or
+tooltips without leaving Neovim.
 
 Browser preview footers show the latest serve status, title or URL, scroll
 progress, output mode, cell geometry, and current URL when reported by the
@@ -243,10 +248,11 @@ terminate a stuck serve job.
 elements, including link destinations when available. On ANSI and Kitty Unicode
 browser previews, the same labels are also overlaid on the preview.
 `:NBrowserClickHint {id-or-label}` and
-`:NBrowserFollowHint {label}` act on the matching element. Follow uses a link
-hint's `href` directly when available, which avoids coordinate-click drift and
-keeps the active browser session on the navigated URL; non-link hints fall back
-to a coordinate click. `:NBrowserHintMode` prompts for a label and follows it.
+`:NBrowserHoverHint {id-or-label}` act on the matching element coordinates.
+`:NBrowserFollowHint {label}` uses a link hint's `href` directly when
+available, which avoids coordinate-click drift and keeps the active browser
+session on the navigated URL; non-link hints fall back to a coordinate click.
+`:NBrowserHintMode` prompts for a label and follows it.
 `:NBrowserTypeHint {id-or-label} {text}` clicks a hinted element and types text
 into it. `:NBrowserSubmitHint {id-or-label} {text}` also presses Enter after the
 text is queued.

@@ -169,6 +169,12 @@ COMMANDS                                           *nvim-browser-commands*
 	previews reserve the bottom preview row for a compact status footer; clicks
 	on that footer row are ignored instead of being mapped into page pixels.
 
+							*:NBrowserHoverHere*
+:NBrowserHoverHere
+	Move the Chromium mouse cursor to the viewport point under the preview
+	cursor and capture a fresh frame. This can reveal CSS hover menus and
+	tooltips. The preview footer row is ignored.
+
 							*:NBrowserHints*
 :NBrowserHints
 	Echo keyboard labels and numbered links/form controls from the latest
@@ -178,6 +184,11 @@ COMMANDS                                           *nvim-browser-commands*
 							*:NBrowserClickHint*
 :NBrowserClickHint {id-or-label}
 	Click the center point of a browser hint and capture a fresh frame.
+
+							*:NBrowserHoverHint*
+:NBrowserHoverHint {id-or-label}
+	Move the Chromium mouse cursor to the center point of a browser hint and
+	capture a fresh frame.
 
 							*:NBrowserFollowHint*
 :NBrowserFollowHint {label}
@@ -329,6 +340,7 @@ gl       press Meta-L to focus the browser location
 <Down>   press ArrowDown
 <Left>   press ArrowLeft
 <Right>  press ArrowRight
+gh       hover browser viewport at cursor
 <Esc> stop pending load
 <LeftMouse>        click browser viewport
 <ScrollWheelDown> scroll down

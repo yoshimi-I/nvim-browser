@@ -13,9 +13,10 @@ use nvbrowser_core::{
     renderer::chromium::{render_url_png, ChromiumOptions},
     BrowserSession, ChromiumRenderer, ClickPointRequest, ElementHint, ElementHintsRequest,
     FindTextRequest, FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest,
-    KeyPressRequest, KittyImageDelete, KittyImageTransfer, NavigateRequest, PageMetrics,
-    PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest, RenderFrameRequest,
-    RenderedFrame, Renderer, ScrollRequest, SessionId, TextInputRequest, Viewport,
+    HoverPointRequest, KeyPressRequest, KittyImageDelete, KittyImageTransfer, NavigateRequest,
+    PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
+    RenderFrameRequest, RenderedFrame, Renderer, ScrollRequest, SessionId, TextInputRequest,
+    Viewport,
 };
 use serde::{Deserialize, Serialize};
 
@@ -296,6 +297,11 @@ enum ServeRequest {
         selector: String,
     },
     ClickPoint {
+        id: u64,
+        x: f64,
+        y: f64,
+    },
+    HoverPoint {
         id: u64,
         x: f64,
         y: f64,
@@ -735,6 +741,16 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload().map(Some)
             }
+            ServeRequest::HoverPoint { x, y, .. } => {
+                self.renderer.hover_point(HoverPointRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    x,
+                    y,
+                ))?;
+                self.settle_after_interaction()?;
+                self.capture_payload().map(Some)
+            }
             ServeRequest::TypePoint {
                 x, y, text, submit, ..
             } => {
@@ -851,6 +867,7 @@ impl ServeRequest {
             | ServeRequest::KeyPress { id, .. }
             | ServeRequest::FocusSelector { id, .. }
             | ServeRequest::ClickPoint { id, .. }
+            | ServeRequest::HoverPoint { id, .. }
             | ServeRequest::TypePoint { id, .. }
             | ServeRequest::FindText { id, .. }
             | ServeRequest::PageText { id }
@@ -1297,6 +1314,7 @@ mod tests {
         key_presses: Vec<String>,
         focused_selectors: Vec<String>,
         clicked_points: Vec<(f64, f64)>,
+        hovered_points: Vec<(f64, f64)>,
         find_queries: Vec<String>,
         fail_click: bool,
         operations: Vec<&'static str>,
@@ -1321,6 +1339,7 @@ mod tests {
                 key_presses: Vec::new(),
                 focused_selectors: Vec::new(),
                 clicked_points: Vec::new(),
+                hovered_points: Vec::new(),
                 find_queries: Vec::new(),
                 fail_click: false,
                 operations: Vec::new(),
@@ -1532,6 +1551,18 @@ mod tests {
                 ));
             }
             self.clicked_points.push((request.x, request.y));
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn hover_point(
+            &mut self,
+            request: HoverPointRequest,
+        ) -> Result<InputResult, RendererError> {
+            self.operations.push("hover_point");
+            self.hovered_points.push((request.x, request.y));
             Ok(InputResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
@@ -1843,6 +1874,16 @@ mod tests {
                 .expect("click point request should parse"),
             ServeRequest::ClickPoint {
                 id: 6,
+                x: 120.5,
+                y: 240.25,
+            }
+        );
+
+        assert_eq!(
+            parse_serve_request(r##"{"type":"hover_point","id":7,"x":120.5,"y":240.25}"##)
+                .expect("hover point request should parse"),
+            ServeRequest::HoverPoint {
+                id: 7,
                 x: 120.5,
                 y: 240.25,
             }
@@ -2832,6 +2873,48 @@ mod tests {
                 "capture",
                 "hints",
                 "click_point",
+                "settle",
+                "capture",
+                "hints"
+            ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_hovers_point_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::HoverPoint {
+            id: 2,
+            x: 120.5,
+            y: 240.25,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(runtime.renderer.hovered_points, vec![(120.5, 240.25)]);
+        assert_eq!(runtime.renderer.captures, 2);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "hover_point",
                 "settle",
                 "capture",
                 "hints"

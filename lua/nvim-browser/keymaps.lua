@@ -200,6 +200,10 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.hint_mode()
   end, "nvim-browser: hints", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "hover_here", "gh"), function()
+    browser.hover_here()
+  end, "nvim-browser: hover cursor", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "type_hint_mode", "t"), function()
     browser.type_hint_mode(input)
   end, "nvim-browser: type into hint", buffer_opts)
