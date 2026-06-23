@@ -209,9 +209,29 @@ assert(runtime_info.protocol_version == 4, "runtime metadata should preserve pro
 assert(runtime_info.output == "kitty-unicode", "runtime metadata should preserve output mode")
 assert(runtime_info.cells.columns == 80, "runtime metadata should preserve preview columns")
 assert(runtime_info.viewport.width == 800, "runtime metadata should preserve viewport width")
+terminal._test.apply_serve_response({
+  id = 100,
+  status = "ok",
+  payload = "runtime frame",
+  runtime = {
+    protocol_version = 4,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "kitty-unicode",
+    cells = { columns = 40, rows = 10 },
+    viewport = { width = 360, height = 140, device_scale_factor = 1 },
+  },
+})
+local rendered_frame_geometry = terminal.state().rendered_frame_geometry
+assert(rendered_frame_geometry ~= nil, "ok frame responses with payload should store rendered frame geometry")
+assert(rendered_frame_geometry.columns == 40, "rendered frame geometry should preserve runtime columns")
+assert(rendered_frame_geometry.rows == 10, "rendered frame geometry should preserve runtime rows")
+assert(rendered_frame_geometry.width == 360, "rendered frame geometry should preserve runtime viewport width")
+assert(rendered_frame_geometry.height == 140, "rendered frame geometry should preserve runtime viewport height")
 terminal.close()
 assert(terminal.state().page_metrics == nil, "closing a browser session should clear page metrics")
 assert(terminal.state().runtime_metadata == nil, "closing a browser session should clear runtime metadata")
+assert(terminal.state().rendered_frame_geometry == nil, "closing a browser session should clear rendered frame geometry")
 terminal._test.apply_serve_response({ id = 100, status = "error", error = "navigation failed" })
 assert(terminal.state().page_metrics == nil, "responses without page metrics should clear stale page metrics")
 
@@ -523,11 +543,35 @@ terminal._test.set_job_id(99)
 terminal._test.set_cursor_addressable_preview(true)
 vim.api.nvim_set_current_win(image_win)
 vim.api.nvim_win_set_buf(image_win, payload_bufnr)
+terminal._test.apply_serve_response({
+  id = 200,
+  status = "ok",
+  payload = "interactive frame",
+  runtime = {
+    protocol_version = 4,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "kitty-unicode",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 450, height = 165, device_scale_factor = 1 },
+  },
+})
 local footer_click_requests = {}
 local original_chansend_for_footer = vim.fn.chansend
 vim.fn.chansend = function(job_id, payload)
   table.insert(footer_click_requests, { job_id = job_id, payload = payload })
   return 1
+end
+
+local function interactive_runtime(width, height)
+  return {
+    protocol_version = 4,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "kitty-unicode",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = width, height = height, device_scale_factor = 1 },
+  }
 end
 
 local expected_mouse_point = terminal.viewport_point_for_cell(6, 25, { columns = 50, rows = 11, width = 450, height = 165 })
@@ -551,6 +595,7 @@ terminal._test.apply_serve_response({
   payload = "clicked frame",
   url = "https://example.com/clicked",
   title = "Clicked",
+  runtime = interactive_runtime(450, 165),
 })
 assert(terminal.state().pending_operation == nil, "matching click response should clear pending click state")
 
@@ -561,13 +606,21 @@ local expected_cursor_hover_point = terminal.viewport_point_for_cell(6, vim.api.
 end), { columns = 50, rows = 11, width = 450, height = 165 })
 assert(terminal.hover_here() == true, "cursor hover should send a browser hover")
 local cursor_hover_seen = false
+local cursor_hover_request_id = nil
 for _, request in ipairs(footer_click_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "hover_point" and decoded.x == expected_cursor_hover_point.x and decoded.y == expected_cursor_hover_point.y then
     cursor_hover_seen = true
+    cursor_hover_request_id = decoded.id
   end
 end
 assert(cursor_hover_seen, "cursor hover should map preview cells to viewport pixels")
+terminal._test.apply_serve_response({
+  id = cursor_hover_request_id,
+  status = "ok",
+  payload = "hovered frame",
+  runtime = interactive_runtime(450, 165),
+})
 
 footer_click_requests = {}
 vim.api.nvim_win_set_cursor(image_win, { 6, 24 })
@@ -601,6 +654,7 @@ terminal._test.apply_serve_response({
   payload = "typed frame",
   url = "https://example.com/typed",
   title = "Typed",
+  runtime = interactive_runtime(450, 165),
 })
 assert(terminal.state().pending_operation == nil, "matching type response should clear pending type state")
 
@@ -614,6 +668,81 @@ for _, request in ipairs(footer_click_requests) do
   end
 end
 assert(cursor_submit_seen, "cursor submit should mark type_point submit true")
+
+footer_click_requests = {}
+terminal.configure({
+  viewport = {
+    cell_width_px = 10,
+    cell_height_px = 20,
+  },
+})
+assert(terminal.click_here() == false, "stale rendered frame geometry should block cursor click")
+assert(terminal.hover_here() == false, "stale rendered frame geometry should block cursor hover")
+assert(terminal.type_here("stale text") == false, "stale rendered frame geometry should block cursor typing")
+assert(terminal.click_mouse({ winid = image_win, line = 6, column = 25 }) == false, "stale rendered frame geometry should block mouse click")
+local stale_resize_seen = false
+local stale_point_seen = false
+for _, request in ipairs(footer_click_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "resize" then
+    stale_resize_seen = true
+  end
+  if ok and (decoded.type == "click_point" or decoded.type == "hover_point" or decoded.type == "type_point") then
+    stale_point_seen = true
+  end
+end
+assert(stale_resize_seen, "stale rendered frame geometry should request a fresh resized frame")
+assert(not stale_point_seen, "stale rendered frame geometry should not send point interactions")
+
+footer_click_requests = {}
+terminal._test.apply_serve_response({
+  id = 201,
+  status = "ok",
+  payload = "refreshed interactive frame",
+  runtime = {
+    protocol_version = 4,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "kitty-unicode",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 500, height = 220, device_scale_factor = 1 },
+  },
+})
+assert(terminal.click_here() == true, "matching refreshed frame geometry should allow cursor click again")
+
+footer_click_requests = {}
+terminal._test.apply_serve_response({
+  id = 202,
+  status = "ok",
+  payload = "column guard frame",
+  runtime = {
+    protocol_version = 4,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "kitty-unicode",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 500, height = 220, device_scale_factor = 1 },
+  },
+})
+vim.bo[payload_bufnr].modifiable = true
+vim.api.nvim_buf_set_lines(payload_bufnr, 5, 6, false, { string.rep("x", 80) })
+vim.bo[payload_bufnr].modifiable = false
+vim.api.nvim_win_set_cursor(image_win, { 6, 60 })
+terminal.configure({
+  viewport = {
+    cell_width_px = 11,
+    cell_height_px = 20,
+  },
+})
+footer_click_requests = {}
+assert(terminal.click_here() == false, "cursor click beyond rendered columns should be ignored")
+assert(terminal.hover_here() == false, "cursor hover beyond rendered columns should be ignored")
+assert(terminal.type_here("outside") == false, "cursor typing beyond rendered columns should be ignored")
+assert(#footer_click_requests == 0, "out-of-column cursor actions should not reach the serve backend")
+
+footer_click_requests = {}
+assert(terminal.click_mouse({ winid = image_win, line = 6, column = 51 }) == false, "mouse click beyond rendered columns should be ignored")
+assert(#footer_click_requests == 0, "out-of-column mouse clicks should not reach the serve backend")
 
 footer_click_requests = {}
 assert(terminal.click_mouse({ winid = image_win, line = 12, column = 25 }) == false, "mouse click on footer should be ignored")

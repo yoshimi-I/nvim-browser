@@ -20,6 +20,7 @@ local state = {
   current_title = nil,
   page_metrics = nil,
   runtime_metadata = nil,
+  rendered_frame_geometry = nil,
   status = nil,
   status_error = nil,
   hint_error = nil,
@@ -641,6 +642,8 @@ local function handle_reader_response(response)
   apply_reader_snapshot(response.text)
 end
 
+local rendered_frame_geometry_from_runtime
+
 local function apply_serve_response_metadata(response)
   if state.pending_operation ~= nil and state.pending_operation.id == response.id then
     state.pending_operation = nil
@@ -668,6 +671,11 @@ local function apply_serve_response_metadata(response)
   end
   if response.runtime ~= nil and response.runtime ~= vim.NIL then
     state.runtime_metadata = response.runtime
+  end
+  if response.status == "ok" and response.payload ~= nil then
+    state.rendered_frame_geometry = rendered_frame_geometry_from_runtime(response.runtime)
+  elseif response.status == "error" then
+    state.rendered_frame_geometry = nil
   end
 end
 
@@ -726,6 +734,7 @@ local function request_resize()
   hints_overlay.clear(state.bufnr)
   state.element_hints = {}
   state.element_hints_geometry = nil
+  state.rendered_frame_geometry = nil
   local geometry = valid_preview_geometry()
   if geometry == nil then
     return false
@@ -893,6 +902,41 @@ local function same_preview_geometry(left, right)
     and left.rows == right.rows
     and left.width == right.width
     and left.height == right.height
+end
+
+rendered_frame_geometry_from_runtime = function(runtime)
+  if type(runtime) ~= "table" or type(runtime.cells) ~= "table" or type(runtime.viewport) ~= "table" then
+    return nil
+  end
+  local columns = tonumber(runtime.cells.columns)
+  local rows = tonumber(runtime.cells.rows)
+  local width = tonumber(runtime.viewport.width)
+  local height = tonumber(runtime.viewport.height)
+  if columns == nil or rows == nil or width == nil or height == nil then
+    return nil
+  end
+  if columns <= 0 or rows <= 0 or width <= 0 or height <= 0 then
+    return nil
+  end
+  return {
+    columns = columns,
+    rows = rows,
+    width = width,
+    height = height,
+  }
+end
+
+local function current_rendered_frame_geometry()
+  local geometry = current_preview_geometry()
+  if state.rendered_frame_geometry ~= nil and same_preview_geometry(state.rendered_frame_geometry, geometry) then
+    return state.rendered_frame_geometry
+  end
+  request_resize()
+  return nil
+end
+
+local function cell_within_geometry(row, column, geometry)
+  return row > 0 and column > 0 and row <= geometry.rows and column <= geometry.columns
 end
 
 local function hint_label_width(count)
@@ -1145,6 +1189,7 @@ local function mark_pending_operation(id, label, target)
   state.stopped_operation = nil
   state.status_error = nil
   state.hint_error = nil
+  state.rendered_frame_geometry = nil
   hints_overlay.clear(state.bufnr)
   state.element_hints = {}
   state.element_hints_geometry = nil
@@ -1269,6 +1314,7 @@ function M.open(command)
   state.current_title = nil
   state.page_metrics = nil
   state.runtime_metadata = nil
+  state.rendered_frame_geometry = nil
   state.status = nil
   state.status_error = nil
   state.hint_error = nil
@@ -1372,6 +1418,7 @@ function M.open(command)
         state.element_hints_geometry = #state.element_hints > 0 and geometry or nil
 
         if response.status == "ok" and response.payload ~= nil then
+          state.rendered_frame_geometry = rendered_frame_geometry_from_runtime(response.runtime)
           apply_payload_to_buffer(bufnr, response.payload, uses_kitty, uses_kitty_unicode, command, geometry)
           if uses_kitty then
             emit_terminal_graphics(response.payload, state.winid)
@@ -1388,6 +1435,7 @@ function M.open(command)
         end
 
         if response.status == "error" then
+          state.rendered_frame_geometry = nil
           hints_overlay.clear(bufnr)
           refresh_preview_footer(bufnr, geometry)
           vim.api.nvim_echo({ { "nvim-browser: " .. (response.error or "unknown error"), "WarningMsg" } }, false, {})
@@ -1429,6 +1477,7 @@ function M.open(command)
           state.mode = nil
           state.serve_output = nil
           state.runtime_metadata = nil
+          state.rendered_frame_geometry = nil
           state.element_hints = {}
           state.element_hints_geometry = nil
           state.cursor_addressable_preview = false
@@ -1564,6 +1613,7 @@ function M.close()
   state.current_title = nil
   state.page_metrics = nil
   state.runtime_metadata = nil
+  state.rendered_frame_geometry = nil
   state.status = nil
   state.status_error = nil
   state.hint_error = nil
@@ -1634,6 +1684,7 @@ function M.stop()
   }
   state.status_error = nil
   state.hint_error = nil
+  state.rendered_frame_geometry = nil
   state.response_handlers[pending.id] = nil
   state.generation = state.generation + 1
   stop_live_refresh()
@@ -1916,6 +1967,13 @@ function M.click_here()
   local column = vim.api.nvim_win_call(state.winid, function()
     return vim.fn.virtcol(".")
   end)
+  if column > geometry.columns then
+    return false
+  end
+  geometry = current_rendered_frame_geometry()
+  if geometry == nil then
+    return false
+  end
   local point = M.viewport_point_for_cell(cursor[1], column, geometry)
   return M.click_point(point.x, point.y)
 end
@@ -1933,6 +1991,13 @@ function M.hover_here()
   local column = vim.api.nvim_win_call(state.winid, function()
     return vim.fn.virtcol(".")
   end)
+  if column > geometry.columns then
+    return false
+  end
+  geometry = current_rendered_frame_geometry()
+  if geometry == nil then
+    return false
+  end
   local point = M.viewport_point_for_cell(cursor[1], column, geometry)
   return M.hover_point(point.x, point.y)
 end
@@ -1953,6 +2018,13 @@ function M.type_here(text, opts)
   local column = vim.api.nvim_win_call(state.winid, function()
     return vim.fn.virtcol(".")
   end)
+  if column > geometry.columns then
+    return false
+  end
+  geometry = current_rendered_frame_geometry()
+  if geometry == nil then
+    return false
+  end
   local point = M.viewport_point_for_cell(cursor[1], column, geometry)
   return M.type_point(point.x, point.y, text, opts)
 end
@@ -1973,7 +2045,11 @@ function M.click_mouse(mousepos)
   end
 
   local geometry = current_preview_geometry()
-  if row > geometry.rows then
+  if not cell_within_geometry(row, column, geometry) then
+    return false
+  end
+  geometry = current_rendered_frame_geometry()
+  if geometry == nil then
     return false
   end
 
@@ -2126,6 +2202,7 @@ function M.state()
     current_title = state.current_title,
     page_metrics = state.page_metrics,
     runtime_metadata = state.runtime_metadata,
+    rendered_frame_geometry = state.rendered_frame_geometry,
     status = state.status,
     status_error = state.status_error,
     hint_error = state.hint_error,
