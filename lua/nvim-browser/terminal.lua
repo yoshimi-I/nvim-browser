@@ -1911,6 +1911,14 @@ function M.click_mouse(mousepos)
   return M.click_point(point.x, point.y)
 end
 
+local function send_click_hint_request(hint)
+  cancel_in_flight_capture()
+  return send_pending_request({
+    type = "click_hint",
+    hint_id = hint.id,
+  }, state.current_url or state.last_target or "click", "click")
+end
+
 function M.click_hint(id)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false
@@ -1920,7 +1928,7 @@ function M.click_hint(id)
   end
   local hint = find_hint(state.element_hints, id)
   if hint ~= nil then
-    return M.click_point(hint.x, hint.y)
+    return send_click_hint_request(hint)
   end
   return false
 end
@@ -1953,7 +1961,7 @@ function M.follow_hint(id)
   if hint.kind == "link" and hint.href ~= nil and hint.href ~= "" then
     return M.navigate(hint.href)
   end
-  return M.click_point(hint.x, hint.y)
+  return send_click_hint_request(hint)
 end
 
 function M.type_hint(id, text, opts)

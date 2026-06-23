@@ -173,7 +173,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   url = "https://example.com/long",
   runtime = {
-    protocol_version = 2,
+    protocol_version = 3,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -195,7 +195,7 @@ assert(page_metrics.scroll_y == 250, "stored page metrics should preserve scroll
 assert(page_metrics.document_height == 1600, "stored page metrics should preserve document size")
 local runtime_info = terminal.state().runtime_metadata
 assert(runtime_info ~= nil, "serve responses should store runtime metadata")
-assert(runtime_info.protocol_version == 2, "runtime metadata should preserve protocol version")
+assert(runtime_info.protocol_version == 3, "runtime metadata should preserve protocol version")
 assert(runtime_info.output == "kitty-unicode", "runtime metadata should preserve output mode")
 assert(runtime_info.cells.columns == 80, "runtime metadata should preserve preview columns")
 assert(runtime_info.viewport.width == 800, "runtime metadata should preserve viewport width")
@@ -1081,17 +1081,87 @@ assert(vim.wait(1000, function()
 end), "serve hint response should repopulate element hints after navigation clears them")
 sent_requests = {}
 assert(terminal.follow_hint("s") == true, "follow_hint should fall back to click for non-link hints")
-local fallback_click_seen = false
+local fallback_click_hint_seen = false
+local fallback_click_point_seen = false
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
-  if ok and decoded.type == "click_point" and decoded.x == 30 and decoded.y == 40 then
-    fallback_click_seen = true
+  if ok and decoded.type == "click_hint" and decoded.hint_id == 2 then
+    fallback_click_hint_seen = true
+  end
+  if ok and decoded.type == "click_point" then
+    fallback_click_point_seen = true
   end
 end
-assert(fallback_click_seen, "non-link follow fallback should send a coordinate click")
+assert(fallback_click_hint_seen, "non-link follow fallback should send a backend hint click")
+assert(not fallback_click_point_seen, "non-link follow fallback should avoid coordinate click requests")
+local fallback_click_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(fallback_click_pending_id ~= nil, "non-link follow fallback should mark the hint click as pending")
+serve_stdout(nil, { vim.json.encode({
+  id = fallback_click_pending_id,
+  status = "ok",
+  payload = "clicked hint frame",
+  url = "https://example.com",
+  title = "Example",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil
+end), "hint click response should clear pending state before later hint captures")
 
 sent_requests = {}
-serve_stdout(nil, { hints_response, "" })
+local direct_click_hints_response = vim.json.decode(hints_response)
+direct_click_hints_response.id = fallback_click_pending_id + 1
+serve_stdout(nil, { vim.json.encode(direct_click_hints_response), "" })
+assert(vim.wait(1000, function()
+  return #terminal.state().element_hints == 2
+end), "serve hint response should repopulate element hints before direct hint click")
+assert(terminal.refresh() == true, "manual refresh should create an in-flight capture before hint click")
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id ~= nil
+end), "refresh capture should be in flight before hint click")
+local stale_live_before_click_hint_id = terminal.state().live_refresh_request_id
+sent_requests = {}
+assert(terminal.click_hint("s") == true, "click_hint should click the hinted element")
+local direct_click_hint_seen = false
+local direct_click_point_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "click_hint" and decoded.hint_id == 2 then
+    direct_click_hint_seen = true
+  end
+  if ok and decoded.type == "click_point" then
+    direct_click_point_seen = true
+  end
+end
+assert(direct_click_hint_seen, "click_hint should send the backend hint id")
+assert(not direct_click_point_seen, "click_hint should avoid coordinate click requests")
+assert(terminal.state().live_refresh_request_id == nil, "click_hint should cancel in-flight refresh before using backend hint ids")
+serve_stdout(nil, { vim.json.encode({
+  id = stale_live_before_click_hint_id,
+  status = "ok",
+  payload = "stale live frame",
+  url = "https://example.com/stale-click",
+  title = "Stale Click",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title ~= "Stale Click"
+end), "canceled refresh responses should not update metadata after click_hint starts")
+local direct_click_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(direct_click_pending_id ~= nil, "click_hint should mark the hint click as pending")
+serve_stdout(nil, { vim.json.encode({
+  id = direct_click_pending_id,
+  status = "ok",
+  payload = "direct clicked hint frame",
+  url = "https://example.com",
+  title = "Example",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil
+end), "direct hint click response should clear pending state")
+
+sent_requests = {}
+local type_hints_response = vim.json.decode(hints_response)
+type_hints_response.id = direct_click_pending_id + 1
+serve_stdout(nil, { vim.json.encode(type_hints_response), "" })
 assert(vim.wait(1000, function()
   return #terminal.state().element_hints == 2
 end), "serve hint response should repopulate element hints before typed input")

@@ -250,11 +250,12 @@ terminate a stuck serve job.
 `:NBrowserHints` echoes the latest keyboard labels and numbered browser
 elements, including link destinations when available. On ANSI and Kitty Unicode
 browser previews, the same labels are also overlaid on the preview.
-`:NBrowserClickHint {id-or-label}` and
-`:NBrowserHoverHint {id-or-label}` act on the matching element coordinates.
+`:NBrowserClickHint {id-or-label}` clicks the backend hint id without relying
+on viewport coordinates. `:NBrowserHoverHint {id-or-label}` moves to the
+matching element coordinates.
 `:NBrowserFollowHint {label}` uses a link hint's `href` directly when
 available, which avoids coordinate-click drift and keeps the active browser
-session on the navigated URL; non-link hints fall back to a coordinate click.
+session on the navigated URL; non-link hints fall back to backend hint clicks.
 `:NBrowserHintMode` prompts for a label and follows it. In preview buffers, the
 default `f` mapping enters a transient hint mode instead: type the visible hint
 label directly, use additional keys for multi-character labels such as `aa`, or

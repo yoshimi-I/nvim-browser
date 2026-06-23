@@ -200,7 +200,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
     <main>
       <label>Search <input aria-label="Search" oninput="document.getElementById('out').textContent=this.value"></label>
       <a href="#docs">Docs</a>
-      <button>Go</button>
+      <button onpointerdown="document.getElementById('out').textContent='clicked from jsonl'">Go</button>
       <button id="hover-source">Menu</button>
       <a id="hover-menu" href="#hovered">Hover Docs</a>
       <div contenteditable="true">Editable target</div>
@@ -309,6 +309,35 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         "find_text should report the typed text"
     );
 
+    let button_hint = hints
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Go")
+        .expect("real Chromium hints should include the clickable button");
+    let button_hint_id = button_hint["id"]
+        .as_u64()
+        .expect("button hint should include id");
+    let clicked = serve.request(serde_json::json!({
+        "id": 4,
+        "type": "click_hint",
+        "hint_id": button_hint_id
+    }));
+    assert_eq!(
+        clicked["id"], 4,
+        "click_hint response should preserve request id"
+    );
+    assert_eq!(clicked["status"], "ok", "click_hint should succeed");
+    let clicked_text = serve.request(serde_json::json!({ "id": 5, "type": "page_text" }));
+    assert_eq!(
+        clicked_text["status"], "ok",
+        "page_text after click_hint should succeed"
+    );
+    assert!(
+        clicked_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("clicked from jsonl")),
+        "page_text should observe DOM updated by clicked button"
+    );
+
     let menu_hint = hints
         .iter()
         .find(|hint| hint["kind"] == "button" && hint["label"] == "Menu")
@@ -316,13 +345,13 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
     let menu_x = menu_hint["x"].as_f64().expect("menu hint should include x");
     let menu_y = menu_hint["y"].as_f64().expect("menu hint should include y");
     let hovered = serve.request(serde_json::json!({
-        "id": 4,
+        "id": 6,
         "type": "hover_point",
         "x": menu_x,
         "y": menu_y
     }));
     assert_eq!(
-        hovered["id"], 4,
+        hovered["id"], 6,
         "hover_point response should preserve request id"
     );
     assert_eq!(hovered["status"], "ok", "hover_point should succeed");
@@ -340,7 +369,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
     );
 
     let resized = serve.request(serde_json::json!({
-        "id": 5,
+        "id": 7,
         "type": "resize",
         "columns": 32,
         "rows": 10,
@@ -350,8 +379,8 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
     assert_eq!(resized["runtime"]["cells"]["columns"], 32);
     assert_eq!(resized["runtime"]["viewport"]["width"], 320);
 
-    let quit = serve.request(serde_json::json!({ "id": 6, "type": "quit" }));
-    assert_eq!(quit["id"], 6);
+    let quit = serve.request(serde_json::json!({ "id": 8, "type": "quit" }));
+    assert_eq!(quit["id"], 8);
     assert_eq!(quit["status"], "ok");
 
     serve.wait_success();

@@ -16,13 +16,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     renderer::{
-        ClickPointRequest, ElementHint, ElementHintsRequest, FindTextRequest, FindTextResult,
-        FocusHintRequest, FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest,
-        HistoryNavigationResult, HoverPointRequest, InputResult, InteractionSettleResult,
-        KeyPressRequest, NavigateRequest, NavigationResult, PageMetrics, PageMetricsRequest,
-        PageTextRequest, PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest,
-        RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest, ScrollResult,
-        ShutdownResult, TextInputRequest,
+        ClickHintRequest, ClickPointRequest, ElementHint, ElementHintsRequest, FindTextRequest,
+        FindTextResult, FocusHintRequest, FocusSelectorRequest, FrameArtifact,
+        HistoryNavigationRequest, HistoryNavigationResult, HoverPointRequest, InputResult,
+        InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult, PageMetrics,
+        PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest, ReloadResult,
+        RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
+        ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -316,6 +316,33 @@ impl Renderer for ChromiumRenderer {
                 "hint id was not found or is stale",
             ));
         }
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn click_hint(&mut self, request: ClickHintRequest) -> Result<InputResult, RendererError> {
+        let hint_id = serde_json::to_string(&request.hint_id).map_err(render_error)?;
+        let script = CLICK_HINT_POINT_SCRIPT.replace("__HINT_ID__", &hint_id);
+        let point = self
+            .tab
+            .evaluate(&script, true)
+            .map_err(render_error)?
+            .value
+            .ok_or_else(|| {
+                RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "hint id was not found or is stale",
+                )
+            })
+            .and_then(parse_hint_point_json)?;
+        self.tab
+            .click_point(Point {
+                x: point.x,
+                y: point.y,
+            })
+            .map_err(render_error)?;
         Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
@@ -710,6 +737,24 @@ const FOCUS_HINT_SCRIPT: &str = r#"
 })()
 "#;
 
+const CLICK_HINT_POINT_SCRIPT: &str = r#"
+(() => {
+  const hintId = __HINT_ID__;
+  const registry = window.__nvbrowserHintRegistry;
+  const element = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  if (!element || !element.isConnected) return null;
+  if (typeof element.scrollIntoView === 'function') {
+    element.scrollIntoView({ block: 'center', inline: 'center' });
+  }
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  return JSON.stringify({
+    x: Math.max(0, Math.min(window.innerWidth || rect.right, rect.left + rect.width / 2)),
+    y: Math.max(0, Math.min(window.innerHeight || rect.bottom, rect.top + rect.height / 2))
+  });
+})()
+"#;
+
 const PAGE_METRICS_SCRIPT: &str = r#"
 (() => {
   const root = document.documentElement;
@@ -1019,8 +1064,24 @@ struct ExtractedPageText {
     truncated: bool,
 }
 
+#[derive(Debug, Deserialize)]
+struct HintPoint {
+    x: f64,
+    y: f64,
+}
+
 fn parse_page_text_json(text: &str) -> Result<ExtractedPageText, serde_json::Error> {
     serde_json::from_str(text)
+}
+
+fn parse_hint_point_json(value: serde_json::Value) -> Result<HintPoint, RendererError> {
+    let text = value.as_str().ok_or_else(|| {
+        RendererError::new(
+            RendererErrorKind::InvalidState,
+            "hint id was not found or is stale",
+        )
+    })?;
+    serde_json::from_str(text).map_err(render_error)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1173,6 +1234,11 @@ mod tests {
         assert!(FOCUS_HINT_SCRIPT.contains("__nvbrowserHintRegistry"));
         assert!(FOCUS_HINT_SCRIPT.contains("registry.elements.get(hintId)"));
         assert!(!FOCUS_HINT_SCRIPT.contains("[hintId - 1]"));
+        assert!(CLICK_HINT_POINT_SCRIPT.contains("__nvbrowserHintRegistry"));
+        assert!(CLICK_HINT_POINT_SCRIPT.contains("registry.elements.get(hintId)"));
+        assert!(CLICK_HINT_POINT_SCRIPT.contains("getBoundingClientRect"));
+        assert!(!CLICK_HINT_POINT_SCRIPT.contains("[hintId - 1]"));
+        assert!(!CLICK_HINT_POINT_SCRIPT.contains("element.click()"));
     }
 
     #[test]

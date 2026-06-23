@@ -186,7 +186,8 @@ COMMANDS                                           *nvim-browser-commands*
 
 							*:NBrowserClickHint*
 :NBrowserClickHint {id-or-label}
-	Click the center point of a browser hint and capture a fresh frame.
+	Click a browser hint by backend hint id and capture a fresh frame. This
+	avoids viewport coordinate drift for hinted buttons and controls.
 
 							*:NBrowserHoverHint*
 :NBrowserHoverHint {id-or-label}
@@ -197,7 +198,7 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserFollowHint {label}
 	Follow a keyboard-labeled browser hint. Link hints with an href navigate
 	the active browser session directly to that URL. Non-link hints fall back
-	to clicking the hint center point and capturing a fresh frame.
+	to backend hint clicks and capture a fresh frame.
 
 							*:NBrowserTypeHint*
 :NBrowserTypeHint {id-or-label} {text}

@@ -11,8 +11,8 @@ use nvbrowser_core::{
     inspect_target, kitty_image_escape, kitty_tiled_image_delete_escape,
     render_markdown_document_with_base_url,
     renderer::chromium::{render_url_png, ChromiumOptions},
-    BrowserSession, ChromiumRenderer, ClickPointRequest, ElementHint, ElementHintsRequest,
-    FindTextRequest, FocusHintRequest, FocusSelectorRequest, FrameArtifact,
+    BrowserSession, ChromiumRenderer, ClickHintRequest, ClickPointRequest, ElementHint,
+    ElementHintsRequest, FindTextRequest, FocusHintRequest, FocusSelectorRequest, FrameArtifact,
     HistoryNavigationRequest, HoverPointRequest, KeyPressRequest, KittyImageDelete,
     KittyImageTransfer, NavigateRequest, PageMetrics, PageMetricsRequest, PageTextRequest,
     PageTextSnapshot, ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer, ScrollRequest,
@@ -305,6 +305,10 @@ enum ServeRequest {
         id: u64,
         x: f64,
         y: f64,
+    },
+    ClickHint {
+        id: u64,
+        hint_id: u32,
     },
     TypePoint {
         id: u64,
@@ -622,7 +626,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 2,
+            protocol_version: 3,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -753,6 +757,15 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.active_page_id(),
                     x,
                     y,
+                ))?;
+                self.settle_after_interaction()?;
+                self.capture_payload().map(Some)
+            }
+            ServeRequest::ClickHint { hint_id, .. } => {
+                self.renderer.click_hint(ClickHintRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    hint_id,
                 ))?;
                 self.settle_after_interaction()?;
                 self.capture_payload().map(Some)
@@ -902,6 +915,7 @@ impl ServeRequest {
             | ServeRequest::FocusSelector { id, .. }
             | ServeRequest::ClickPoint { id, .. }
             | ServeRequest::HoverPoint { id, .. }
+            | ServeRequest::ClickHint { id, .. }
             | ServeRequest::TypePoint { id, .. }
             | ServeRequest::TypeHint { id, .. }
             | ServeRequest::FindText { id, .. }
@@ -1349,10 +1363,12 @@ mod tests {
         key_presses: Vec<String>,
         focused_selectors: Vec<String>,
         focused_hints: Vec<u32>,
+        clicked_hints: Vec<u32>,
         clicked_points: Vec<(f64, f64)>,
         hovered_points: Vec<(f64, f64)>,
         find_queries: Vec<String>,
         fail_click: bool,
+        fail_click_hint: bool,
         fail_focus_hint: bool,
         operations: Vec<&'static str>,
         history: Vec<String>,
@@ -1376,10 +1392,12 @@ mod tests {
                 key_presses: Vec::new(),
                 focused_selectors: Vec::new(),
                 focused_hints: Vec::new(),
+                clicked_hints: Vec::new(),
                 clicked_points: Vec::new(),
                 hovered_points: Vec::new(),
                 find_queries: Vec::new(),
                 fail_click: false,
+                fail_click_hint: false,
                 fail_focus_hint: false,
                 operations: Vec::new(),
                 history: Vec::new(),
@@ -1585,6 +1603,21 @@ mod tests {
                 return Err(RendererError::new(
                     RendererErrorKind::InvalidState,
                     "hint focus failed",
+                ));
+            }
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn click_hint(&mut self, request: ClickHintRequest) -> Result<InputResult, RendererError> {
+            self.operations.push("click_hint");
+            self.clicked_hints.push(request.hint_id);
+            if self.fail_click_hint {
+                return Err(RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "hint click failed",
                 ));
             }
             Ok(InputResult {
@@ -1942,6 +1975,11 @@ mod tests {
                 y: 240.25,
             }
         );
+        assert_eq!(
+            parse_serve_request(r##"{"type":"click_hint","id":8,"hint_id":2}"##)
+                .expect("click hint request should parse"),
+            ServeRequest::ClickHint { id: 8, hint_id: 2 }
+        );
     }
 
     #[test]
@@ -2131,7 +2169,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 2,
+                protocol_version: 3,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -2157,7 +2195,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":2,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":3,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -2183,7 +2221,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 2);
+        assert_eq!(runtime_info.protocol_version, 3);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -3147,6 +3185,81 @@ mod tests {
         assert_eq!(
             runtime.renderer.operations,
             vec!["capture", "hints", "click_point"]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_clicks_hint_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::ClickHint { id: 2, hint_id: 2 });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(runtime.renderer.clicked_hints, vec![2]);
+        assert!(runtime.renderer.clicked_points.is_empty());
+        assert_eq!(runtime.renderer.captures, 2);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "click_hint",
+                "settle",
+                "capture",
+                "hints"
+            ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_does_not_capture_when_hint_click_fails() {
+        let mut renderer = FakeRenderer::new();
+        renderer.fail_click_hint = true;
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::ClickHint {
+            id: 2,
+            hint_id: 404,
+        });
+
+        assert_eq!(response.status, ServeStatus::Error);
+        assert!(response.payload.is_none());
+        assert_eq!(runtime.renderer.clicked_hints, vec![404]);
+        assert!(runtime.renderer.clicked_points.is_empty());
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["capture", "hints", "click_hint"]
         );
     }
 

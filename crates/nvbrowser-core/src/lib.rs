@@ -7,8 +7,8 @@ pub mod terminal;
 pub use markdown::{render_markdown_document, render_markdown_document_with_base_url};
 pub use renderer::chromium::ChromiumRenderer;
 pub use renderer::{
-    ClickPointRequest, ElementHint, ElementHintKind, ElementHintsRequest, FindTextRequest,
-    FindTextResult, FocusHintRequest, FocusSelectorRequest, FrameArtifact,
+    ClickHintRequest, ClickPointRequest, ElementHint, ElementHintKind, ElementHintsRequest,
+    FindTextRequest, FindTextResult, FocusHintRequest, FocusSelectorRequest, FrameArtifact,
     HistoryNavigationRequest, HistoryNavigationResult, HoverPointRequest, InputResult,
     InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult, PageMetrics,
     PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest, ReloadResult,
