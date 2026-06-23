@@ -33,9 +33,10 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   display path outside problematic multiplexers.
 - Zellij currently blocks the desired Kitty graphics path in practice, so
   `graphics = "auto"` intentionally falls back to ANSI when `ZELLIJ` is set.
-- tmux gets escape passthrough wrapping, but tmux behavior still needs explicit
-  validation and documentation before it should be treated as a first-class
-  high-fidelity target.
+- tmux gets escape passthrough wrapping and is detected explicitly; users still
+  need passthrough-capable tmux configuration for high-fidelity graphics.
+- Unknown terminals should use ANSI in auto mode rather than assuming Kitty
+  support.
 - ANSI output is a compatibility fallback, not the end-state browser quality.
 
 ## Neovim Interaction Principles

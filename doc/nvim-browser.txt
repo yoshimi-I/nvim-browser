@@ -44,9 +44,12 @@ require("nvim-browser").setup({
   binary = vim.fn.expand("~/.local/bin/nvbrowser"),
 })
 <
-With graphics="auto", browser and raster image previews use Kitty graphics
-outside terminal multiplexers and fall back to ANSI output when ZELLIJ is
-detected.
+With graphics="auto", nvim-browser resolves graphics from the terminal
+environment. Ghostty, Kitty, and WezTerm use kitty-unicode for browser frames
+and kitty for raster images. Zellij falls back to ANSI because Kitty graphics
+passthrough is unreliable there. tmux keeps Kitty output and relies on tmux
+passthrough wrapping. Unknown terminals use ANSI as the safe fallback. Override
+with graphics="ansi", "kitty", or "kitty-unicode" when needed.
 
 If the terminal font cell size makes previews look stretched or click targets
 feel offset, tune the viewport cell pixels:
@@ -261,8 +264,8 @@ COMMANDS                                           *nvim-browser-commands*
 							*:NBrowserDoctor*
 :NBrowserDoctor
 	Echo a diagnostic report for backend binary resolution, selected graphics
-	output, Zellij/terminal environment, active preview session, and serve
-	runtime metadata.
+	output, terminal/multiplexer detection, auto-selection reason, active
+	preview session, and serve runtime metadata.
 
 							*:NBrowserPreview*
 :NBrowserPreview

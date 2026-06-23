@@ -68,6 +68,7 @@ function M.run(config, terminal_state)
   terminal_state = terminal_state or {}
   local cell = viewport_cell_pixels(config)
 
+  local graphics_resolution = backend.resolve_graphics(config)
   local browser_output = command_output(backend.command_for(config.binary or "nvbrowser", "open", "https://example.com", config))
   local image_output = command_output(backend.command_for(config.binary or "nvbrowser", "open", "/tmp/nvim-browser-doctor.png", config))
   local report = {
@@ -76,9 +77,12 @@ function M.run(config, terminal_state)
       "nvim-browser doctor",
       "binary: " .. tostring(config.binary or "nvbrowser"),
       "graphics config: " .. tostring(config.graphics or "auto"),
+      "terminal: " .. tostring(graphics_resolution.terminal or "unknown"),
+      "multiplexer: " .. tostring(graphics_resolution.multiplexer or "unknown"),
       "viewport cell px: " .. tostring(cell.width) .. "x" .. tostring(cell.height),
       "browser output: " .. browser_output,
       "image output: " .. image_output,
+      "graphics reason: " .. tostring(graphics_resolution.reason or "unknown"),
       "environment: ZELLIJ=" .. tostring(vim.env.ZELLIJ or "") .. " TERM=" .. tostring(vim.env.TERM or ""),
       active_session_line(terminal_state),
     },
@@ -94,10 +98,12 @@ function M.run(config, terminal_state)
     add_item(report, "warning", "binary is not executable")
   end
 
+  for _, warning in ipairs(graphics_resolution.warnings or {}) do
+    add_item(report, "warning", warning)
+  end
+
   if vim.env.ZELLIJ ~= nil and (config.graphics == nil or config.graphics == "auto") then
     add_item(report, "warning", "ZELLIJ detected; auto browser graphics uses ansi because terminal graphics may not pass through the multiplexer")
-  elseif vim.env.ZELLIJ ~= nil and (config.graphics == "kitty" or config.graphics == "kitty-unicode") then
-    add_item(report, "warning", "ZELLIJ detected with explicit Kitty graphics; images may not render unless the multiplexer passes graphics through")
   end
 
   local active_output = terminal_state.runtime_metadata and terminal_state.runtime_metadata.output or terminal_state.serve_output

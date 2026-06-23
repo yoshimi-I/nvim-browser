@@ -3,6 +3,55 @@ package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.pa
 
 local backend = require("nvim-browser.backend")
 
+local zellij_resolution = backend.resolve_graphics({ graphics = "auto" }, { ZELLIJ = "1", TERM = "xterm-256color" })
+assert(zellij_resolution.browser_output == "ansi", "auto browser output should fall back to ANSI under Zellij")
+assert(zellij_resolution.image_output == "ansi", "auto image output should fall back to ANSI under Zellij")
+assert(zellij_resolution.multiplexer == "zellij", "graphics resolver should detect Zellij")
+assert(zellij_resolution.reason:find("Zellij", 1, true), "Zellij resolver reason should explain the fallback")
+
+local ghostty_resolution = backend.resolve_graphics({
+  graphics = "auto",
+}, {
+  TERM_PROGRAM = "ghostty",
+  TERM = "xterm-ghostty",
+})
+assert(ghostty_resolution.browser_output == "kitty-unicode", "Ghostty auto browser output should use Kitty Unicode")
+assert(ghostty_resolution.image_output == "kitty", "Ghostty auto image output should use Kitty")
+assert(ghostty_resolution.terminal == "ghostty", "graphics resolver should detect Ghostty")
+assert(ghostty_resolution.reason:find("Ghostty", 1, true), "Ghostty resolver reason should explain Kitty support")
+
+local tmux_resolution = backend.resolve_graphics({
+  graphics = "auto",
+}, {
+  TMUX = "/tmp/tmux-501/default,123,0",
+  TERM = "tmux-256color",
+  TERM_PROGRAM = "ghostty",
+})
+assert(tmux_resolution.browser_output == "kitty-unicode", "tmux auto browser output should preserve Kitty Unicode passthrough")
+assert(tmux_resolution.image_output == "kitty", "tmux auto image output should preserve Kitty passthrough")
+assert(tmux_resolution.multiplexer == "tmux", "graphics resolver should detect tmux")
+assert(tmux_resolution.reason:find("tmux", 1, true), "tmux resolver reason should explain passthrough")
+
+local unknown_resolution = backend.resolve_graphics({ graphics = "auto" }, { TERM = "xterm-256color" })
+assert(unknown_resolution.browser_output == "ansi", "unknown auto browser output should use safe ANSI fallback")
+assert(unknown_resolution.image_output == "ansi", "unknown auto image output should use safe ANSI fallback")
+assert(unknown_resolution.terminal == "unknown", "graphics resolver should label unknown terminals")
+
+local explicit_unicode_resolution = backend.resolve_graphics({ graphics = "kitty-unicode" }, { ZELLIJ = "1" })
+assert(explicit_unicode_resolution.browser_output == "kitty-unicode", "explicit kitty-unicode should preserve browser output")
+assert(explicit_unicode_resolution.image_output == "kitty", "explicit kitty-unicode should map raster images to Kitty")
+assert(#explicit_unicode_resolution.warnings > 0, "explicit Kitty graphics under a risky multiplexer should warn")
+
+local explicit_ansi_resolution = backend.resolve_graphics({ graphics = "ansi" }, { TERM_PROGRAM = "ghostty" })
+assert(explicit_ansi_resolution.browser_output == "ansi", "explicit ansi should preserve browser output")
+assert(explicit_ansi_resolution.image_output == "ansi", "explicit ansi should preserve image output")
+assert(#explicit_ansi_resolution.warnings == 0, "explicit ansi should not warn in Kitty-capable terminals")
+
+local explicit_kitty_resolution = backend.resolve_graphics({ graphics = "kitty" }, { TERM_PROGRAM = "ghostty" })
+assert(explicit_kitty_resolution.browser_output == "kitty", "explicit kitty should preserve browser output")
+assert(explicit_kitty_resolution.image_output == "kitty", "explicit kitty should preserve image output")
+assert(#explicit_kitty_resolution.warnings == 0, "explicit kitty should not warn outside risky multiplexers")
+
 local markdown_command = backend.command_for("nvbrowser", "open", "/tmp/docs/README.md", {
   graphics = "ansi",
 })
@@ -159,12 +208,19 @@ assert(vim.deep_equal(image_command, {
 }), "raster images should keep direct image routing")
 
 local original_zellij = vim.env.ZELLIJ
+local original_tmux = vim.env.TMUX
+local original_term = vim.env.TERM
+local original_term_program = vim.env.TERM_PROGRAM
+local original_ghostty = vim.env.GHOSTTY_RESOURCES_DIR
 vim.env.ZELLIJ = "1"
+vim.env.TMUX = nil
+vim.env.TERM = "xterm-256color"
+vim.env.TERM_PROGRAM = nil
+vim.env.GHOSTTY_RESOURCES_DIR = nil
 local zellij_auto_image_command = backend.command_for("nvbrowser", "open", "/tmp/image.png", {
   graphics = "auto",
   image_fit = "contain",
 })
-vim.env.ZELLIJ = original_zellij
 assert(vim.deep_equal(zellij_auto_image_command, {
   "nvbrowser",
   "show-image",
@@ -174,6 +230,48 @@ assert(vim.deep_equal(zellij_auto_image_command, {
   "--fit",
   "contain",
 }), "auto raster images under Zellij should use ANSI output")
+
+vim.env.ZELLIJ = nil
+vim.env.TERM_PROGRAM = "ghostty"
+vim.env.TERM = "xterm-ghostty"
+local ghostty_auto_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
+  graphics = "auto",
+})
+assert(vim.deep_equal(ghostty_auto_url_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "kitty-unicode",
+  "--url",
+  "https://example.com",
+}), "auto web URLs under Ghostty should use Kitty Unicode browser output")
+
+vim.env.TMUX = "/tmp/tmux-501/default,123,0"
+local tmux_auto_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
+  graphics = "auto",
+})
+assert(vim.deep_equal(tmux_auto_url_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "kitty-unicode",
+  "--url",
+  "https://example.com",
+}), "auto web URLs under tmux should preserve Kitty Unicode passthrough output")
+vim.env.TMUX = nil
+vim.env.TERM_PROGRAM = nil
+vim.env.TERM = "xterm-256color"
+local unknown_auto_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
+  graphics = "auto",
+})
+assert(vim.deep_equal(unknown_auto_url_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  "https://example.com",
+}), "auto web URLs in unknown terminals should use ANSI fallback")
 
 vim.env.ZELLIJ = "1"
 local zellij_explicit_kitty_unicode_image_command = backend.command_for("nvbrowser", "open", "/tmp/image.png", {
@@ -190,3 +288,9 @@ assert(vim.deep_equal(zellij_explicit_kitty_unicode_image_command, {
   "--fit",
   "contain",
 }), "explicit kitty-unicode raster images under Zellij should preserve the existing Kitty image fallback")
+
+vim.env.ZELLIJ = original_zellij
+vim.env.TMUX = original_tmux
+vim.env.TERM = original_term
+vim.env.TERM_PROGRAM = original_term_program
+vim.env.GHOSTTY_RESOURCES_DIR = original_ghostty
