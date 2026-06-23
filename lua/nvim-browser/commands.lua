@@ -92,6 +92,34 @@ function M.register(browser)
     end
   end, {})
 
+  vim.api.nvim_create_user_command("NBrowserHints", function()
+    local hints = browser.hints()
+    if #hints == 0 then
+      vim.api.nvim_echo({ { "nvim-browser: no browser hints available" } }, false, {})
+      return
+    end
+    local lines = {}
+    for _, hint in ipairs(hints) do
+      table.insert(lines, string.format(
+        "%d %s %s @ %.0f,%.0f",
+        hint.id,
+        hint.kind or "other",
+        hint.label or "",
+        hint.x or 0,
+        hint.y or 0
+      ))
+    end
+    vim.api.nvim_echo({ { table.concat(lines, "\n") } }, false, {})
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserClickHint", function(opts)
+    if not browser.click_hint(opts.args) then
+      vim.api.nvim_echo({ { "nvim-browser: hint not found, stale, or browser session is inactive", "WarningMsg" } }, false, {})
+    end
+  end, {
+    nargs = 1,
+  })
+
   vim.api.nvim_create_user_command("NBrowserCurrentUrl", function()
     vim.api.nvim_echo({ { browser.current_url() or "" } }, false, {})
   end, {})

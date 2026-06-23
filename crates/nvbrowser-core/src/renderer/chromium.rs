@@ -16,11 +16,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     renderer::{
-        ClickPointRequest, FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest,
-        HistoryNavigationResult, InputResult, InteractionSettleResult, KeyPressRequest,
-        NavigateRequest, NavigationResult, ReloadRequest, ReloadResult, RenderFrameRequest,
-        RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest, ScrollResult,
-        ShutdownResult, TextInputRequest,
+        ClickPointRequest, ElementHint, ElementHintsRequest, FocusSelectorRequest, FrameArtifact,
+        HistoryNavigationRequest, HistoryNavigationResult, InputResult, InteractionSettleResult,
+        KeyPressRequest, NavigateRequest, NavigationResult, ReloadRequest, ReloadResult,
+        RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
+        ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -276,6 +276,13 @@ impl Renderer for ChromiumRenderer {
         })
     }
 
+    fn element_hints(
+        &mut self,
+        _request: ElementHintsRequest,
+    ) -> Result<Vec<ElementHint>, RendererError> {
+        Ok(self.read_element_hints().unwrap_or_default())
+    }
+
     fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
         thread::sleep(Duration::from_millis(75));
         self.tab.wait_until_navigated().map_err(render_error)?;
@@ -356,6 +363,17 @@ impl ChromiumRenderer {
             })
     }
 
+    fn read_element_hints(&self) -> Option<Vec<ElementHint>> {
+        let value = self
+            .tab
+            .evaluate(ELEMENT_HINTS_SCRIPT, true)
+            .ok()
+            .and_then(|remote_object| remote_object.value)?;
+        value
+            .as_str()
+            .and_then(|hints| serde_json::from_str(hints).ok())
+    }
+
     fn wait_for_current_url(&self, target_url: &str) -> Result<String, RendererError> {
         for _ in 0..20 {
             let url = self.tab.get_url();
@@ -371,6 +389,102 @@ impl ChromiumRenderer {
         ))
     }
 }
+
+const ELEMENT_HINTS_SCRIPT: &str = r#"
+(() => {
+  const selectors = [
+    'a[href]',
+    'button',
+    'input',
+    'textarea',
+    'select',
+    '[role="button"]',
+    '[role="link"]',
+    '[tabindex]:not([tabindex="-1"])',
+    '[contenteditable="true"]',
+    '[onclick]'
+  ].join(',');
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const labelFor = (element) => {
+    const candidates = [
+      element.getAttribute('aria-label'),
+      element.getAttribute('title'),
+      element.getAttribute('placeholder'),
+      element.value,
+      element.innerText,
+      element.textContent,
+      element.getAttribute('href')
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate !== 'string') continue;
+      const label = candidate.replace(/\s+/g, ' ').trim();
+      if (label.length > 0) return label.slice(0, 80);
+    }
+    return element.tagName.toLowerCase();
+  };
+  const kindFor = (element) => {
+    const tag = element.tagName.toLowerCase();
+    const role = (element.getAttribute('role') || '').toLowerCase();
+    if (tag === 'a' || role === 'link') return 'link';
+    if (tag === 'button' || role === 'button') return 'button';
+    if (tag === 'input') return 'input';
+    if (tag === 'textarea') return 'text_area';
+    if (tag === 'select') return 'select';
+    if (element.isContentEditable) return 'editable';
+    return 'other';
+  };
+  const isFocusable = (element) => {
+    const tag = element.tagName.toLowerCase();
+    return ['input', 'textarea', 'select', 'button', 'a'].includes(tag)
+      || element.isContentEditable
+      || element.tabIndex >= 0;
+  };
+  const isDisabled = (element) => element.disabled || element.getAttribute('aria-disabled') === 'true';
+  const isVisible = (element) => {
+    const style = window.getComputedStyle(element);
+    return style.display !== 'none'
+      && style.visibility !== 'hidden'
+      && style.visibility !== 'collapse'
+      && Number(style.opacity || '1') > 0.05
+      && style.pointerEvents !== 'none';
+  };
+  const isTopmostAt = (element, x, y) => {
+    const top = document.elementFromPoint(x, y);
+    return top === element || (top !== null && element.contains(top));
+  };
+  const hints = Array.from(document.querySelectorAll(selectors))
+    .filter((element) => !isDisabled(element))
+    .filter(isVisible)
+    .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+    .filter(({ rect }) => rect.width > 0 && rect.height > 0)
+    .filter(({ rect }) => rect.right >= 0 && rect.bottom >= 0 && rect.left <= viewportWidth && rect.top <= viewportHeight)
+    .map(({ element, rect }) => {
+      const left = Math.max(0, rect.left);
+      const top = Math.max(0, rect.top);
+      const right = Math.min(viewportWidth, rect.right);
+      const bottom = Math.min(viewportHeight, rect.bottom);
+      return { element, rect, left, top, right, bottom, x: (left + right) / 2, y: (top + bottom) / 2 };
+    })
+    .filter(({ element, x, y }) => isTopmostAt(element, x, y))
+    .sort((a, b) => (a.rect.top - b.rect.top) || (a.rect.left - b.rect.left))
+    .slice(0, 80)
+    .map(({ element, left, top, right, bottom, x, y }, index) => {
+      return {
+        id: index + 1,
+        kind: kindFor(element),
+        label: labelFor(element),
+        x,
+        y,
+        width: Math.max(0, right - left),
+        height: Math.max(0, bottom - top),
+        clickable: true,
+        focusable: isFocusable(element)
+      };
+    });
+  return JSON.stringify(hints);
+})()
+"#;
 
 #[derive(Debug, Clone, Copy)]
 enum HistoryDirection {

@@ -91,6 +91,10 @@ function M.click_here()
   return terminal.click_here()
 end
 
+function M.click_hint(id)
+  return terminal.click_hint(id)
+end
+
 function M.toggle()
   return terminal.toggle()
 end
@@ -113,6 +117,10 @@ end
 
 function M.status_error()
   return terminal.state().status_error
+end
+
+function M.hints()
+  return terminal.state().element_hints or {}
 end
 
 M.setup()

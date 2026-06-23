@@ -10,10 +10,10 @@ use image::{imageops::FilterType, DynamicImage, GenericImageView, ImageFormat, R
 use nvbrowser_core::{
     inspect_target, kitty_image_escape, render_markdown_document,
     renderer::chromium::{render_url_png, ChromiumOptions},
-    BrowserSession, ChromiumRenderer, ClickPointRequest, FocusSelectorRequest, FrameArtifact,
-    HistoryNavigationRequest, KeyPressRequest, KittyImageTransfer, NavigateRequest, ReloadRequest,
-    RenderFrameRequest, RenderedFrame, Renderer, ScrollRequest, SessionId, TextInputRequest,
-    Viewport,
+    BrowserSession, ChromiumRenderer, ClickPointRequest, ElementHint, ElementHintsRequest,
+    FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest, KeyPressRequest,
+    KittyImageTransfer, NavigateRequest, ReloadRequest, RenderFrameRequest, RenderedFrame,
+    Renderer, ScrollRequest, SessionId, TextInputRequest, Viewport,
 };
 use serde::{Deserialize, Serialize};
 
@@ -214,7 +214,7 @@ enum ServeRequest {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 struct ServeResponse {
     id: u64,
     status: ServeStatus,
@@ -223,6 +223,8 @@ struct ServeResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
     title: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    hints: Vec<ElementHint>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
@@ -259,6 +261,11 @@ struct ServeRuntime<R: Renderer> {
     output: ImageOutput,
 }
 
+struct CapturePayload {
+    payload: String,
+    hints: Vec<ElementHint>,
+}
+
 impl<R: Renderer> ServeRuntime<R> {
     fn new(renderer: R, options: ServeOptions) -> Self {
         Self {
@@ -273,20 +280,27 @@ impl<R: Renderer> ServeRuntime<R> {
     fn handle(&mut self, request: ServeRequest) -> ServeResponse {
         let id = request.id();
         match self.try_handle(request) {
-            Ok(payload) => ServeResponse {
-                id,
-                status: ServeStatus::Ok,
-                payload,
-                url: self.session.active_page().url().map(str::to_string),
-                title: self.session.active_page().title().map(str::to_string),
-                error: None,
-            },
+            Ok(capture) => {
+                let (payload, hints) = capture
+                    .map(|capture| (Some(capture.payload), capture.hints))
+                    .unwrap_or((None, Vec::new()));
+                ServeResponse {
+                    id,
+                    status: ServeStatus::Ok,
+                    payload,
+                    url: self.session.active_page().url().map(str::to_string),
+                    title: self.session.active_page().title().map(str::to_string),
+                    hints,
+                    error: None,
+                }
+            }
             Err(error) => ServeResponse {
                 id,
                 status: ServeStatus::Error,
                 payload: None,
                 url: self.session.active_page().url().map(str::to_string),
                 title: self.session.active_page().title().map(str::to_string),
+                hints: Vec::new(),
                 error: Some(error.to_string()),
             },
         }
@@ -295,7 +309,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn try_handle(
         &mut self,
         request: ServeRequest,
-    ) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<CapturePayload>, Box<dyn std::error::Error>> {
         match request {
             ServeRequest::Navigate { url, .. } => {
                 let navigation = self.renderer.navigate(NavigateRequest::new(
@@ -407,14 +421,19 @@ impl<R: Renderer> ServeRuntime<R> {
         }
     }
 
-    fn capture_payload(&mut self) -> Result<String, Box<dyn std::error::Error>> {
+    fn capture_payload(&mut self) -> Result<CapturePayload, Box<dyn std::error::Error>> {
         let frame = self.renderer.render_frame(RenderFrameRequest::new(
             self.session.id(),
             self.session.active_page_id(),
             self.session.active_page().viewport(),
         ))?;
         self.session.set_active_page_frame(frame.metadata.clone());
-        frame_to_payload(frame, self.output, self.columns, Some(self.rows))
+        let hints = self.renderer.element_hints(ElementHintsRequest::new(
+            self.session.id(),
+            self.session.active_page_id(),
+        ))?;
+        let payload = frame_to_payload(frame, self.output, self.columns, Some(self.rows))?;
+        Ok(CapturePayload { payload, hints })
     }
 
     fn settle_after_interaction(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -507,6 +526,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         payload: None,
                         url: None,
                         title: None,
+                        hints: Vec::new(),
                         error: Some(error.to_string()),
                     })
                 )?;
@@ -597,9 +617,9 @@ fn rgba_to_rgb(pixel: Rgba<u8>) -> (u8, u8, u8) {
 mod tests {
     use super::*;
     use nvbrowser_core::{
-        FrameId, FrameMetadata, HistoryNavigationResult, InputResult, InteractionSettleResult,
-        NavigationResult, ReloadResult, RendererError, RendererErrorKind, ScrollResult,
-        ShutdownResult,
+        ElementHintKind, ElementHintsRequest, FrameId, FrameMetadata, HistoryNavigationResult,
+        InputResult, InteractionSettleResult, NavigationResult, ReloadResult, RendererError,
+        RendererErrorKind, ScrollResult, ShutdownResult,
     };
 
     struct FakeRenderer {
@@ -618,6 +638,7 @@ mod tests {
         final_reload_url: Option<String>,
         next_frame_url: Option<String>,
         next_frame_title: Option<String>,
+        hints: Vec<ElementHint>,
         shutdown: bool,
     }
 
@@ -639,6 +660,7 @@ mod tests {
                 final_reload_url: None,
                 next_frame_url: None,
                 next_frame_title: None,
+                hints: Vec::new(),
                 shutdown: false,
             }
         }
@@ -807,6 +829,14 @@ mod tests {
             })
         }
 
+        fn element_hints(
+            &mut self,
+            _request: ElementHintsRequest,
+        ) -> Result<Vec<ElementHint>, RendererError> {
+            self.operations.push("hints");
+            Ok(self.hints.clone())
+        }
+
         fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
             self.operations.push("settle");
             let url = self.settled_url.clone().unwrap_or_else(|| {
@@ -959,6 +989,7 @@ mod tests {
             payload: Some("frame".to_string()),
             url: None,
             title: None,
+            hints: Vec::new(),
             error: None,
         };
 
@@ -976,12 +1007,23 @@ mod tests {
             payload: Some("frame".to_string()),
             url: Some("https://example.com".to_string()),
             title: Some("Example Domain".to_string()),
+            hints: vec![ElementHint {
+                id: 1,
+                kind: ElementHintKind::Link,
+                label: "Docs".to_string(),
+                x: 120.5,
+                y: 240.0,
+                width: 80.0,
+                height: 24.0,
+                clickable: true,
+                focusable: false,
+            }],
             error: None,
         };
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":8,"status":"ok","payload":"frame","url":"https://example.com","title":"Example Domain"}"#
+            r#"{"id":8,"status":"ok","payload":"frame","url":"https://example.com","title":"Example Domain","hints":[{"id":1,"kind":"link","label":"Docs","x":120.5,"y":240.0,"width":80.0,"height":24.0,"clickable":true,"focusable":false}]}"#
         );
     }
 
@@ -1007,7 +1049,44 @@ mod tests {
         assert_eq!(response.status, ServeStatus::Ok);
         assert_eq!(response.url, Some("https://example.com".to_string()));
         assert_eq!(response.title, Some("https://example.com".to_string()));
+        assert!(response.hints.is_empty());
         assert!(response.payload.expect("payload").contains("▀"));
+    }
+
+    #[test]
+    fn serve_runtime_returns_hints_with_captured_frame() {
+        let mut renderer = FakeRenderer::new();
+        renderer.hints = vec![ElementHint {
+            id: 1,
+            kind: ElementHintKind::Button,
+            label: "Search".to_string(),
+            x: 50.0,
+            y: 60.0,
+            width: 100.0,
+            height: 30.0,
+            clickable: true,
+            focusable: true,
+        }];
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        let response = runtime.handle(ServeRequest::Navigate {
+            id: 3,
+            url: "https://example.com".to_string(),
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert_eq!(response.hints.len(), 1);
+        assert_eq!(response.hints[0].label, "Search");
+        assert_eq!(runtime.renderer.operations, vec!["capture", "hints"]);
     }
 
     #[test]
@@ -1171,7 +1250,10 @@ mod tests {
         );
         assert_eq!(
             runtime.renderer.operations,
-            vec!["capture", "capture", "back", "capture", "forward", "capture"]
+            vec![
+                "capture", "hints", "capture", "hints", "back", "capture", "hints", "forward",
+                "capture", "hints"
+            ]
         );
     }
 
@@ -1270,7 +1352,14 @@ mod tests {
         assert_eq!(runtime.renderer.captures, 2);
         assert_eq!(
             runtime.renderer.operations,
-            vec!["capture", "text_input", "settle", "capture"]
+            vec![
+                "capture",
+                "hints",
+                "text_input",
+                "settle",
+                "capture",
+                "hints"
+            ]
         );
     }
 
@@ -1302,7 +1391,14 @@ mod tests {
         assert_eq!(runtime.renderer.captures, 2);
         assert_eq!(
             runtime.renderer.operations,
-            vec!["capture", "key_press", "settle", "capture"]
+            vec![
+                "capture",
+                "hints",
+                "key_press",
+                "settle",
+                "capture",
+                "hints"
+            ]
         );
     }
 
@@ -1337,7 +1433,14 @@ mod tests {
         assert_eq!(runtime.renderer.captures, 2);
         assert_eq!(
             runtime.renderer.operations,
-            vec!["capture", "focus_selector", "settle", "capture"]
+            vec![
+                "capture",
+                "hints",
+                "focus_selector",
+                "settle",
+                "capture",
+                "hints"
+            ]
         );
     }
 
@@ -1370,7 +1473,14 @@ mod tests {
         assert_eq!(runtime.renderer.captures, 2);
         assert_eq!(
             runtime.renderer.operations,
-            vec!["capture", "click_point", "settle", "capture"]
+            vec![
+                "capture",
+                "hints",
+                "click_point",
+                "settle",
+                "capture",
+                "hints"
+            ]
         );
     }
 

@@ -1,6 +1,6 @@
 pub mod chromium;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::session::{FrameMetadata, PageId, SessionId, Viewport};
 
@@ -34,6 +34,13 @@ pub trait Renderer {
     ) -> Result<InputResult, RendererError>;
 
     fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError>;
+
+    fn element_hints(
+        &mut self,
+        _request: ElementHintsRequest,
+    ) -> Result<Vec<ElementHint>, RendererError> {
+        Ok(Vec::new())
+    }
 
     fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError>;
 
@@ -245,6 +252,46 @@ pub struct ClickPointRequest {
     pub page_id: PageId,
     pub x: f64,
     pub y: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ElementHintsRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+}
+
+impl ElementHintsRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId) -> Self {
+        Self {
+            session_id,
+            page_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ElementHintKind {
+    Link,
+    Button,
+    Input,
+    TextArea,
+    Select,
+    Editable,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct ElementHint {
+    pub id: u32,
+    pub kind: ElementHintKind,
+    pub label: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub clickable: bool,
+    pub focusable: bool,
 }
 
 impl ClickPointRequest {
@@ -557,6 +604,34 @@ mod tests {
         assert_eq!(focus.page_id, page_id);
         assert_eq!(click.session_id, session_id);
         assert_eq!(click.page_id, page_id);
+    }
+
+    #[test]
+    fn renderer_contract_supports_element_hints() {
+        let mut renderer = FakeRenderer::new();
+        let session_id = SessionId::new(1);
+        let page_id = PageId::new(1);
+
+        let hints = renderer
+            .element_hints(ElementHintsRequest::new(session_id, page_id))
+            .expect("default element hints should succeed");
+
+        assert!(hints.is_empty());
+
+        let hint = ElementHint {
+            id: 1,
+            kind: ElementHintKind::Link,
+            label: "Docs".to_string(),
+            x: 120.5,
+            y: 240.0,
+            width: 80.0,
+            height: 24.0,
+            clickable: true,
+            focusable: false,
+        };
+        let json = serde_json::to_string(&hint).expect("hint should serialize");
+        assert!(json.contains(r#""kind":"link""#));
+        assert!(json.contains(r#""label":"Docs""#));
     }
 
     #[test]

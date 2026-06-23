@@ -17,6 +17,8 @@ local state = {
   current_title = nil,
   status = nil,
   status_error = nil,
+  element_hints = {},
+  element_hints_geometry = nil,
   cursor_addressable_preview = false,
 }
 
@@ -320,6 +322,16 @@ function M.viewport_point_for_cell(row, column, geometry)
   }
 end
 
+local function same_preview_geometry(left, right)
+  if left == nil or right == nil then
+    return false
+  end
+  return left.columns == right.columns
+    and left.rows == right.rows
+    and left.width == right.width
+    and left.height == right.height
+end
+
 local function apply_payload_to_buffer(bufnr, payload, uses_kitty, uses_kitty_unicode, command)
   state.last_payload = (uses_kitty or uses_kitty_unicode) and payload or nil
   state.last_payload_is_unicode = uses_kitty_unicode and payload ~= nil
@@ -404,6 +416,8 @@ function M.open(command)
   state.current_url = nil
   state.current_title = nil
   state.status = nil
+  state.element_hints = {}
+  state.element_hints_geometry = nil
   state.cursor_addressable_preview = false
   pcall(send_terminal_escape, kitty_delete_escape())
 
@@ -463,6 +477,8 @@ function M.open(command)
         if response.title ~= nil then
           state.current_title = response.title ~= vim.NIL and response.title or nil
         end
+        state.element_hints = response.hints or {}
+        state.element_hints_geometry = #state.element_hints > 0 and current_preview_geometry() or nil
 
         if response.status == "ok" and response.payload ~= nil then
           apply_payload_to_buffer(bufnr, response.payload, uses_kitty, uses_kitty_unicode, command)
@@ -636,6 +652,8 @@ function M.close()
   state.current_title = nil
   state.status = nil
   state.status_error = nil
+  state.element_hints = {}
+  state.element_hints_geometry = nil
   state.cursor_addressable_preview = false
   if state.stop_timer ~= nil then
     state.stop_timer:stop()
@@ -746,6 +764,25 @@ function M.click_here()
   return M.click_point(point.x, point.y)
 end
 
+function M.click_hint(id)
+  id = tonumber(id)
+  if id == nil then
+    return false
+  end
+  if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
+    return false
+  end
+  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+    return false
+  end
+  for _, hint in ipairs(state.element_hints or {}) do
+    if hint.id == id then
+      return M.click_point(hint.x, hint.y)
+    end
+  end
+  return false
+end
+
 function M.toggle()
   if is_valid_window() then
     pcall(send_terminal_escape, kitty_delete_escape())
@@ -783,6 +820,7 @@ function M.state()
     current_title = state.current_title,
     status = state.status,
     status_error = state.status_error,
+    element_hints = state.element_hints,
   }
 end
 
