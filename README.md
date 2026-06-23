@@ -95,8 +95,10 @@ Then run:
 :NBrowserPreview
 :NBrowserReload
 :NBrowserScrollDown 400
+:NBrowserFocusSelector input[name="q"]
 :NBrowserInput hello
 :NBrowserKey Enter
+:NBrowserClick 120 240
 :NBrowserToggle
 ```
 

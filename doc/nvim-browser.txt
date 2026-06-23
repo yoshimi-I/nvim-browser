@@ -50,6 +50,15 @@ COMMANDS                                           *nvim-browser-commands*
 	Press a Puppeteer-style key name such as Enter, Tab, Backspace, or
 	ArrowDown in the active browser page and capture a fresh frame.
 
+							*:NBrowserFocusSelector*
+:NBrowserFocusSelector {selector}
+	Focus the first element matching a CSS selector and capture a fresh frame.
+
+							*:NBrowserClick*
+:NBrowserClick {x} {y}
+	Click viewport coordinates in the active browser page and capture a fresh
+	frame.
+
 							*:NBrowserPreview*
 :NBrowserPreview
 	Preview the current buffer path.

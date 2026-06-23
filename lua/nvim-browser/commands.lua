@@ -59,6 +59,19 @@ function M.register(browser)
     nargs = 1,
   })
 
+  vim.api.nvim_create_user_command("NBrowserFocusSelector", function(opts)
+    browser.focus_selector(opts.args)
+  end, {
+    nargs = "+",
+  })
+
+  vim.api.nvim_create_user_command("NBrowserClick", function(opts)
+    local parts = vim.split(opts.args, "%s+", { trimempty = true })
+    browser.click_point(parts[1], parts[2])
+  end, {
+    nargs = "+",
+  })
+
   vim.api.nvim_create_user_command("NBrowserToggle", function()
     browser.toggle()
   end, {})

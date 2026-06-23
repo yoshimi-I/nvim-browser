@@ -18,6 +18,13 @@ pub trait Renderer {
 
     fn press_key(&mut self, request: KeyPressRequest) -> Result<InputResult, RendererError>;
 
+    fn focus_selector(
+        &mut self,
+        request: FocusSelectorRequest,
+    ) -> Result<InputResult, RendererError>;
+
+    fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError>;
+
     fn shutdown(&mut self) -> Result<ShutdownResult, RendererError>;
 }
 
@@ -162,6 +169,42 @@ pub struct InputResult {
     pub page_id: PageId,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FocusSelectorRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub selector: String,
+}
+
+impl FocusSelectorRequest {
+    pub fn new(session_id: SessionId, page_id: PageId, selector: impl Into<String>) -> Self {
+        Self {
+            session_id,
+            page_id,
+            selector: selector.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct ClickPointRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub x: f64,
+    pub y: f64,
+}
+
+impl ClickPointRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId, x: f64, y: f64) -> Self {
+        Self {
+            session_id,
+            page_id,
+            x,
+            y,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ShutdownResult {}
 
@@ -289,6 +332,26 @@ mod tests {
             })
         }
 
+        fn focus_selector(
+            &mut self,
+            request: FocusSelectorRequest,
+        ) -> Result<InputResult, RendererError> {
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn click_point(
+            &mut self,
+            request: ClickPointRequest,
+        ) -> Result<InputResult, RendererError> {
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
         fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
             self.shutdown = true;
             Ok(ShutdownResult {})
@@ -360,5 +423,28 @@ mod tests {
         assert_eq!(text.page_id, page_id);
         assert_eq!(key.session_id, session_id);
         assert_eq!(key.page_id, page_id);
+    }
+
+    #[test]
+    fn renderer_contract_supports_selector_focus_and_point_click() {
+        let mut renderer = FakeRenderer::new();
+        let session_id = SessionId::new(6);
+        let page_id = PageId::new(9);
+
+        let focus = renderer
+            .focus_selector(FocusSelectorRequest::new(
+                session_id,
+                page_id,
+                "input[name=q]",
+            ))
+            .expect("selector focus should succeed");
+        let click = renderer
+            .click_point(ClickPointRequest::new(session_id, page_id, 12.5, 24.25))
+            .expect("point click should succeed");
+
+        assert_eq!(focus.session_id, session_id);
+        assert_eq!(focus.page_id, page_id);
+        assert_eq!(click.session_id, session_id);
+        assert_eq!(click.page_id, page_id);
     }
 }

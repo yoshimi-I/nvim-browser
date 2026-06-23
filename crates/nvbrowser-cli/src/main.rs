@@ -10,9 +10,9 @@ use image::{imageops::FilterType, DynamicImage, GenericImageView, ImageFormat, R
 use nvbrowser_core::{
     inspect_target, kitty_image_escape, render_markdown_document,
     renderer::chromium::{render_url_png, ChromiumOptions},
-    BrowserSession, ChromiumRenderer, FrameArtifact, KeyPressRequest, KittyImageTransfer,
-    NavigateRequest, ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer, ScrollRequest,
-    SessionId, TextInputRequest, Viewport,
+    BrowserSession, ChromiumRenderer, ClickPointRequest, FocusSelectorRequest, FrameArtifact,
+    KeyPressRequest, KittyImageTransfer, NavigateRequest, ReloadRequest, RenderFrameRequest,
+    RenderedFrame, Renderer, ScrollRequest, SessionId, TextInputRequest, Viewport,
 };
 use serde::{Deserialize, Serialize};
 
@@ -160,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ServeRequest {
     Navigate {
@@ -185,6 +185,15 @@ enum ServeRequest {
     KeyPress {
         id: u64,
         key: String,
+    },
+    FocusSelector {
+        id: u64,
+        selector: String,
+    },
+    ClickPoint {
+        id: u64,
+        x: f64,
+        y: f64,
     },
     Resize {
         id: u64,
@@ -319,6 +328,23 @@ impl<R: Renderer> ServeRuntime<R> {
                 ))?;
                 self.capture_payload().map(Some)
             }
+            ServeRequest::FocusSelector { selector, .. } => {
+                self.renderer.focus_selector(FocusSelectorRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    selector,
+                ))?;
+                self.capture_payload().map(Some)
+            }
+            ServeRequest::ClickPoint { x, y, .. } => {
+                self.renderer.click_point(ClickPointRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    x,
+                    y,
+                ))?;
+                self.capture_payload().map(Some)
+            }
             ServeRequest::Resize {
                 columns,
                 rows,
@@ -359,6 +385,8 @@ impl ServeRequest {
             | ServeRequest::Reload { id }
             | ServeRequest::TextInput { id, .. }
             | ServeRequest::KeyPress { id, .. }
+            | ServeRequest::FocusSelector { id, .. }
+            | ServeRequest::ClickPoint { id, .. }
             | ServeRequest::Resize { id, .. }
             | ServeRequest::Quit { id } => *id,
         }
@@ -525,6 +553,8 @@ mod tests {
         scrolls: Vec<(i32, i32)>,
         text_inputs: Vec<String>,
         key_presses: Vec<String>,
+        focused_selectors: Vec<String>,
+        clicked_points: Vec<(f64, f64)>,
         shutdown: bool,
     }
 
@@ -536,6 +566,8 @@ mod tests {
                 scrolls: Vec::new(),
                 text_inputs: Vec::new(),
                 key_presses: Vec::new(),
+                focused_selectors: Vec::new(),
+                clicked_points: Vec::new(),
                 shutdown: false,
             }
         }
@@ -602,6 +634,28 @@ mod tests {
 
         fn press_key(&mut self, request: KeyPressRequest) -> Result<InputResult, RendererError> {
             self.key_presses.push(request.key);
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn focus_selector(
+            &mut self,
+            request: FocusSelectorRequest,
+        ) -> Result<InputResult, RendererError> {
+            self.focused_selectors.push(request.selector);
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn click_point(
+            &mut self,
+            request: ClickPointRequest,
+        ) -> Result<InputResult, RendererError> {
+            self.clicked_points.push((request.x, request.y));
             Ok(InputResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
@@ -702,6 +756,30 @@ mod tests {
             ServeRequest::KeyPress {
                 id: 4,
                 key: "Enter".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn serve_request_parses_focus_selector_and_click_point_jsonl() {
+        assert_eq!(
+            parse_serve_request(
+                r##"{"type":"focus_selector","id":5,"selector":"input[name=\"q\"]"}"##
+            )
+            .expect("focus selector request should parse"),
+            ServeRequest::FocusSelector {
+                id: 5,
+                selector: "input[name=\"q\"]".to_string(),
+            }
+        );
+
+        assert_eq!(
+            parse_serve_request(r##"{"type":"click_point","id":6,"x":120.5,"y":240.25}"##)
+                .expect("click point request should parse"),
+            ServeRequest::ClickPoint {
+                id: 6,
+                x: 120.5,
+                y: 240.25,
             }
         );
     }
@@ -825,6 +903,66 @@ mod tests {
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_some());
         assert_eq!(runtime.renderer.key_presses, vec!["Enter"]);
+        assert_eq!(runtime.renderer.captures, 2);
+    }
+
+    #[test]
+    fn serve_runtime_focuses_selector_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::FocusSelector {
+            id: 2,
+            selector: "input[name=\"q\"]".to_string(),
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(
+            runtime.renderer.focused_selectors,
+            vec!["input[name=\"q\"]"]
+        );
+        assert_eq!(runtime.renderer.captures, 2);
+    }
+
+    #[test]
+    fn serve_runtime_clicks_point_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::ClickPoint {
+            id: 2,
+            x: 120.5,
+            y: 240.25,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(runtime.renderer.clicked_points, vec![(120.5, 240.25)]);
         assert_eq!(runtime.renderer.captures, 2);
     }
 

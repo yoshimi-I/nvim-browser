@@ -643,6 +643,31 @@ function M.press_key(key)
   })
 end
 
+function M.focus_selector(selector)
+  if selector == nil or selector == "" then
+    return false
+  end
+  request_resize()
+  return send_serve_request({
+    type = "focus_selector",
+    selector = selector,
+  })
+end
+
+function M.click_point(x, y)
+  x = tonumber(x)
+  y = tonumber(y)
+  if x == nil or y == nil then
+    return false
+  end
+  request_resize()
+  return send_serve_request({
+    type = "click_point",
+    x = x,
+    y = y,
+  })
+end
+
 function M.toggle()
   if is_valid_window() then
     pcall(send_terminal_escape, kitty_delete_escape())

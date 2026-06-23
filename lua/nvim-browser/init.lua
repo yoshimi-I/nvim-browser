@@ -60,6 +60,14 @@ function M.press_key(key)
   return terminal.press_key(key)
 end
 
+function M.focus_selector(selector)
+  return terminal.focus_selector(selector)
+end
+
+function M.click_point(x, y)
+  return terminal.click_point(x, y)
+end
+
 function M.toggle()
   return terminal.toggle()
 end

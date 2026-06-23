@@ -5,15 +5,18 @@ use std::{
 };
 
 use headless_chrome::{
-    browser::tab::Tab, protocol::cdp::Page::CaptureScreenshotFormatOption, types::Bounds, Browser,
-    LaunchOptions,
+    browser::tab::{point::Point, Tab},
+    protocol::cdp::Page::CaptureScreenshotFormatOption,
+    types::Bounds,
+    Browser, LaunchOptions,
 };
 
 use crate::{
     renderer::{
-        FrameArtifact, InputResult, KeyPressRequest, NavigateRequest, NavigationResult,
-        ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
-        RendererErrorKind, ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
+        ClickPointRequest, FocusSelectorRequest, FrameArtifact, InputResult, KeyPressRequest,
+        NavigateRequest, NavigationResult, ReloadRequest, ReloadResult, RenderFrameRequest,
+        RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest, ScrollResult,
+        ShutdownResult, TextInputRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -203,6 +206,34 @@ impl Renderer for ChromiumRenderer {
 
     fn press_key(&mut self, request: KeyPressRequest) -> Result<InputResult, RendererError> {
         self.tab.press_key(&request.key).map_err(render_error)?;
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn focus_selector(
+        &mut self,
+        request: FocusSelectorRequest,
+    ) -> Result<InputResult, RendererError> {
+        let element = self
+            .tab
+            .find_element(&request.selector)
+            .map_err(render_error)?;
+        element.focus().map_err(render_error)?;
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError> {
+        self.tab
+            .click_point(Point {
+                x: request.x,
+                y: request.y,
+            })
+            .map_err(render_error)?;
         Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
