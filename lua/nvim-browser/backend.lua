@@ -36,7 +36,7 @@ function M.command_for(binary, action, target, opts)
   end
 
   if is_image_extension(extension) then
-    return { binary, "show-image", target }
+    return { binary, "show-image", target, "--output", graphics_output(opts) }
   end
 
   return { binary, "inspect", target }

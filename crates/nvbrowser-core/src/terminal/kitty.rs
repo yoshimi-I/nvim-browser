@@ -49,16 +49,40 @@ impl KittyImageTransfer {
     }
 
     pub fn virtual_placement_escape(&self, columns: u32, rows: u32) -> String {
-        format!(
-            "\x1b_Ga=T,q=2,U=1,i={},c={},r={},f=100,s={},v={},m=0;{}\x1b\\",
+        let control = format!(
+            "a=T,q=2,U=1,i={},c={},r={},f=100,s={},v={}",
             self.image_id,
             columns.max(1),
             rows.max(1),
             self.width_px,
-            self.height_px,
-            self.base64_png
-        )
+            self.height_px
+        );
+
+        chunked_escape(&control, &self.base64_png)
     }
+}
+
+fn chunked_escape(control: &str, payload: &str) -> String {
+    const CHUNK_SIZE: usize = 4096;
+    if payload.len() <= CHUNK_SIZE {
+        return format!("\x1b_G{control},m=0;{payload}\x1b\\");
+    }
+
+    let mut escape = String::new();
+    let mut offset = 0;
+    while offset < payload.len() {
+        let end = (offset + CHUNK_SIZE).min(payload.len());
+        let chunk = &payload[offset..end];
+        let more = if end < payload.len() { 1 } else { 0 };
+        if offset == 0 {
+            escape.push_str(&format!("\x1b_G{control},m={more};{chunk}\x1b\\"));
+        } else {
+            escape.push_str(&format!("\x1b_Gm={more};{chunk}\x1b\\"));
+        }
+        offset = end;
+    }
+
+    escape
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -181,6 +205,16 @@ mod tests {
             transfer.virtual_placement_escape(80, 24),
             "\x1b_Ga=T,q=2,U=1,i=42,c=80,r=24,f=100,s=800,v=600,m=0;iVBORw0KGgo=\x1b\\"
         );
+    }
+
+    #[test]
+    fn image_transfer_chunks_large_virtual_unicode_payloads() {
+        let transfer = KittyImageTransfer::new(42, 800, 600, "a".repeat(4097));
+
+        let escape = transfer.virtual_placement_escape(80, 24);
+
+        assert!(escape.starts_with("\x1b_Ga=T,q=2,U=1,i=42,c=80,r=24,f=100,s=800,v=600,m=1;"));
+        assert!(escape.contains(&format!("{}{}", "a".repeat(4096), "\x1b\\\x1b_Gm=0;a")));
     }
 
     #[test]
