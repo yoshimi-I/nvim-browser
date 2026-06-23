@@ -17,6 +17,10 @@ local function image_graphics_output(opts)
   return "kitty"
 end
 
+local function is_browser_url(target)
+  return target:match("^https?://") or target:match("^file://")
+end
+
 local function browser_graphics_output(opts)
   local graphics = opts and opts.graphics or "auto"
   if graphics == "kitty" or graphics == "kitty-unicode" or graphics == "ansi" then
@@ -42,7 +46,7 @@ function M.command_for(binary, action, target, opts)
     return { binary, "inspect", target }
   end
 
-  if target:match("^https?://") then
+  if is_browser_url(target) then
     local command = { binary, "serve", "--output", browser_graphics_output(opts) }
     add_cdp_ws_url(command, opts)
     table.insert(command, "--url")
@@ -56,6 +60,14 @@ function M.command_for(binary, action, target, opts)
     add_cdp_ws_url(command, opts)
     table.insert(command, "--markdown")
     table.insert(command, target)
+    return command
+  end
+
+  if extension == "html" or extension == "htm" then
+    local command = { binary, "serve", "--output", browser_graphics_output(opts) }
+    add_cdp_ws_url(command, opts)
+    table.insert(command, "--url")
+    table.insert(command, vim.uri_from_fname(vim.fn.fnamemodify(target, ":p")))
     return command
   end
 

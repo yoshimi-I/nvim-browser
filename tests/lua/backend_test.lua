@@ -42,6 +42,69 @@ assert(vim.deep_equal(cdp_url_command, {
   "https://example.com",
 }), "web URL commands should pass configured CDP websocket endpoints")
 
+local html_command = backend.command_for("nvbrowser", "open", "/tmp/site/index page.html", {
+  graphics = "ansi",
+})
+assert(vim.deep_equal(html_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  vim.uri_from_fname("/tmp/site/index page.html"),
+}), "HTML files should route through Chromium serve with file URLs")
+
+local htm_cdp_command = backend.command_for("nvbrowser", "open", "/tmp/site/index.htm", {
+  graphics = "ansi",
+  cdp_ws_url = "ws://127.0.0.1:9222/devtools/browser/test",
+})
+assert(vim.deep_equal(htm_cdp_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--cdp-ws-url",
+  "ws://127.0.0.1:9222/devtools/browser/test",
+  "--url",
+  vim.uri_from_fname("/tmp/site/index.htm"),
+}), "HTML file commands should pass configured CDP websocket endpoints")
+
+local relative_html_command = backend.command_for("nvbrowser", "open", "site/index.html", {
+  graphics = "ansi",
+})
+assert(vim.deep_equal(relative_html_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  vim.uri_from_fname(vim.fn.fnamemodify("site/index.html", ":p")),
+}), "relative HTML paths should be converted to absolute file URLs")
+
+local home_html_command = backend.command_for("nvbrowser", "open", "~/site/index.html", {
+  graphics = "ansi",
+})
+assert(vim.deep_equal(home_html_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  vim.uri_from_fname(vim.fn.fnamemodify("~/site/index.html", ":p")),
+}), "home-relative HTML paths should be expanded before file URL conversion")
+
+local file_url_html_command = backend.command_for("nvbrowser", "open", "file:///tmp/site/index.html", {
+  graphics = "ansi",
+})
+assert(vim.deep_equal(file_url_html_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  "file:///tmp/site/index.html",
+}), "existing file URL HTML targets should be preserved")
+
 local image_command = backend.command_for("nvbrowser", "open", "/tmp/image.png", {
   graphics = "ansi",
   image_fit = "contain",
