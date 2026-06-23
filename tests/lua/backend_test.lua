@@ -64,6 +64,21 @@ assert(vim.deep_equal(markdown_command, {
   "/tmp/docs/README.md",
 }), "markdown files should route through the browser serve pipeline")
 
+local markdown_profile_command = backend.command_for("nvbrowser", "open", "/tmp/docs/README.md", {
+  graphics = "ansi",
+  user_data_dir = "/tmp/nvbrowser-profile",
+})
+assert(vim.deep_equal(markdown_profile_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--user-data-dir",
+  "/tmp/nvbrowser-profile",
+  "--markdown",
+  "/tmp/docs/README.md",
+}), "markdown commands should pass configured persistent profile directories")
+
 local url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
   graphics = "ansi",
 })
@@ -91,6 +106,34 @@ assert(vim.deep_equal(cdp_url_command, {
   "https://example.com",
 }), "web URL commands should pass configured CDP websocket endpoints")
 
+local profile_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
+  graphics = "ansi",
+  user_data_dir = "/tmp/nvbrowser-profile",
+})
+assert(vim.deep_equal(profile_url_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--user-data-dir",
+  "/tmp/nvbrowser-profile",
+  "--url",
+  "https://example.com",
+}), "web URL commands should pass configured persistent profile directories")
+
+local empty_profile_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
+  graphics = "ansi",
+  user_data_dir = "",
+})
+assert(vim.deep_equal(empty_profile_url_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  "https://example.com",
+}), "empty persistent profile directories should not be passed to web URL commands")
+
 local html_command = backend.command_for("nvbrowser", "open", "/tmp/site/index page.html", {
   graphics = "ansi",
 })
@@ -117,6 +160,21 @@ assert(vim.deep_equal(htm_cdp_command, {
   "--url",
   vim.uri_from_fname("/tmp/site/index.htm"),
 }), "HTML file commands should pass configured CDP websocket endpoints")
+
+local html_profile_command = backend.command_for("nvbrowser", "open", "/tmp/site/index.html", {
+  graphics = "ansi",
+  user_data_dir = "/tmp/nvbrowser-profile",
+})
+assert(vim.deep_equal(html_profile_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--user-data-dir",
+  "/tmp/nvbrowser-profile",
+  "--url",
+  vim.uri_from_fname("/tmp/site/index.html"),
+}), "HTML file commands should pass configured persistent profile directories")
 
 local relative_html_command = backend.command_for("nvbrowser", "open", "site/index.html", {
   graphics = "ansi",
@@ -196,6 +254,7 @@ assert(vim.deep_equal(relative_svg_command, {
 local image_command = backend.command_for("nvbrowser", "open", "/tmp/image.png", {
   graphics = "ansi",
   image_fit = "contain",
+  user_data_dir = "/tmp/nvbrowser-profile",
 })
 assert(vim.deep_equal(image_command, {
   "nvbrowser",

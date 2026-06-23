@@ -174,7 +174,21 @@ fn serve_help_documents_cdp_ws_url_flag() {
         .args(["serve", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("--cdp-ws-url"));
+        .stdout(predicate::str::contains("--cdp-ws-url"))
+        .stdout(predicate::str::contains("--user-data-dir"));
+}
+
+#[test]
+fn chromium_commands_help_document_user_data_dir_flag() {
+    for subcommand in ["browse", "capture"] {
+        let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+        command
+            .args([subcommand, "--help"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("--user-data-dir"));
+    }
 }
 
 #[test]

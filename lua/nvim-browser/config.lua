@@ -19,6 +19,7 @@ M.options = {
   binary = default_binary(),
   graphics = "auto",
   image_fit = "original",
+  user_data_dir = nil,
   viewport = {
     cell_width_px = 10,
     cell_height_px = 20,

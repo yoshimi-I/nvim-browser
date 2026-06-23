@@ -33,6 +33,7 @@ assert(
   configured.binary == "/opt/nvbrowser/bin/nvbrowser",
   "setup should preserve a custom backend binary path"
 )
+assert(configured.user_data_dir == nil, "persistent Chromium profile directory should default to nil")
 assert(configured.preview_keymaps.enabled == true, "preview-local keymaps should be enabled by default")
 assert(configured.preview_keymaps.mappings.close == "q", "preview-local keymaps should include a close mapping")
 assert(
@@ -42,6 +43,12 @@ assert(
 assert(
   configured.preview_keymaps.mappings.wheel_down == "<ScrollWheelDown>",
   "preview-local keymaps should include a wheel-down mouse mapping"
+)
+
+local profile_config = config.setup({ user_data_dir = "/tmp/nvbrowser-profile" })
+assert(
+  profile_config.user_data_dir == "/tmp/nvbrowser-profile",
+  "setup should preserve a persistent Chromium profile directory"
 )
 assert(
   configured.preview_keymaps.mappings.wheel_up == "<ScrollWheelUp>",

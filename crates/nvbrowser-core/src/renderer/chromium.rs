@@ -33,6 +33,7 @@ use crate::{
 pub struct ChromiumOptions {
     pub cdp_ws_url: Option<String>,
     pub binary: Option<PathBuf>,
+    pub user_data_dir: Option<PathBuf>,
 }
 
 impl ChromiumOptions {
@@ -44,11 +45,20 @@ impl ChromiumOptions {
             std::env::var_os("NVBROWSER_CHROME")
                 .map(PathBuf::from)
                 .or_else(default_chrome_binary),
+            std::env::var_os("NVBROWSER_USER_DATA_DIR").map(PathBuf::from),
         )
     }
 
-    fn from_env_values(cdp_ws_url: Option<String>, binary: Option<PathBuf>) -> Self {
-        Self { cdp_ws_url, binary }
+    fn from_env_values(
+        cdp_ws_url: Option<String>,
+        binary: Option<PathBuf>,
+        user_data_dir: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            cdp_ws_url,
+            binary,
+            user_data_dir: user_data_dir.and_then(non_empty_path),
+        }
     }
 
     fn browser_source(&self) -> Result<BrowserSource, RendererError> {
@@ -490,7 +500,7 @@ impl Renderer for ChromiumRenderer {
 impl ChromiumRenderer {
     fn adopt_new_page_target_after_interaction(&mut self) -> Result<(), RendererError> {
         let deadline = std::time::Instant::now() + Duration::from_millis(750);
-        let new_target_deadline = std::time::Instant::now() + Duration::from_millis(250);
+        let new_target_deadline = std::time::Instant::now() + Duration::from_millis(500);
         loop {
             let (tabs, candidates) = self.current_target_candidates();
             if !has_unknown_targets(&candidates) {
@@ -1118,19 +1128,12 @@ impl Method for NavigateToHistoryEntry {
 #[derive(Debug, Deserialize)]
 struct NavigateToHistoryEntryReturnObject {}
 
-fn launch_browser(binary: &Path, viewport: Viewport) -> Result<Browser, RendererError> {
-    let options = LaunchOptions::default_builder()
-        .path(Some(binary.to_path_buf()))
-        .window_size(Some((viewport.width, viewport.height)))
-        .sandbox(false)
-        .args(vec![OsStr::new("--disable-popup-blocking")])
-        .build()
-        .map_err(|error| {
-            RendererError::new(
-                RendererErrorKind::BackendUnavailable,
-                format!("failed to build Chrome launch options: {error}"),
-            )
-        })?;
+fn launch_browser(
+    binary: &Path,
+    viewport: Viewport,
+    user_data_dir: Option<&Path>,
+) -> Result<Browser, RendererError> {
+    let options = build_launch_options(binary, viewport, user_data_dir)?;
 
     Browser::new(options).map_err(|error| {
         RendererError::new(
@@ -1140,10 +1143,32 @@ fn launch_browser(binary: &Path, viewport: Viewport) -> Result<Browser, Renderer
     })
 }
 
+fn build_launch_options(
+    binary: &Path,
+    viewport: Viewport,
+    user_data_dir: Option<&Path>,
+) -> Result<LaunchOptions<'static>, RendererError> {
+    LaunchOptions::default_builder()
+        .path(Some(binary.to_path_buf()))
+        .user_data_dir(user_data_dir.map(Path::to_path_buf))
+        .window_size(Some((viewport.width, viewport.height)))
+        .sandbox(false)
+        .args(vec![OsStr::new("--disable-popup-blocking")])
+        .build()
+        .map_err(|error| {
+            RendererError::new(
+                RendererErrorKind::BackendUnavailable,
+                format!("failed to build Chrome launch options: {error}"),
+            )
+        })
+}
+
 fn open_browser(options: &ChromiumOptions, viewport: Viewport) -> Result<Browser, RendererError> {
     match options.browser_source()? {
         BrowserSource::Connect(cdp_ws_url) => connect_browser(&cdp_ws_url),
-        BrowserSource::Launch(binary) => launch_browser(&binary, viewport),
+        BrowserSource::Launch(binary) => {
+            launch_browser(&binary, viewport, options.user_data_dir.as_deref())
+        }
     }
 }
 
@@ -1407,6 +1432,14 @@ fn non_empty_string(value: String) -> Option<String> {
     }
 }
 
+fn non_empty_path(value: PathBuf) -> Option<PathBuf> {
+    if value.as_os_str().is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1428,6 +1461,7 @@ mod tests {
         let options = ChromiumOptions::from_env_values(
             Some("ws://127.0.0.1:9222/devtools/browser/test".to_string()),
             None,
+            Some(PathBuf::from("/tmp/nvbrowser-profile")),
         );
 
         assert_eq!(
@@ -1435,6 +1469,52 @@ mod tests {
             Some("ws://127.0.0.1:9222/devtools/browser/test")
         );
         assert_eq!(options.binary, None);
+        assert_eq!(
+            options.user_data_dir,
+            Some(PathBuf::from("/tmp/nvbrowser-profile"))
+        );
+    }
+
+    #[test]
+    fn chromium_options_from_env_values_ignores_empty_user_data_dir() {
+        let options = ChromiumOptions::from_env_values(None, None, Some(PathBuf::from("")));
+
+        assert_eq!(options.user_data_dir, None);
+    }
+
+    #[test]
+    fn chromium_options_detect_reads_user_data_dir_env() {
+        let previous = std::env::var_os("NVBROWSER_USER_DATA_DIR");
+        std::env::set_var("NVBROWSER_USER_DATA_DIR", "/tmp/nvbrowser-profile-from-env");
+
+        let options = ChromiumOptions::detect();
+
+        match previous {
+            Some(value) => std::env::set_var("NVBROWSER_USER_DATA_DIR", value),
+            None => std::env::remove_var("NVBROWSER_USER_DATA_DIR"),
+        }
+
+        assert_eq!(
+            options.user_data_dir,
+            Some(PathBuf::from("/tmp/nvbrowser-profile-from-env"))
+        );
+    }
+
+    #[test]
+    fn launch_options_include_persistent_user_data_dir_when_launching() {
+        let options = build_launch_options(
+            Path::new("/custom/chrome"),
+            Viewport::new(640, 480),
+            Some(Path::new("/tmp/nvbrowser-profile")),
+        )
+        .expect("launch options should build");
+
+        assert_eq!(
+            options.user_data_dir,
+            Some(PathBuf::from("/tmp/nvbrowser-profile"))
+        );
+        assert_eq!(options.path, Some(PathBuf::from("/custom/chrome")));
+        assert_eq!(options.window_size, Some((640, 480)));
     }
 
     #[test]
@@ -1442,6 +1522,7 @@ mod tests {
         let options = ChromiumOptions {
             cdp_ws_url: Some("ws://127.0.0.1:9222/devtools/browser/test".to_string()),
             binary: Some(PathBuf::from("/custom/chrome")),
+            user_data_dir: Some(PathBuf::from("/tmp/nvbrowser-profile")),
         };
 
         assert_eq!(
@@ -1457,6 +1538,7 @@ mod tests {
         let options = ChromiumOptions {
             cdp_ws_url: None,
             binary: Some(PathBuf::from("/custom/chrome")),
+            user_data_dir: Some(PathBuf::from("/tmp/nvbrowser-profile")),
         };
 
         assert_eq!(
@@ -1472,6 +1554,7 @@ mod tests {
         let options = ChromiumOptions {
             cdp_ws_url: None,
             binary: None,
+            user_data_dir: Some(PathBuf::from("/tmp/nvbrowser-profile")),
         };
 
         let error = options

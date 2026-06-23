@@ -133,6 +133,14 @@ local function add_cdp_ws_url(command, opts)
   return command
 end
 
+local function add_user_data_dir(command, opts)
+  if opts ~= nil and opts.user_data_dir ~= nil and opts.user_data_dir ~= "" then
+    table.insert(command, "--user-data-dir")
+    table.insert(command, opts.user_data_dir)
+  end
+  return command
+end
+
 function M.command_for(binary, action, target, opts)
   if action == "inspect" then
     return { binary, "inspect", target }
@@ -141,6 +149,7 @@ function M.command_for(binary, action, target, opts)
   if is_browser_url(target) then
     local command = { binary, "serve", "--output", browser_graphics_output(opts) }
     add_cdp_ws_url(command, opts)
+    add_user_data_dir(command, opts)
     table.insert(command, "--url")
     table.insert(command, target)
     return command
@@ -150,6 +159,7 @@ function M.command_for(binary, action, target, opts)
   if extension == "md" or extension == "markdown" then
     local command = { binary, "serve", "--output", browser_graphics_output(opts) }
     add_cdp_ws_url(command, opts)
+    add_user_data_dir(command, opts)
     table.insert(command, "--markdown")
     table.insert(command, target)
     return command
@@ -158,6 +168,7 @@ function M.command_for(binary, action, target, opts)
   if is_browser_file_extension(extension) then
     local command = { binary, "serve", "--output", browser_graphics_output(opts) }
     add_cdp_ws_url(command, opts)
+    add_user_data_dir(command, opts)
     table.insert(command, "--url")
     table.insert(command, vim.uri_from_fname(vim.fn.fnamemodify(target, ":p")))
     return command

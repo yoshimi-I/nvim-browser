@@ -59,6 +59,8 @@ enum Command {
         height: u32,
         #[arg(long)]
         cdp_ws_url: Option<String>,
+        #[arg(long)]
+        user_data_dir: Option<PathBuf>,
         #[arg(long, value_enum, default_value_t = ImageOutput::Kitty)]
         output: ImageOutput,
         #[arg(long, default_value_t = 100)]
@@ -74,6 +76,8 @@ enum Command {
         height: u32,
         #[arg(long)]
         cdp_ws_url: Option<String>,
+        #[arg(long)]
+        user_data_dir: Option<PathBuf>,
         #[arg(long, default_value = "-")]
         output: PathBuf,
         #[arg(long)]
@@ -96,6 +100,8 @@ enum Command {
         markdown: Option<PathBuf>,
         #[arg(long)]
         cdp_ws_url: Option<String>,
+        #[arg(long)]
+        user_data_dir: Option<PathBuf>,
     },
 }
 
@@ -173,12 +179,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             width,
             height,
             cdp_ws_url,
+            user_data_dir,
             output,
             columns,
             rows,
         } => {
             let viewport = Viewport::new(width, height);
-            let frame = render_url_png(&url, viewport, chromium_options(cdp_ws_url))?;
+            let frame =
+                render_url_png(&url, viewport, chromium_options(cdp_ws_url, user_data_dir))?;
             match output {
                 ImageOutput::Kitty => {
                     print!("{}", frame_to_payload(frame, output, columns, rows)?);
@@ -207,12 +215,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             width,
             height,
             cdp_ws_url,
+            user_data_dir,
             output,
             metadata,
         } => {
             let viewport = Viewport::new(width, height);
             validate_capture_destinations(&output, metadata.as_deref())?;
-            let frame = render_url_png(&url, viewport, chromium_options(cdp_ws_url))?;
+            let frame =
+                render_url_png(&url, viewport, chromium_options(cdp_ws_url, user_data_dir))?;
             let stdout = io::stdout();
             let mut writer = stdout.lock();
             write_capture_outputs(&frame, &output, metadata.as_deref(), &mut writer)?;
@@ -226,6 +236,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             url,
             markdown,
             cdp_ws_url,
+            user_data_dir,
         } => {
             let (initial_url, markdown_preview) = match (url, markdown) {
                 (Some(_), Some(_)) => {
@@ -246,6 +257,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 initial_url,
                 markdown_preview,
                 cdp_ws_url,
+                user_data_dir,
             };
             serve_stdio(options)?;
         }
@@ -553,6 +565,7 @@ struct ServeOptions {
     initial_url: Option<String>,
     markdown_preview: Option<MarkdownPreviewFile>,
     cdp_ws_url: Option<String>,
+    user_data_dir: Option<PathBuf>,
 }
 
 struct ServeRuntime<R: Renderer> {
@@ -1024,7 +1037,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
     let mut runtime = ServeRuntime::new(
         ChromiumRenderer::launch(
             options.viewport,
-            chromium_options(options.cdp_ws_url.clone()),
+            chromium_options(options.cdp_ws_url.clone(), options.user_data_dir.clone()),
         )?,
         options,
     );
@@ -1082,10 +1095,13 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-fn chromium_options(cdp_ws_url: Option<String>) -> ChromiumOptions {
+fn chromium_options(cdp_ws_url: Option<String>, user_data_dir: Option<PathBuf>) -> ChromiumOptions {
     let mut options = ChromiumOptions::detect();
     if let Some(cdp_ws_url) = cdp_ws_url.and_then(non_empty_cli_string) {
         options.cdp_ws_url = Some(cdp_ws_url);
+    }
+    if let Some(user_data_dir) = user_data_dir.and_then(non_empty_cli_path) {
+        options.user_data_dir = Some(user_data_dir);
     }
     options
 }
@@ -1093,6 +1109,14 @@ fn chromium_options(cdp_ws_url: Option<String>) -> ChromiumOptions {
 fn non_empty_cli_string(value: String) -> Option<String> {
     let value = value.trim().to_string();
     if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn non_empty_cli_path(value: PathBuf) -> Option<PathBuf> {
+    if value.as_os_str().is_empty() {
         None
     } else {
         Some(value)
@@ -1750,13 +1774,18 @@ mod tests {
 
     #[test]
     fn chromium_options_with_cli_cdp_ws_url_sets_attach_endpoint() {
-        let options = chromium_options(Some(
-            "ws://127.0.0.1:9222/devtools/browser/test".to_string(),
-        ));
+        let options = chromium_options(
+            Some("ws://127.0.0.1:9222/devtools/browser/test".to_string()),
+            Some(PathBuf::from("/tmp/nvbrowser-profile")),
+        );
 
         assert_eq!(
             options.cdp_ws_url.as_deref(),
             Some("ws://127.0.0.1:9222/devtools/browser/test")
+        );
+        assert_eq!(
+            options.user_data_dir,
+            Some(PathBuf::from("/tmp/nvbrowser-profile"))
         );
     }
 
@@ -2275,6 +2304,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2315,6 +2345,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
         runtime.handle(ServeRequest::Navigate {
@@ -2352,6 +2383,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2391,6 +2423,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2495,6 +2528,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2523,6 +2557,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2563,6 +2598,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
         let navigate = runtime.handle(ServeRequest::Navigate {
@@ -2590,6 +2626,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
         let navigate = runtime.handle(ServeRequest::Navigate {
@@ -2620,6 +2657,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2650,6 +2688,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2691,6 +2730,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2741,6 +2781,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2782,6 +2823,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2812,6 +2854,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2854,6 +2897,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2883,6 +2927,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2926,6 +2971,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2956,6 +3002,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -2986,6 +3033,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -3016,6 +3064,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -3060,6 +3109,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -3102,6 +3152,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -3144,6 +3195,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -3185,6 +3237,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -3219,6 +3272,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -3254,6 +3308,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
         let navigate = runtime.handle(ServeRequest::Navigate {
@@ -3292,6 +3347,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -3344,6 +3400,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -3381,6 +3438,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -3422,6 +3480,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -3456,6 +3515,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -3507,6 +3567,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 
@@ -3547,6 +3608,7 @@ mod tests {
                 initial_url: None,
                 markdown_preview: None,
                 cdp_ws_url: None,
+                user_data_dir: None,
             },
         );
 

@@ -51,6 +51,18 @@ passthrough is unreliable there. tmux keeps Kitty output and relies on tmux
 passthrough wrapping. Unknown terminals use ANSI as the safe fallback. Override
 with graphics="ansi", "kitty", or "kitty-unicode" when needed.
 
+To keep cookies, localStorage, and login state across launched Chromium
+sessions, opt in to a dedicated profile directory. nvim-browser never defaults
+to your normal Chrome profile:
+>
+require("nvim-browser").setup({
+  user_data_dir = vim.fn.expand("~/.local/state/nvim-browser/chrome-profile"),
+})
+<
+The backend also accepts NVBROWSER_USER_DATA_DIR or --user-data-dir. Reusing one
+profile directory from multiple simultaneous browser sessions can fail because
+Chromium locks active profiles.
+
 If the terminal font cell size makes previews look stretched or click targets
 feel offset, tune the viewport cell pixels:
 >

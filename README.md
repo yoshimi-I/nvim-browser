@@ -117,6 +117,20 @@ require("nvim-browser").setup({
 })
 ```
 
+To keep cookies, localStorage, and login state across launched Chromium
+sessions, opt in to a dedicated profile directory. nvim-browser never defaults
+to your normal Chrome profile:
+
+```lua
+require("nvim-browser").setup({
+  user_data_dir = vim.fn.expand("~/.local/state/nvim-browser/chrome-profile"),
+})
+```
+
+The same setting is available to the backend as `NVBROWSER_USER_DATA_DIR` or
+`--user-data-dir`. Reusing one profile directory from multiple simultaneous
+browser sessions can fail because Chromium locks active profiles.
+
 Active browser previews recapture the page every 1500ms by default so async
 page updates and SPA state changes appear in Neovim without manual refresh.
 Disable it or tune the interval with:
@@ -166,6 +180,8 @@ Alternatively, set `NVBROWSER_CDP_WS_URL` or pass `--cdp-ws-url` to attach to an
 existing browser websocket endpoint. Chrome exposes that URL from
 `http://127.0.0.1:9222/json/version` when started with
 `--remote-debugging-port=9222`.
+Use `NVBROWSER_USER_DATA_DIR` or `--user-data-dir` to opt in to a persistent
+Chromium profile directory for launched browser sessions.
 The `capture` command writes raw Chromium viewport PNG frames independently
 from terminal rendering. Use `--output -` for PNG bytes on stdout, and
 `--metadata -` for JSON metadata on stdout when `--output` is a file.
