@@ -13,6 +13,21 @@ M.options = {
   binary = default_binary(),
   graphics = "auto",
   search_url = "https://www.google.com/search?q=%s",
+  keymaps = {
+    enabled = false,
+    prefix = "<leader>b",
+    scroll_pixels = 400,
+    mappings = {
+      reload = "r",
+      back = "h",
+      forward = "l",
+      scroll_down = "j",
+      scroll_up = "k",
+      address = "a",
+      find = "/",
+      hints = "f",
+    },
+  },
 }
 
 function M.setup(opts)

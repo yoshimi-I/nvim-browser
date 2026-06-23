@@ -140,6 +140,22 @@ URL, and plain words use the configured search URL. Lua mappings can call
 `:NBrowserFind {text}` finds text in the active browser page, scrolls to the
 match through the browser's native find behavior, and captures a fresh frame.
 
+Opt-in browser keymaps can be enabled from setup:
+
+```lua
+require("nvim-browser").setup({
+  keymaps = {
+    enabled = true,
+    prefix = "<leader>b",
+  },
+})
+```
+
+The default mappings are `<leader>br` reload, `<leader>bh` back, `<leader>bl`
+forward, `<leader>bj` scroll down, `<leader>bk` scroll up, `<leader>ba`
+address, `<leader>b/` find, and `<leader>bf` hint mode. Existing mappings are
+left untouched; choose another prefix or mapping key if one is already in use.
+
 Configure search with `require("nvim-browser").setup({ search_url = "https://www.google.com/search?q=%s" })`.
 The `%s` placeholder receives the encoded query; write literal percent signs as
 `%%`.

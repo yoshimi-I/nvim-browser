@@ -1,6 +1,7 @@
 local address = require("nvim-browser.address")
 local backend = require("nvim-browser.backend")
 local config = require("nvim-browser.config")
+local keymaps = require("nvim-browser.keymaps")
 local terminal = require("nvim-browser.terminal")
 
 local M = {}
@@ -11,6 +12,7 @@ local state = {
 
 function M.setup(opts)
   M.config = config.setup(opts)
+  keymaps.setup(M, M.config.keymaps or {})
 end
 
 local function resolve_target(target)
