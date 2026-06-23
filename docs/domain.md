@@ -83,8 +83,11 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   tmux passthrough needs real validation.
 - Click accuracy depends on configured terminal cell pixel dimensions. Doctor
   output and future auto-detection should reduce this burden.
-- Quiet input improves text latency but means metadata, hints, focused-element
-  state, and screenshots can lag until Enter, exit, or a later capture.
+- Quiet input improves text latency by skipping screenshots and hint
+  recomputation, but successful quiet responses still return lightweight
+  URL/title, page-metrics, and focused-element metadata. The current frame and
+  hints remain visible until Enter, exit, or a later captured response refreshes
+  them.
 - Chromium target lifecycle is a core reliability area. `target=_blank`,
   `window.open`, and delayed `about:blank` navigations should stay covered by
   opt-in E2E because real pages commonly create and navigate child targets

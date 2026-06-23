@@ -775,7 +775,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 if capture {
                     self.capture_payload(true).map(Some)
                 } else {
-                    Ok(None)
+                    self.interaction_metadata_payload(true).map(Some)
                 }
             }
             ServeRequest::KeyPress {
@@ -794,7 +794,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 if capture {
                     self.capture_payload(true).map(Some)
                 } else {
-                    Ok(None)
+                    self.interaction_metadata_payload(true).map(Some)
                 }
             }
             ServeRequest::FocusSelector { selector, .. } => {
@@ -1079,6 +1079,38 @@ impl<R: Renderer> ServeRuntime<R> {
             selection: None,
             hints,
             hint_error,
+            found: None,
+        })
+    }
+
+    fn interaction_metadata_payload(
+        &mut self,
+        include_focused: bool,
+    ) -> Result<CapturePayload, Box<dyn std::error::Error>> {
+        let page = self.renderer.page_metrics(PageMetricsRequest::new(
+            self.session.id(),
+            self.session.active_page_id(),
+        ))?;
+        let focused = if include_focused {
+            Some(
+                self.renderer
+                    .focused_element(FocusedElementRequest::new(
+                        self.session.id(),
+                        self.session.active_page_id(),
+                    ))
+                    .unwrap_or(None),
+            )
+        } else {
+            None
+        };
+        Ok(CapturePayload {
+            payload: None,
+            page,
+            focused,
+            text: None,
+            selection: None,
+            hints: Vec::new(),
+            hint_error: None,
             found: None,
         })
     }
@@ -3347,8 +3379,17 @@ mod tests {
 
     #[test]
     fn serve_runtime_applies_quiet_text_input_without_capturing_frame() {
+        let mut renderer = FakeRenderer::new();
+        renderer.focused = Some(FocusedElement {
+            kind: ElementHintKind::Input,
+            label: Some("Search".to_string()),
+            value: Some("hello".to_string()),
+            checked: None,
+            focusable: true,
+            submittable: true,
+        });
         let mut runtime = ServeRuntime::new(
-            FakeRenderer::new(),
+            renderer,
             ServeOptions {
                 output: ImageOutput::Ansi,
                 columns: 1,
@@ -3369,10 +3410,22 @@ mod tests {
 
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_none());
+        assert!(response.page.is_some());
+        assert_eq!(
+            response
+                .focused
+                .as_ref()
+                .and_then(|focus| focus.as_ref())
+                .and_then(|focus| focus.label.as_deref()),
+            Some("Search")
+        );
         assert!(response.hints.is_empty());
         assert_eq!(runtime.renderer.text_inputs, vec!["hello"]);
         assert_eq!(runtime.renderer.captures, 0);
-        assert_eq!(runtime.renderer.operations, vec!["text_input", "settle"]);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["text_input", "settle", "focused_element"]
+        );
     }
 
     #[test]
@@ -3523,8 +3576,17 @@ mod tests {
 
     #[test]
     fn serve_runtime_applies_quiet_key_press_without_capturing_frame() {
+        let mut renderer = FakeRenderer::new();
+        renderer.focused = Some(FocusedElement {
+            kind: ElementHintKind::TextArea,
+            label: Some("Notes".to_string()),
+            value: Some("draft".to_string()),
+            checked: None,
+            focusable: true,
+            submittable: false,
+        });
         let mut runtime = ServeRuntime::new(
-            FakeRenderer::new(),
+            renderer,
             ServeOptions {
                 output: ImageOutput::Ansi,
                 columns: 1,
@@ -3546,10 +3608,22 @@ mod tests {
 
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_none());
+        assert!(response.page.is_some());
+        assert_eq!(
+            response
+                .focused
+                .as_ref()
+                .and_then(|focus| focus.as_ref())
+                .and_then(|focus| focus.label.as_deref()),
+            Some("Notes")
+        );
         assert!(response.hints.is_empty());
         assert_eq!(runtime.renderer.key_presses, vec!["Shift+Tab"]);
         assert_eq!(runtime.renderer.captures, 0);
-        assert_eq!(runtime.renderer.operations, vec!["key_press", "settle"]);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["key_press", "settle", "focused_element"]
+        );
     }
 
     #[test]

@@ -351,7 +351,9 @@ and writes it into a Neovim register, defaulting to the unnamed register.
 preview: printable keys are sent as text, `<CR>`, `<Tab>`, `<S-Tab>`, `<BS>`,
 Delete, and arrow keys are forwarded as browser keys, and `<Esc>` exits the text
 mode locally. Printable input and editing keys use a low-latency path that skips
-per-key screenshot recapture; exiting text mode triggers one fresh capture.
+per-key screenshot recapture while still applying lightweight URL, scroll, and
+focused-element metadata when the backend returns it; exiting text mode triggers
+one fresh capture.
 Enter still requests an immediate captured response because it often submits or
 navigates. Focused preview buffers map `i` to this text mode by default after
 clicking a field or focusing one with hints. Outside text mode, preview buffers

@@ -1439,11 +1439,6 @@ function M.open(command)
           state.response_handlers[response.id] = nil
           return
         end
-        if state.quiet_request_ids[response.id] and response.status == "ok" then
-          state.quiet_request_ids[response.id] = nil
-          state.response_handlers[response.id] = nil
-          return
-        end
         state.quiet_request_ids[response.id] = nil
         if response.id == state.live_refresh_request_id and state.pending_operation ~= nil then
           dispatch_serve_response_handler(response)
@@ -1465,6 +1460,13 @@ function M.open(command)
         state.latest_applied_response_id = math.max(state.latest_applied_response_id, response.id)
         update_browser_buffer_name(bufnr)
         dispatch_serve_response_handler(response)
+        local has_payload = response.payload ~= nil and response.payload ~= vim.NIL
+        local has_hints = type(response.hints) == "table" and #response.hints > 0
+        local has_hint_error = response.hint_error ~= nil and response.hint_error ~= vim.NIL and response.hint_error ~= ""
+        if response.status == "ok" and not has_payload and not has_hints and not has_hint_error then
+          refresh_preview_footer(bufnr, valid_preview_geometry())
+          return
+        end
         local geometry = valid_preview_geometry()
         state.element_hints = assign_hint_labels(response.hints or {})
         state.element_hints_geometry = #state.element_hints > 0 and geometry or nil
@@ -2521,6 +2523,10 @@ M._test = {
   end,
   set_cursor_addressable_preview = function(value)
     state.cursor_addressable_preview = value
+  end,
+  set_element_hints = function(hints, geometry)
+    state.element_hints = hints or {}
+    state.element_hints_geometry = geometry
   end,
   text_mode_key_action = text_mode_key_action,
   command_for_window = command_for_window,

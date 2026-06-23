@@ -2007,6 +2007,79 @@ end
 assert(text_input_seen, "focused text input should emit a text_input JSONL request")
 assert(shifted_tab_seen, "modified key presses should emit modifiers in the key_press JSONL request")
 
+terminal._test.apply_serve_response({
+  id = 500,
+  status = "ok",
+  payload = "quiet baseline frame",
+  url = "https://example.com/before-quiet",
+  title = "Before Quiet",
+  runtime = {
+    protocol_version = 11,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 450, height = 165, device_scale_factor = 1 },
+  },
+})
+local quiet_geometry = terminal.state().rendered_frame_geometry
+assert(quiet_geometry ~= nil, "test setup should have a rendered frame geometry")
+terminal._test.set_element_hints({
+  {
+    id = 1,
+    kind = "input",
+    label = "Search",
+    x = 10,
+    y = 20,
+    width = 30,
+    height = 10,
+    clickable = true,
+    focusable = true,
+  },
+}, quiet_geometry)
+assert(#terminal.state().element_hints == 1, "test setup should have active hints before quiet metadata")
+sent_requests = {}
+assert(terminal.input_text("quiet metadata", { capture = false, resize = false }) == true, "quiet input should send a quiet text request")
+local quiet_request = last_request_of_type("text_input")
+assert(quiet_request ~= nil and quiet_request.capture == false, "quiet input should mark the request as capture=false")
+serve_stdout(nil, { vim.json.encode({
+  id = quiet_request.id,
+  status = "ok",
+  url = "https://example.com/after-quiet",
+  title = "After Quiet",
+  page = {
+    scroll_x = 0,
+    scroll_y = 80,
+    viewport_width = 450,
+    viewport_height = 165,
+    document_width = 450,
+    document_height = 900,
+  },
+  focused = {
+    kind = "input",
+    label = "Search",
+    value = "quiet metadata",
+    focusable = true,
+    submittable = true,
+  },
+  runtime = {
+    protocol_version = 11,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 450, height = 165, device_scale_factor = 1 },
+  },
+}), "" })
+assert(vim.wait(200, function()
+  return terminal.state().current_title == "After Quiet"
+end), "quiet ok responses should apply browser metadata")
+assert(terminal.state().current_url == "https://example.com/after-quiet", "quiet metadata should update current URL")
+assert(terminal.state().focused_element.value == "quiet metadata", "quiet metadata should update focused element state")
+assert(terminal.state().page_metrics.scroll_y == 80, "quiet metadata should update page metrics")
+assert(terminal.state().rendered_frame_geometry == quiet_geometry, "quiet metadata without payload should keep current frame geometry")
+assert(#terminal.state().element_hints == 1, "quiet metadata without payload should keep current hints")
+
 sent_requests = {}
 assert(terminal.start_text_mode({
   getcharstr = (function()
