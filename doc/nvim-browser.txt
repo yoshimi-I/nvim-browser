@@ -78,7 +78,9 @@ COMMANDS                                           *nvim-browser-commands*
 
 							*:NBrowserHints*
 :NBrowserHints
-	Echo numbered links and form controls from the latest browser frame.
+	Echo numbered links and form controls from the latest browser frame. On
+	ANSI and Kitty Unicode browser previews, the same numbers are overlaid on
+	the preview.
 
 							*:NBrowserClickHint*
 :NBrowserClickHint {id}

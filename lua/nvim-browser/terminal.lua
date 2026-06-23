@@ -1,4 +1,5 @@
 local M = {}
+local hints_overlay = require("nvim-browser.hints_overlay")
 
 local state = {
   bufnr = nil,
@@ -165,6 +166,13 @@ local function current_preview_geometry()
   }
 end
 
+local function valid_preview_geometry()
+  if not is_valid_window() then
+    return nil
+  end
+  return current_preview_geometry()
+end
+
 local function add_option(command, option, value)
   if command_has_option(command, option) then
     return
@@ -299,7 +307,13 @@ local function request_resize()
     return false
   end
 
-  local geometry = current_preview_geometry()
+  hints_overlay.clear(state.bufnr)
+  state.element_hints = {}
+  state.element_hints_geometry = nil
+  local geometry = valid_preview_geometry()
+  if geometry == nil then
+    return false
+  end
   return send_serve_request({
     type = "resize",
     columns = geometry.columns,
@@ -332,13 +346,13 @@ local function same_preview_geometry(left, right)
     and left.height == right.height
 end
 
-local function apply_payload_to_buffer(bufnr, payload, uses_kitty, uses_kitty_unicode, command)
+local function apply_payload_to_buffer(bufnr, payload, uses_kitty, uses_kitty_unicode, command, geometry)
   state.last_payload = (uses_kitty or uses_kitty_unicode) and payload or nil
   state.last_payload_is_unicode = uses_kitty_unicode and payload ~= nil
 
   vim.bo[bufnr].modifiable = true
   if uses_kitty_unicode then
-    local geometry = command_uses_serve(command) and current_preview_geometry() or nil
+    geometry = command_uses_serve(command) and geometry or nil
     local columns = (geometry and geometry.columns)
       or command_option_value(command, "--columns")
       or preview_cells().columns
@@ -477,23 +491,31 @@ function M.open(command)
         if response.title ~= nil then
           state.current_title = response.title ~= vim.NIL and response.title or nil
         end
+        local geometry = valid_preview_geometry()
         state.element_hints = response.hints or {}
-        state.element_hints_geometry = #state.element_hints > 0 and current_preview_geometry() or nil
+        state.element_hints_geometry = #state.element_hints > 0 and geometry or nil
 
         if response.status == "ok" and response.payload ~= nil then
-          apply_payload_to_buffer(bufnr, response.payload, uses_kitty, uses_kitty_unicode, command)
+          apply_payload_to_buffer(bufnr, response.payload, uses_kitty, uses_kitty_unicode, command, geometry)
           if uses_kitty then
             emit_terminal_graphics(response.payload, state.winid)
           elseif uses_kitty_unicode then
             send_terminal_escape(response.payload)
-            vim.cmd("redraw")
           end
+          if state.cursor_addressable_preview and geometry ~= nil then
+            hints_overlay.apply(bufnr, state.element_hints, state.element_hints_geometry)
+          else
+            hints_overlay.clear(bufnr)
+          end
+          vim.cmd("redraw")
           return
         end
 
         if response.status == "error" then
+          hints_overlay.clear(bufnr)
           vim.api.nvim_echo({ { "nvim-browser: " .. (response.error or "unknown error"), "WarningMsg" } }, false, {})
         end
+        hints_overlay.clear(bufnr)
       end)
     end
 
@@ -634,6 +656,7 @@ function M.close()
   state.generation = state.generation + 1
   stop_existing_job(false)
   pcall(send_terminal_escape, kitty_delete_escape())
+  hints_overlay.clear(state.bufnr)
   if is_valid_window() then
     vim.api.nvim_win_close(state.winid, true)
   end
@@ -786,6 +809,7 @@ end
 function M.toggle()
   if is_valid_window() then
     pcall(send_terminal_escape, kitty_delete_escape())
+    hints_overlay.clear(state.bufnr)
     vim.api.nvim_win_close(state.winid, true)
     state.winid = nil
     return false
@@ -796,10 +820,15 @@ function M.toggle()
     vim.api.nvim_win_set_buf(state.winid, state.bufnr)
     if state.last_payload_is_unicode and state.last_payload ~= nil then
       send_terminal_escape(state.last_payload)
-      vim.cmd("redraw")
     else
       emit_terminal_graphics(state.last_payload, state.winid)
     end
+    if state.cursor_addressable_preview and same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+      hints_overlay.apply(state.bufnr, state.element_hints, state.element_hints_geometry)
+    else
+      hints_overlay.clear(state.bufnr)
+    end
+    vim.cmd("redraw")
     return true
   end
 
@@ -823,5 +852,13 @@ function M.state()
     element_hints = state.element_hints,
   }
 end
+
+M._test = {
+  apply_hint_overlay = hints_overlay.apply,
+  clear_hint_overlay = hints_overlay.clear,
+  hint_namespace = function()
+    return hints_overlay.namespace()
+  end,
+}
 
 return M

@@ -16,7 +16,8 @@ This repository is an early MVP scaffold. Today it includes:
 - Markdown-to-HTML rendering
 - image output through Kitty graphics protocol
 - Chromium/CDP browser sessions rendered through Kitty graphics or ANSI output
-- Neovim commands for opening, navigating, reloading, history, scrolling, text input, keys, selector focus, and point clicks
+- Neovim commands for opening, navigating, reloading, history, scrolling, text input, keys, selector focus, point clicks, and hinted element clicks
+- browser element hints overlaid on cursor-addressable previews
 - persistent Neovim preview surface reuse
 - current URL, title, and status reporting from the active browser session
 - CLI integration tests for backend command contracts
@@ -25,7 +26,7 @@ This repository is an early MVP scaffold. Today it includes:
 Planned next steps:
 
 - terminal-multiplexer graphics passthrough support and documentation
-- richer browser interaction hints for links and form controls
+- richer browser interaction for links and form controls
 - image, SVG, PDF, Mermaid, and KaTeX preview through the same browser runtime
 
 ## Architecture
@@ -67,6 +68,7 @@ Run tests:
 
 ```sh
 cargo test
+nvim --headless -u NONE -l tests/lua/terminal_overlay_test.lua
 ```
 
 Try the backend:
@@ -113,6 +115,10 @@ Then run:
 
 `:NBrowserClickHere` maps the preview cursor to browser viewport pixels. It is
 available for ANSI and Kitty Unicode browser previews.
+
+`:NBrowserHints` echoes the latest numbered browser elements. On ANSI and Kitty
+Unicode browser previews, the same numbers are also overlaid on the preview, and
+`:NBrowserClickHint {id}` clicks the matching element.
 
 ## License
 
