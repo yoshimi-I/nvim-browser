@@ -97,6 +97,7 @@ Then run:
 :NBrowserPreview
 :NBrowserReload
 :NBrowserNavigate https://example.org
+:NBrowserAddress
 :NBrowserBack
 :NBrowserForward
 :NBrowserScrollDown 400
@@ -125,6 +126,13 @@ overlaid on the preview. `:NBrowserClickHint {id-or-label}` and
 prompts for a label and follows it.
 
 Lua mappings can call `require("nvim-browser").hint_mode()` for the same prompt.
+`:NBrowserAddress` prompts for a URL or search query; host-like input opens as a
+URL, and plain words use the configured search URL. Lua mappings can call
+`require("nvim-browser").address()`.
+
+Configure search with `require("nvim-browser").setup({ search_url = "https://www.google.com/search?q=%s" })`.
+The `%s` placeholder receives the encoded query; write literal percent signs as
+`%%`.
 
 ## License
 

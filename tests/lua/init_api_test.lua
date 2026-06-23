@@ -6,6 +6,17 @@ local browser = require("nvim-browser")
 assert(type(browser.click_hint) == "function", "click_hint API should exist")
 assert(type(browser.follow_hint) == "function", "follow_hint API should exist")
 assert(type(browser.hint_mode) == "function", "hint_mode API should exist")
+assert(type(browser.address) == "function", "address API should exist")
+assert(type(browser.resolve_address_target) == "function", "address target resolver should exist")
+
+assert(browser.resolve_address_target("https://example.com") == "https://example.com", "address resolver should preserve explicit URLs")
+assert(browser.resolve_address_target("example.com") == "https://example.com", "address resolver should add https to host-like inputs")
+assert(browser.resolve_address_target("localhost:3000") == "http://localhost:3000", "address resolver should add http to localhost")
+assert(browser.resolve_address_target("localhosting") == "https://www.google.com/search?q=localhosting", "address resolver should not treat localhost prefixes as localhost")
+assert(browser.resolve_address_target("127.0.0.1abc") == "https://www.google.com/search?q=127.0.0.1abc", "address resolver should not treat partial IP prefixes as URLs")
+assert(browser.resolve_address_target("hello world") == "https://www.google.com/search?q=hello%20world", "address resolver should search plain words")
+assert(browser.resolve_address_target("  docs  ") == "https://www.google.com/search?q=docs", "address resolver should trim input")
+assert(browser.resolve_address_target("") == nil, "address resolver should reject empty input")
 
 local original_hints = browser.hints
 local original_follow_hint = browser.follow_hint
@@ -44,3 +55,37 @@ end) == false, "hint_mode should propagate failed follow_hint")
 
 browser.hints = original_hints
 browser.follow_hint = original_follow_hint
+
+local original_open = browser.open
+local original_navigate = browser.navigate
+local opened = nil
+local navigated = nil
+
+browser.open = function(target)
+  opened = target
+  return true
+end
+browser.navigate = function(target)
+  navigated = target
+  return true
+end
+assert(browser.address(function()
+  return "example.com"
+end, { is_active = false }) == true, "address should open a target when no browser session is active")
+assert(opened == "https://example.com", "address should open normalized host input")
+assert(navigated == nil, "address should not navigate without an active session")
+
+opened = nil
+navigated = nil
+assert(browser.address(function()
+  return "hello world"
+end, { is_active = true }) == true, "address should navigate when a browser session is active")
+assert(navigated == "https://www.google.com/search?q=hello%20world", "address should navigate to normalized search URL")
+assert(opened == nil, "address should not open a new preview when a session is active")
+
+assert(browser.address(function()
+  return ""
+end, { is_active = true }) == false, "address should return false for empty input")
+
+browser.open = original_open
+browser.navigate = original_navigate

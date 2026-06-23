@@ -12,6 +12,7 @@ end
 M.options = {
   binary = default_binary(),
   graphics = "auto",
+  search_url = "https://www.google.com/search?q=%s",
 }
 
 function M.setup(opts)

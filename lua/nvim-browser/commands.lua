@@ -12,6 +12,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: no browser hints available", "WarningMsg" } }, false, {})
   end
 
+  local function warn_address_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: address was empty or could not be opened", "WarningMsg" } }, false, {})
+  end
+
   local function follow_hint(label)
     if browser.follow_hint ~= nil then
       return browser.follow_hint(label)
@@ -58,6 +62,18 @@ function M.register(browser, opts)
   end, {
     nargs = 1,
   })
+
+  vim.api.nvim_create_user_command("NBrowserAddress", function()
+    local value = input("nvim-browser address: ")
+    if value == nil or value == "" then
+      return
+    end
+    if not browser.address(function()
+      return value
+    end) then
+      warn_address_unavailable()
+    end
+  end, {})
 
   vim.api.nvim_create_user_command("NBrowserBack", function()
     browser.back()

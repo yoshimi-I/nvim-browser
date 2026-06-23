@@ -1,3 +1,4 @@
+local address = require("nvim-browser.address")
 local backend = require("nvim-browser.backend")
 local config = require("nvim-browser.config")
 local terminal = require("nvim-browser.terminal")
@@ -14,6 +15,13 @@ end
 
 local function resolve_target(target)
   return target or vim.fn.expand("%:p")
+end
+
+local function has_active_browser_session()
+  local terminal_state = terminal.state()
+  return terminal_state.mode == "serve"
+    and terminal_state.job_id ~= nil
+    and terminal_state.has_buffer
 end
 
 function M.inspect(target)
@@ -57,6 +65,28 @@ function M.navigate(target)
     state.last_target = target
   end
   return ok
+end
+
+function M.resolve_address_target(input)
+  return address.resolve(input, M.config.search_url or config.options.search_url)
+end
+
+function M.address(input, opts)
+  opts = opts or {}
+  input = input or vim.fn.input
+  local target = M.resolve_address_target(input("nvim-browser address: "))
+  if target == nil then
+    return false
+  end
+  local is_active = opts.is_active
+  if is_active == nil then
+    is_active = has_active_browser_session()
+  end
+  if is_active then
+    return M.navigate(target)
+  end
+  M.open(target)
+  return true
 end
 
 function M.back()

@@ -590,6 +590,12 @@ function M.open(command)
           if generation ~= state.generation or state.bufnr ~= bufnr then
             return
           end
+          state.job_id = nil
+          state.mode = nil
+          state.element_hints = {}
+          state.element_hints_geometry = nil
+          state.cursor_addressable_preview = false
+          hints_overlay.clear(bufnr)
           if code ~= 0 and vim.api.nvim_buf_is_valid(bufnr) then
             vim.bo[bufnr].modifiable = true
             vim.api.nvim_buf_set_lines(
