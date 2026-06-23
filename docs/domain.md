@@ -59,8 +59,8 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Supports navigation, reload, stop, back/forward, scroll, repeatable find
   next/previous, focused input, key presses, selector focus, point clicks, CDP
   mouse-move hovers, native CDP mouse-wheel input at preview coordinates,
-  hints, hinted `<select>` option selection, hinted checkbox/radio toggles,
-  and direct href following.
+  hints, hinted focus for search/input workflows, hinted `<select>` option
+  selection, hinted checkbox/radio toggles, and direct href following.
 - Shows live browser state in a preview footer: status, title/URL, scroll
   progress, output mode, cells, viewport, and errors.
 - Performs live recapture while idle and suppresses background recapture while a

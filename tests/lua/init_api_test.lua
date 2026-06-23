@@ -12,6 +12,8 @@ assert(type(browser.transient_hint_mode) == "function", "transient_hint_mode API
 assert(type(browser.hover_point) == "function", "hover_point API should exist")
 assert(type(browser.hover_here) == "function", "hover_here API should exist")
 assert(type(browser.hover_hint) == "function", "hover_hint API should exist")
+assert(type(browser.focus_hint) == "function", "focus_hint API should exist")
+assert(type(browser.focus_hint_mode) == "function", "focus_hint_mode API should exist")
 assert(type(browser.wheel_point) == "function", "wheel_point API should exist")
 assert(type(browser.wheel_mouse) == "function", "wheel_mouse API should exist")
 assert(type(browser.type_point) == "function", "type_point API should exist")
@@ -67,6 +69,7 @@ local original_terminal_toggle_hint = terminal.toggle_hint
 local original_terminal_hover_point = terminal.hover_point
 local original_terminal_hover_here = terminal.hover_here
 local original_terminal_hover_hint = terminal.hover_hint
+local original_terminal_focus_hint = terminal.focus_hint
 local original_terminal_type_point = terminal.type_point
 local original_terminal_type_here = terminal.type_here
 local original_terminal_stop = terminal.stop
@@ -253,6 +256,14 @@ terminal.toggle_hint = function(label)
 end
 assert(browser.toggle_hint("c") == true, "toggle_hint should delegate to terminal")
 assert(toggled_hint == "c", "toggle_hint should pass hint label to terminal")
+
+local focused_hint = nil
+terminal.focus_hint = function(label)
+  focused_hint = label
+  return true
+end
+assert(browser.focus_hint("i") == true, "focus_hint should delegate to terminal")
+assert(focused_hint == "i", "focus_hint should pass hint label to terminal")
 
 local hovered_point = nil
 terminal.hover_point = function(x, y)
@@ -497,6 +508,23 @@ assert(table.concat(toggle_prompts, "|") == "nvim-browser hint: ", "toggle_hint_
 assert(toggled_hint == "c", "toggle_hint_mode should pass the prompted hint label")
 
 browser.hints = function()
+  return { { id = 4, hint_label = "i" } }
+end
+focused_hint = nil
+local focus_prompts = {}
+local focus_responses = { "i" }
+terminal.focus_hint = function(label)
+  focused_hint = label
+  return true
+end
+assert(browser.focus_hint_mode(function(prompt)
+  table.insert(focus_prompts, prompt)
+  return table.remove(focus_responses, 1)
+end) == true, "focus_hint_mode should focus the prompted hint")
+assert(table.concat(focus_prompts, "|") == "nvim-browser hint: ", "focus_hint_mode should prompt for hint")
+assert(focused_hint == "i", "focus_hint_mode should pass the prompted hint label")
+
+browser.hints = function()
   return {}
 end
 assert(browser.type_hint_mode(function()
@@ -508,6 +536,9 @@ end) == false, "select_hint_mode should return false without active hints")
 assert(browser.toggle_hint_mode(function()
   error("input should not be called without hints")
 end) == false, "toggle_hint_mode should return false without active hints")
+assert(browser.focus_hint_mode(function()
+  error("input should not be called without hints")
+end) == false, "focus_hint_mode should return false without active hints")
 
 browser.hints = function()
   return { { id = 2, hint_label = "s" } }
@@ -521,6 +552,9 @@ end) == false, "select_hint_mode should cancel on empty hint label")
 assert(browser.toggle_hint_mode(function()
   return ""
 end) == false, "toggle_hint_mode should cancel on empty hint label")
+assert(browser.focus_hint_mode(function()
+  return ""
+end) == false, "focus_hint_mode should cancel on empty hint label")
 
 local empty_text_responses = { "s", "" }
 assert(browser.type_hint_mode(function()
@@ -544,6 +578,10 @@ terminal.toggle_hint = function()
   return false
 end
 assert(browser.toggle_hint("c") == false, "toggle_hint should propagate terminal failure")
+terminal.focus_hint = function()
+  return false
+end
+assert(browser.focus_hint("i") == false, "focus_hint should propagate terminal failure")
 
 browser.click_hint = original_click_hint
 browser.follow_hint = original_follow_hint
@@ -559,6 +597,7 @@ terminal.toggle_hint = original_terminal_toggle_hint
 terminal.hover_point = original_terminal_hover_point
 terminal.hover_here = original_terminal_hover_here
 terminal.hover_hint = original_terminal_hover_hint
+terminal.focus_hint = original_terminal_focus_hint
 terminal.type_point = original_terminal_type_point
 terminal.type_here = original_terminal_type_here
 terminal.stop = original_terminal_stop

@@ -88,4 +88,4 @@ Current renderer-independent concepts:
 - `Viewport`: pixel dimensions plus device scale factor.
 - `FrameMetadata`: frame ID, page ID, URL, viewport, and capture timestamp.
 - `Renderer`: trait for navigate, render frame, scroll, find text, hinted
-  selection/toggle, reload, and shutdown.
+  focus/selection/toggle, reload, and shutdown.

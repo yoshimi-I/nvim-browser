@@ -330,6 +330,10 @@ enum ServeRequest {
         id: u64,
         hint_id: u32,
     },
+    FocusHint {
+        id: u64,
+        hint_id: u32,
+    },
     HoverHint {
         id: u64,
         hint_id: u32,
@@ -677,7 +681,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 9,
+            protocol_version: 10,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -832,6 +836,15 @@ impl<R: Renderer> ServeRuntime<R> {
             }
             ServeRequest::ClickHint { hint_id, .. } => {
                 self.renderer.click_hint(ClickHintRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    hint_id,
+                ))?;
+                self.settle_after_interaction()?;
+                self.capture_payload().map(Some)
+            }
+            ServeRequest::FocusHint { hint_id, .. } => {
+                self.renderer.focus_hint(FocusHintRequest::new(
                     self.session.id(),
                     self.session.active_page_id(),
                     hint_id,
@@ -1039,6 +1052,7 @@ impl ServeRequest {
             | ServeRequest::HoverPoint { id, .. }
             | ServeRequest::WheelPoint { id, .. }
             | ServeRequest::ClickHint { id, .. }
+            | ServeRequest::FocusHint { id, .. }
             | ServeRequest::HoverHint { id, .. }
             | ServeRequest::SelectHint { id, .. }
             | ServeRequest::ToggleHint { id, .. }
@@ -2247,6 +2261,11 @@ mod tests {
             ServeRequest::HoverHint { id: 10, hint_id: 3 }
         );
         assert_eq!(
+            parse_serve_request(r##"{"type":"focus_hint","id":13,"hint_id":5}"##)
+                .expect("focus hint request should parse"),
+            ServeRequest::FocusHint { id: 13, hint_id: 5 }
+        );
+        assert_eq!(
             parse_serve_request(
                 r##"{"type":"select_hint","id":11,"hint_id":4,"choice":"Canada"}"##
             )
@@ -2503,7 +2522,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 9,
+                protocol_version: 10,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -2531,7 +2550,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":9,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":10,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -2558,7 +2577,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 9);
+        assert_eq!(runtime_info.protocol_version, 10);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -3827,6 +3846,80 @@ mod tests {
         assert_eq!(
             runtime.renderer.operations,
             vec!["capture", "hints", "click_hint"]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_focuses_hint_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::FocusHint { id: 2, hint_id: 3 });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(runtime.renderer.focused_hints, vec![3]);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "focus_hint",
+                "settle",
+                "capture",
+                "hints"
+            ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_does_not_capture_when_hint_focus_fails() {
+        let mut renderer = FakeRenderer::new();
+        renderer.fail_focus_hint = true;
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::FocusHint {
+            id: 2,
+            hint_id: 404,
+        });
+
+        assert_eq!(response.status, ServeStatus::Error);
+        assert!(response.payload.is_none());
+        assert_eq!(runtime.renderer.focused_hints, vec![404]);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["capture", "hints", "focus_hint"]
         );
     }
 

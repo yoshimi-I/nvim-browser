@@ -1023,14 +1023,29 @@ const FOCUS_HINT_SCRIPT: &str = r#"
   const registry = window.__nvbrowserHintRegistry;
   const element = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
   if (!element || !element.isConnected) return false;
+  if (element.disabled || element.getAttribute('aria-disabled') === 'true') return false;
+  const tag = element.tagName.toLowerCase();
+  const type = tag === 'input' ? (element.getAttribute('type') || 'text').toLowerCase() : '';
+  if (type === 'hidden') return false;
+  const role = (element.getAttribute('role') || '').toLowerCase();
+  const focusable = tag === 'input'
+    || tag === 'textarea'
+    || tag === 'select'
+    || tag === 'button'
+    || tag === 'a'
+    || element.isContentEditable
+    || element.tabIndex >= 0
+    || role === 'textbox'
+    || role === 'combobox'
+    || role === 'searchbox'
+    || role === 'button'
+    || role === 'link';
+  if (!focusable) return false;
   if (typeof element.scrollIntoView === 'function') {
     element.scrollIntoView({ block: 'center', inline: 'center' });
   }
   if (typeof element.focus === 'function') {
-    element.focus();
-  }
-  if (document.activeElement !== element && typeof element.click === 'function') {
-    element.click();
+    element.focus({ preventScroll: true });
   }
   return document.activeElement === element || element.contains(document.activeElement);
 })()
@@ -1801,6 +1816,11 @@ mod tests {
         assert!(ELEMENT_HINTS_SCRIPT.contains("checked: checkedFor(element)"));
         assert!(FOCUS_HINT_SCRIPT.contains("__nvbrowserHintRegistry"));
         assert!(FOCUS_HINT_SCRIPT.contains("registry.elements.get(hintId)"));
+        assert!(FOCUS_HINT_SCRIPT.contains("type === 'hidden'"));
+        assert!(FOCUS_HINT_SCRIPT.contains("element.disabled"));
+        assert!(FOCUS_HINT_SCRIPT.contains("aria-disabled"));
+        assert!(FOCUS_HINT_SCRIPT.contains("element.focus({ preventScroll: true })"));
+        assert!(!FOCUS_HINT_SCRIPT.contains("element.click()"));
         assert!(!FOCUS_HINT_SCRIPT.contains("[hintId - 1]"));
         assert!(CLICK_HINT_POINT_SCRIPT.contains("__nvbrowserHintRegistry"));
         assert!(CLICK_HINT_POINT_SCRIPT.contains("registry.elements.get(hintId)"));

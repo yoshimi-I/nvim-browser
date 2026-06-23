@@ -224,6 +224,7 @@ Then run:
 :NBrowserHints
 :NBrowserClickHint 1
 :NBrowserHoverHint 1
+:NBrowserFocusHint s
 :NBrowserFollowHint a
 :NBrowserTypeHint s hello world
 :NBrowserSubmitHint s hello world
@@ -234,6 +235,7 @@ Then run:
 :NBrowserTypeHintMode
 :NBrowserSubmitHintMode
 :NBrowserSelectHintMode
+:NBrowserFocusHintMode
 :NBrowserToggleHintMode
 :NBrowserHintMode
 :NBrowserCurrentUrl
@@ -294,6 +296,9 @@ press `<Esc>` to cancel.
 `:NBrowserTypeHint {id-or-label} {text}` focuses the backend hint id and types
 text into it without relying on viewport coordinates. `:NBrowserSubmitHint
 {id-or-label} {text}` also presses Enter after the text is queued.
+`:NBrowserFocusHint {id-or-label}` focuses a hinted field or focusable element
+and captures a fresh frame; follow it with `:NBrowserInput`, `:NBrowserPaste`,
+or `:NBrowserKey Enter` for search box workflows.
 `:NBrowserSelectHint {id-or-label} {choice}` selects an option in a hinted
 `<select>` element. Numeric choices use 1-based option indexes; otherwise the
 runtime matches option values, then normalized visible option text.
@@ -308,10 +313,12 @@ an ANSI or Kitty Unicode browser preview and ignore the preview footer row.
 `:NBrowserTypeHintMode` prompts for a hint label and text, then types into the
 hinted element. `:NBrowserSubmitHintMode` does the same and presses Enter after
 the text is queued. `:NBrowserSelectHintMode` prompts for a hint label and
-option choice. `:NBrowserToggleHintMode` prompts for a checkbox/radio hint
-label. Lua mappings can call `require("nvim-browser").hint_mode()`,
+option choice. `:NBrowserFocusHintMode` prompts for a hint label and focuses
+the matching element. `:NBrowserToggleHintMode` prompts for a checkbox/radio
+hint label. Lua mappings can call `require("nvim-browser").hint_mode()`,
 `require("nvim-browser").type_hint_mode(nil, { submit = true })`, or
 `require("nvim-browser").select_hint_mode()` /
+`require("nvim-browser").focus_hint_mode()` /
 `require("nvim-browser").toggle_hint_mode()`.
 `:NBrowserAddress [url-or-search]` works like a small omnibox; host-like input
 opens as a URL, and plain words use the configured search URL. With no

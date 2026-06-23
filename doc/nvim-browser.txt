@@ -234,6 +234,12 @@ COMMANDS                                           *nvim-browser-commands*
 	Move the Chromium mouse cursor to the center point of a browser hint and
 	capture a fresh frame.
 
+							*:NBrowserFocusHint*
+:NBrowserFocusHint {id-or-label}
+	Focus a hinted field or focusable element and capture a fresh frame. This
+	is useful before :NBrowserInput, :NBrowserPaste, or :NBrowserKey Enter for
+	search boxes and forms.
+
 							*:NBrowserFollowHint*
 :NBrowserFollowHint {label}
 	Follow a keyboard-labeled browser hint. Link hints with an href navigate
@@ -287,6 +293,11 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserSelectHintMode
 	Prompt for a browser hint label and option choice, select the matching
 	<option> in a hinted <select> element, and capture a fresh frame.
+
+							*:NBrowserFocusHintMode*
+:NBrowserFocusHintMode
+	Prompt for a browser hint label, focus the matching element, and capture a
+	fresh frame.
 
 							*:NBrowserToggleHintMode*
 :NBrowserToggleHintMode

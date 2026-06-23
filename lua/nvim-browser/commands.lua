@@ -378,6 +378,14 @@ function M.register(browser, opts)
     nargs = 1,
   })
 
+  vim.api.nvim_create_user_command("NBrowserFocusHint", function(opts)
+    if not browser.focus_hint(opts.args) then
+      warn_hint_unavailable()
+    end
+  end, {
+    nargs = 1,
+  })
+
   vim.api.nvim_create_user_command("NBrowserFollowHint", function(opts)
     if not follow_hint(opts.args) then
       warn_hint_unavailable()
@@ -491,6 +499,21 @@ function M.register(browser, opts)
     end
     if not browser.select_hint(label, choice) then
       warn_hint_input_unavailable()
+    end
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserFocusHintMode", function()
+    local hints = browser.hints()
+    if #hints == 0 then
+      warn_no_hints()
+      return
+    end
+    local label = input("nvim-browser hint: ")
+    if label == nil or label == "" then
+      return
+    end
+    if not browser.focus_hint(label) then
+      warn_hint_unavailable()
     end
   end, {})
 

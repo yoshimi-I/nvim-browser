@@ -623,6 +623,158 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
 }
 
 #[test]
+fn opt_in_e2e_serve_loop_focuses_hint_for_text_entry() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let fixture_path = directory.path().join("focus-hint.html");
+    std::fs::write(
+        &fixture_path,
+        r##"<!doctype html>
+<html>
+  <head><title>NBrowser Focus E2E Fixture</title></head>
+  <body>
+    <main>
+      <label>Search <input aria-label="Search" oninput="document.getElementById('out').textContent='search ' + this.value"></label>
+      <textarea aria-label="Notes" oninput="document.getElementById('notes-out').textContent='notes ' + this.value"></textarea>
+      <div contenteditable="true" aria-label="Editable" style="min-height: 1em" oninput="document.getElementById('edit-out').textContent='editable ' + this.textContent"></div>
+      <p id="out">empty</p>
+      <p id="notes-out">notes empty</p>
+      <p id="edit-out">editable empty</p>
+    </main>
+  </body>
+</html>"##,
+    )
+    .expect("focus fixture should be written");
+    let fixture_url = format!("file://{}", fixture_path.display());
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--url",
+            &fixture_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok", "initial navigation should succeed");
+    let hints = initial["hints"]
+        .as_array()
+        .expect("initial response should include hints");
+    let search_hint_id = hints
+        .iter()
+        .find(|hint| hint["kind"] == "input" && hint["label"] == "Search")
+        .expect("real Chromium hints should include the search input")["id"]
+        .as_u64()
+        .expect("search hint should include id");
+
+    let focused_input = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "focus_hint",
+        "hint_id": search_hint_id
+    }));
+    assert_eq!(
+        focused_input["status"], "ok",
+        "focus_hint should focus a hinted input"
+    );
+    let focused_text = serve.request(serde_json::json!({
+        "id": 2,
+        "type": "text_input",
+        "text": "focused search"
+    }));
+    assert_eq!(
+        focused_text["status"], "ok",
+        "text_input should type into the focused hint"
+    );
+    let focused_page_text = serve.request(serde_json::json!({ "id": 3, "type": "page_text" }));
+    assert!(
+        focused_page_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("search focused search")),
+        "page_text should observe DOM updated after focus_hint plus text_input"
+    );
+
+    let textarea_hint_id = initial["hints"]
+        .as_array()
+        .expect("initial response should include hints")
+        .iter()
+        .find(|hint| hint["kind"] == "text_area" && hint["label"] == "Notes")
+        .expect("real Chromium hints should include the textarea")["id"]
+        .as_u64()
+        .expect("textarea hint should include id");
+    let textarea_typed = serve.request(serde_json::json!({
+        "id": 4,
+        "type": "type_hint",
+        "hint_id": textarea_hint_id,
+        "text": "draft notes",
+        "submit": false
+    }));
+    assert_eq!(
+        textarea_typed["status"], "ok",
+        "type_hint should type into textarea hints"
+    );
+    let textarea_page_text = serve.request(serde_json::json!({ "id": 5, "type": "page_text" }));
+    assert!(
+        textarea_page_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("notes draft notes")),
+        "page_text should observe textarea updates from type_hint"
+    );
+
+    let editable_hint_id = initial["hints"]
+        .as_array()
+        .expect("initial response should include hints")
+        .iter()
+        .find(|hint| hint["kind"] == "editable" && hint["label"] == "Editable")
+        .expect("real Chromium hints should include the editable region")["id"]
+        .as_u64()
+        .expect("editable hint should include id");
+    let editable_typed = serve.request(serde_json::json!({
+        "id": 6,
+        "type": "type_hint",
+        "hint_id": editable_hint_id,
+        "text": "editable content",
+        "submit": false
+    }));
+    assert_eq!(
+        editable_typed["status"], "ok",
+        "type_hint should type into contenteditable hints"
+    );
+    let editable_page_text = serve.request(serde_json::json!({ "id": 7, "type": "page_text" }));
+    assert!(
+        editable_page_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("editable content")),
+        "page_text should observe contenteditable text updates from type_hint; response={editable_page_text:?}"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 8, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
+#[test]
 fn opt_in_e2e_serve_loop_selects_real_chromium_hint() {
     if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
         return;

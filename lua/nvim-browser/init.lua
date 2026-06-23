@@ -260,6 +260,10 @@ function M.hover_hint(id)
   return terminal.hover_hint(id)
 end
 
+function M.focus_hint(id)
+  return terminal.focus_hint(id)
+end
+
 function M.follow_hint(id)
   return terminal.follow_hint(id)
 end
@@ -365,6 +369,18 @@ function M.select_hint_mode(input)
     return false
   end
   return M.select_hint(label, choice)
+end
+
+function M.focus_hint_mode(input)
+  input = input or vim.fn.input
+  if #M.hints() == 0 then
+    return false
+  end
+  local label = input("nvim-browser hint: ")
+  if label == nil or label == "" then
+    return false
+  end
+  return M.focus_hint(label)
 end
 
 function M.toggle_hint_mode(input)

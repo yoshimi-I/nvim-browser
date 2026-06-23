@@ -16,6 +16,7 @@ local typed_hint = nil
 local submitted_hint = nil
 local selected_hint = nil
 local toggled_hint = nil
+local focused_hint = nil
 local typed_here = nil
 local submitted_here = nil
 local input_text = nil
@@ -53,6 +54,10 @@ local browser = {
   end,
   hover_hint = function(identifier)
     hovered_hint = identifier
+    return true
+  end,
+  focus_hint = function(identifier)
+    focused_hint = identifier
     return true
   end,
   address = function(input)
@@ -325,6 +330,9 @@ assert(selected_hint == "s:Canada", "NBrowserSelectHint should pass the label an
 vim.cmd("NBrowserToggleHint c")
 assert(toggled_hint == "c", "NBrowserToggleHint should pass the label to browser.toggle_hint")
 
+vim.cmd("NBrowserFocusHint s")
+assert(focused_hint == "s", "NBrowserFocusHint should pass the label to browser.focus_hint")
+
 vim.cmd("NBrowserTypeHere hello world")
 assert(typed_here == "hello world", "NBrowserTypeHere should type at the preview cursor")
 
@@ -368,6 +376,19 @@ commands.register(browser, {
 })
 vim.cmd("NBrowserSelectHintMode")
 assert(selected_hint == "s:Canada", "NBrowserSelectHintMode should prompt and select a hinted option")
+
+focused_hint = nil
+hint_responses = { "s" }
+local focus_prompts = {}
+commands.register(browser, {
+  input = function(prompt)
+    table.insert(focus_prompts, prompt)
+    return table.remove(hint_responses, 1)
+  end,
+})
+vim.cmd("NBrowserFocusHintMode")
+assert(focused_hint == "s", "NBrowserFocusHintMode should prompt and focus a hint")
+assert(table.concat(focus_prompts, "|") == "nvim-browser hint: ", "NBrowserFocusHintMode should prompt for hint")
 assert(
   table.concat(select_prompts, "|") == "nvim-browser hint: |nvim-browser option: ",
   "NBrowserSelectHintMode should prompt for hint then option"
@@ -462,6 +483,9 @@ local failed_browser = {
   toggle_hint = function()
     return false
   end,
+  focus_hint = function()
+    return false
+  end,
   type_here = function()
     return false
   end,
@@ -516,6 +540,9 @@ assert(warnings[#warnings] == "nvim-browser: hint input failed, stale, or browse
 vim.cmd("NBrowserToggleHint s")
 assert(warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive", "NBrowserToggleHint should warn when toggle_hint fails")
 
+vim.cmd("NBrowserFocusHint s")
+assert(warnings[#warnings] == "nvim-browser: hint not found, stale, or browser session is inactive", "NBrowserFocusHint should warn when focus_hint fails")
+
 vim.cmd("NBrowserTypeHere missing")
 assert(warnings[#warnings] == "nvim-browser: cursor text input requires an active cursor-addressable browser preview", "NBrowserTypeHere should warn when cursor typing fails")
 
@@ -538,6 +565,12 @@ vim.cmd("NBrowserToggleHintMode")
 assert(
   warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive",
   "NBrowserToggleHintMode should warn when hinted toggle mode fails"
+)
+
+vim.cmd("NBrowserFocusHintMode")
+assert(
+  warnings[#warnings] == "nvim-browser: hint not found, stale, or browser session is inactive",
+  "NBrowserFocusHintMode should warn when hinted focus mode fails"
 )
 
 vim.cmd("NBrowserStop")
@@ -580,6 +613,9 @@ local empty_browser = {
   click_hint = function()
     error("click_hint should not be called without hints")
   end,
+  focus_hint = function()
+    error("focus_hint should not be called without hints")
+  end,
 }
 commands.register(empty_browser, {
   input = function()
@@ -607,6 +643,10 @@ assert(no_hint_input_called == false, "NBrowserSelectHintMode should not prompt 
 vim.cmd("NBrowserToggleHintMode")
 assert(warnings[#warnings] == "nvim-browser: no browser hints available", "NBrowserToggleHintMode should warn when no hints exist")
 assert(no_hint_input_called == false, "NBrowserToggleHintMode should not prompt when no hints exist")
+
+vim.cmd("NBrowserFocusHintMode")
+assert(warnings[#warnings] == "nvim-browser: no browser hints available", "NBrowserFocusHintMode should warn when no hints exist")
+assert(no_hint_input_called == false, "NBrowserFocusHintMode should not prompt when no hints exist")
 
 local hint_error_browser = {
   hints = function()
@@ -640,6 +680,11 @@ vim.cmd("NBrowserToggleHintMode")
 assert(
   warnings[#warnings] == "nvim-browser: hint extraction failed: hint extraction failed",
   "NBrowserToggleHintMode should distinguish hint extraction failures from empty hint sets"
+)
+vim.cmd("NBrowserFocusHintMode")
+assert(
+  warnings[#warnings] == "nvim-browser: hint extraction failed: hint extraction failed",
+  "NBrowserFocusHintMode should distinguish hint extraction failures from empty hint sets"
 )
 
 local no_default_prompt = nil

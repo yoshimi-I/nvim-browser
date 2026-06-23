@@ -1544,8 +1544,43 @@ assert(vim.wait(1000, function()
 end), "direct hint click response should clear pending state")
 
 sent_requests = {}
+local focus_hints_response = vim.json.decode(hints_response)
+focus_hints_response.id = direct_click_pending_id + 1
+serve_stdout(nil, { vim.json.encode(focus_hints_response), "" })
+assert(vim.wait(1000, function()
+  return #terminal.state().element_hints == 2
+end), "serve hint response should repopulate element hints before hinted focus")
+assert(terminal.focus_hint("s") == true, "focus_hint should focus the hinted element")
+local focus_hint_seen = false
+local focus_point_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "focus_hint" and decoded.hint_id == 2 then
+    focus_hint_seen = true
+  end
+  if ok and decoded.type == "focus_point" then
+    focus_point_seen = true
+  end
+end
+assert(focus_hint_seen, "focus_hint should send the backend hint id")
+assert(not focus_point_seen, "focus_hint should avoid coordinate-based focus requests")
+local focus_hint_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(focus_hint_pending_id ~= nil, "hinted focus should mark the operation as pending")
+assert(#terminal.state().element_hints == 0, "focus_hint should clear stale hints while a capture is pending")
+serve_stdout(nil, { vim.json.encode({
+  id = focus_hint_pending_id,
+  status = "ok",
+  payload = "focused hint frame",
+  url = "https://example.com",
+  title = "Example",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil
+end), "focus_hint response should clear pending state before later hint captures")
+
+sent_requests = {}
 local type_hints_response = vim.json.decode(hints_response)
-type_hints_response.id = direct_click_pending_id + 1
+type_hints_response.id = focus_hint_pending_id + 1
 serve_stdout(nil, { vim.json.encode(type_hints_response), "" })
 assert(vim.wait(1000, function()
   return #terminal.state().element_hints == 2
