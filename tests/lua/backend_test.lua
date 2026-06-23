@@ -105,6 +105,45 @@ assert(vim.deep_equal(file_url_html_command, {
   "file:///tmp/site/index.html",
 }), "existing file URL HTML targets should be preserved")
 
+local svg_command = backend.command_for("nvbrowser", "open", "/tmp/site/icon.svg", {
+  graphics = "ansi",
+})
+assert(vim.deep_equal(svg_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  vim.uri_from_fname("/tmp/site/icon.svg"),
+}), "SVG files should route through Chromium serve with file URLs")
+
+local svg_cdp_command = backend.command_for("nvbrowser", "open", "/tmp/site/icon.svg", {
+  graphics = "ansi",
+  cdp_ws_url = "ws://127.0.0.1:9222/devtools/browser/test",
+})
+assert(vim.deep_equal(svg_cdp_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--cdp-ws-url",
+  "ws://127.0.0.1:9222/devtools/browser/test",
+  "--url",
+  vim.uri_from_fname("/tmp/site/icon.svg"),
+}), "SVG file commands should pass configured CDP websocket endpoints")
+
+local relative_svg_command = backend.command_for("nvbrowser", "open", "site/icon.svg", {
+  graphics = "ansi",
+})
+assert(vim.deep_equal(relative_svg_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  vim.uri_from_fname(vim.fn.fnamemodify("site/icon.svg", ":p")),
+}), "relative SVG paths should be converted to absolute file URLs")
+
 local image_command = backend.command_for("nvbrowser", "open", "/tmp/image.png", {
   graphics = "ansi",
   image_fit = "contain",

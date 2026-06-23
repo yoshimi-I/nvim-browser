@@ -8,6 +8,10 @@ local function is_image_extension(extension)
   return vim.tbl_contains({ "png", "jpg", "jpeg", "gif", "webp" }, extension)
 end
 
+local function is_browser_file_extension(extension)
+  return vim.tbl_contains({ "html", "htm", "svg" }, extension)
+end
+
 local function image_graphics_output(opts)
   local graphics = opts and opts.graphics or "auto"
   if graphics == "kitty" or graphics == "ansi" then
@@ -63,7 +67,7 @@ function M.command_for(binary, action, target, opts)
     return command
   end
 
-  if extension == "html" or extension == "htm" then
+  if is_browser_file_extension(extension) then
     local command = { binary, "serve", "--output", browser_graphics_output(opts) }
     add_cdp_ws_url(command, opts)
     table.insert(command, "--url")

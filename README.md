@@ -32,7 +32,7 @@ Planned next steps:
 
 - terminal-multiplexer graphics passthrough support and documentation
 - richer browser interaction for links and form controls
-- image, SVG, PDF, Mermaid, and KaTeX preview through the same browser runtime
+- PDF, Mermaid, KaTeX, and richer image preview through the same browser runtime
 
 ## Architecture
 
@@ -177,8 +177,8 @@ Then run:
 
 Markdown files are rendered with a docs-oriented browser shell and a local
 `<base>` path so relative images can resolve from the Markdown file directory.
-HTML files are opened through Chromium using `file://` URLs.
-Image previews support `original`, `contain`, `width`, and `height` fit modes.
+HTML and SVG files are opened through Chromium using `file://` URLs.
+Raster image previews support `original`, `contain`, `width`, and `height` fit modes.
 Configure Neovim's default with
 `require("nvim-browser").setup({ image_fit = "contain" })`.
 
