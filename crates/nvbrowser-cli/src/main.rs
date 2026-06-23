@@ -763,7 +763,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.session
                     .navigate_active_page_with_title(navigation.url, navigation.title);
                 self.session.finish_active_page_load();
-                self.capture_payload(false).map(Some)
+                self.capture_payload(true).map(Some)
             }
             ServeRequest::TextInput { text, capture, .. } => {
                 self.renderer.input_text(TextInputRequest::new(
@@ -3248,6 +3248,7 @@ mod tests {
 
         assert_eq!(forward.status, ServeStatus::Ok);
         assert_eq!(forward.url, Some("https://example.com/two".to_string()));
+        assert_eq!(forward.focused, Some(None));
         assert_eq!(
             runtime.session.active_page().url(),
             Some("https://example.com/two")
