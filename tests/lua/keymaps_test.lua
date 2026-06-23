@@ -27,6 +27,9 @@ local browser = {
   hint_mode = function()
     table.insert(calls, "hints")
   end,
+  transient_hint_mode = function()
+    table.insert(calls, "transient_hints")
+  end,
   type_hint_mode = function(input, opts)
     local value = input("nvim-browser text: ")
     local suffix = opts ~= nil and opts.submit == true and ":submit" or ":type"
@@ -266,8 +269,8 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,address,find:local,hints,type_hints:type:buffer text,type_hints:submit:buffer text,text_mode,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,hover_here,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
-  "buffer-local controls should call browser APIs"
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,address,find:local,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,text_mode,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,hover_here,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
+  "buffer-local controls should call browser APIs and prefer transient hints"
 )
 
 vim.keymap.set("n", "x", function()

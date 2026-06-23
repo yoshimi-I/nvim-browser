@@ -222,7 +222,9 @@ COMMANDS                                           *nvim-browser-commands*
 							*:NBrowserHintMode*
 :NBrowserHintMode
 	Prompt for a browser hint label, click the matching element, and capture a
-	fresh frame.
+	fresh frame. Preview-local hint mappings enter a transient mode instead:
+	type the visible hint label directly, keep typing for multi-character
+	labels such as "aa", or press <Esc> to cancel.
 
 							*:NBrowserCurrentUrl*
 :NBrowserCurrentUrl

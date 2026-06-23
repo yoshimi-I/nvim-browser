@@ -197,6 +197,10 @@ function M.setup_buffer(browser, bufnr, opts)
   end, "nvim-browser: find", buffer_opts)
 
   set_mapping(nil, mapping_lhs(mappings, "hints", "f"), function()
+    if browser.transient_hint_mode ~= nil then
+      browser.transient_hint_mode()
+      return
+    end
     browser.hint_mode()
   end, "nvim-browser: hints", buffer_opts)
 

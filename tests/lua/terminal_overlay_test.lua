@@ -84,8 +84,21 @@ for index = 1, 28 do
   table.insert(many_hints, { id = index, x = index, y = index })
 end
 local many_labeled = terminal._test.assign_hint_labels(many_hints)
-assert(many_labeled[27].hint_label == "aa", "labels should roll over after single-key labels")
-assert(many_labeled[28].hint_label == "as", "rolled labels should stay keyboard-oriented")
+assert(many_labeled[1].hint_label == "aa", "large hint sets should use fixed-width labels")
+assert(many_labeled[2].hint_label == "as", "fixed-width labels should stay keyboard-oriented")
+assert(many_labeled[27].hint_label == "sa", "large hint labels should continue in keyboard order")
+for outer = 1, #many_labeled do
+  for inner = 1, #many_labeled do
+    if outer ~= inner then
+      local outer_label = many_labeled[outer].hint_label
+      local inner_label = many_labeled[inner].hint_label
+      assert(
+        inner_label:sub(1, #outer_label) ~= outer_label,
+        "generated hint labels should be prefix-free for transient hint mode"
+      )
+    end
+  end
+end
 
 local target_hints = {
   { id = 1, hint_label = "a", x = 11, y = 12 },

@@ -887,22 +887,35 @@ local function same_preview_geometry(left, right)
     and left.height == right.height
 end
 
-local function hint_label_for_index(index)
+local function hint_label_width(count)
   local base = #hint_label_keys
+  local width = 1
+  local capacity = base
+  while count > capacity do
+    width = width + 1
+    capacity = capacity * base
+  end
+  return width
+end
+
+local function hint_label_for_index(index, width)
+  local base = #hint_label_keys
+  local value = index - 1
   local label = ""
-  while index > 0 do
-    local key_index = ((index - 1) % base) + 1
-    label = hint_label_keys[key_index] .. label
-    index = math.floor((index - 1) / base)
+  for position = width - 1, 0, -1 do
+    local divisor = base ^ position
+    local key_index = (math.floor(value / divisor) % base) + 1
+    label = label .. hint_label_keys[key_index]
   end
   return label
 end
 
 local function assign_hint_labels(hints)
   local labeled = {}
+  local width = hint_label_width(#(hints or {}))
   for index, hint in ipairs(hints or {}) do
     local copy = vim.tbl_extend("force", {}, hint)
-    copy.hint_label = copy.hint_label or hint_label_for_index(index)
+    copy.hint_label = copy.hint_label or hint_label_for_index(index, width)
     table.insert(labeled, copy)
   end
   return labeled

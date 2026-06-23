@@ -255,7 +255,10 @@ browser previews, the same labels are also overlaid on the preview.
 `:NBrowserFollowHint {label}` uses a link hint's `href` directly when
 available, which avoids coordinate-click drift and keeps the active browser
 session on the navigated URL; non-link hints fall back to a coordinate click.
-`:NBrowserHintMode` prompts for a label and follows it.
+`:NBrowserHintMode` prompts for a label and follows it. In preview buffers, the
+default `f` mapping enters a transient hint mode instead: type the visible hint
+label directly, use additional keys for multi-character labels such as `aa`, or
+press `<Esc>` to cancel.
 `:NBrowserTypeHint {id-or-label} {text}` clicks a hinted element and types text
 into it. `:NBrowserSubmitHint {id-or-label} {text}` also presses Enter after the
 text is queued.

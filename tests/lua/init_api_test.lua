@@ -8,6 +8,7 @@ local terminal = require("nvim-browser.terminal")
 assert(type(browser.click_hint) == "function", "click_hint API should exist")
 assert(type(browser.follow_hint) == "function", "follow_hint API should exist")
 assert(type(browser.hint_mode) == "function", "hint_mode API should exist")
+assert(type(browser.transient_hint_mode) == "function", "transient_hint_mode API should exist")
 assert(type(browser.hover_point) == "function", "hover_point API should exist")
 assert(type(browser.hover_here) == "function", "hover_here API should exist")
 assert(type(browser.hover_hint) == "function", "hover_hint API should exist")
@@ -82,6 +83,85 @@ end
 assert(browser.hint_mode(function()
   return "missing"
 end) == false, "hint_mode should propagate failed follow_hint")
+
+browser.hints = original_hints
+browser.follow_hint = original_follow_hint
+
+local transient_followed = {}
+browser.follow_hint = function(label)
+  table.insert(transient_followed, label)
+  return true
+end
+browser.hints = function()
+  return {}
+end
+assert(
+  browser.transient_hint_mode({
+    getcharstr = function()
+      error("transient hint mode should not read input without hints")
+    end,
+  }) == false,
+  "transient_hint_mode should refuse to start without active hints"
+)
+
+browser.hints = function()
+  return {
+    { id = 1, hint_label = "a" },
+    { id = 2, hint_label = "s" },
+  }
+end
+local unique_keys = { "s" }
+assert(
+  browser.transient_hint_mode({
+    getcharstr = function()
+      return table.remove(unique_keys, 1)
+    end,
+  }) == true,
+  "transient_hint_mode should follow a unique one-key hint"
+)
+assert(transient_followed[#transient_followed] == "s", "transient_hint_mode should pass the matched label to follow_hint")
+
+browser.hints = function()
+  return {
+    { id = 1, hint_label = "a" },
+    { id = 2, hint_label = "aa" },
+  }
+end
+local multi_keys = { "a", "a" }
+assert(
+  browser.transient_hint_mode({
+    getcharstr = function()
+      return table.remove(multi_keys, 1)
+    end,
+  }) == true,
+  "transient_hint_mode should wait while a label prefix is ambiguous"
+)
+assert(transient_followed[#transient_followed] == "aa", "transient_hint_mode should support multi-key hint labels")
+
+browser.hints = function()
+  return { { id = 1, hint_label = "a" } }
+end
+local escaped_keys = { vim.keycode("<Esc>") }
+assert(
+  browser.transient_hint_mode({
+    getcharstr = function()
+      return table.remove(escaped_keys, 1)
+    end,
+  }) == false,
+  "transient_hint_mode should cancel on Escape"
+)
+assert(transient_followed[#transient_followed] == "aa", "Escape should not follow a hint")
+
+local invalid_keys = { "z" }
+assert(
+  browser.transient_hint_mode({
+    getcharstr = function()
+      return table.remove(invalid_keys, 1)
+    end,
+  }) == false,
+  "transient_hint_mode should exit on an invalid label prefix"
+)
+assert(transient_followed[#transient_followed] == "aa", "invalid hint input should not follow a hint")
 
 browser.hints = original_hints
 browser.follow_hint = original_follow_hint

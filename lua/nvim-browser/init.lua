@@ -228,6 +228,52 @@ function M.hint_mode(input)
   return M.follow_hint(label)
 end
 
+local function hint_mode_match(hints, prefix)
+  local exact = nil
+  local prefixed = 0
+  for _, hint in ipairs(hints) do
+    local label = hint.hint_label ~= nil and tostring(hint.hint_label):lower() or nil
+    if label ~= nil then
+      if label == prefix then
+        exact = label
+      end
+      if label:sub(1, #prefix) == prefix then
+        prefixed = prefixed + 1
+      end
+    end
+  end
+  return exact, prefixed
+end
+
+function M.transient_hint_mode(opts)
+  opts = opts or {}
+  local hints = M.hints()
+  if #hints == 0 then
+    return false
+  end
+
+  local getcharstr = opts.getcharstr or vim.fn.getcharstr
+  local prefix = ""
+  while true do
+    local key = getcharstr()
+    if key == nil or key == "" then
+      return false
+    end
+    if key == "\27" or key == vim.keycode("<Esc>") then
+      return false
+    end
+    prefix = prefix .. key:lower()
+
+    local exact, prefixed = hint_mode_match(hints, prefix)
+    if prefixed == 0 then
+      return false
+    end
+    if exact ~= nil and prefixed == 1 then
+      return M.follow_hint(exact)
+    end
+  end
+end
+
 function M.type_hint_mode(input, opts)
   input = input or vim.fn.input
   opts = opts or {}
