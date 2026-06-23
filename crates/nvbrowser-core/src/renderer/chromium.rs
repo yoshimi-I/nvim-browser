@@ -20,14 +20,14 @@ use serde::{Deserialize, Serialize};
 use crate::{
     renderer::{
         ClickHintRequest, ClickPointRequest, ElementHint, ElementHintsRequest, FindTextRequest,
-        FindTextResult, FocusHintRequest, FocusSelectorRequest, FrameArtifact,
-        HistoryNavigationRequest, HistoryNavigationResult, HoverHintRequest, HoverPointRequest,
-        InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
-        PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
-        ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
-        RendererErrorKind, ScrollRequest, ScrollResult, SelectHintRequest, SelectionTextRequest,
-        SelectionTextResult, ShutdownResult, TextInputRequest, ToggleHintRequest,
-        WheelPointRequest,
+        FindTextResult, FocusHintRequest, FocusSelectorRequest, FocusedElement,
+        FocusedElementRequest, FrameArtifact, HistoryNavigationRequest, HistoryNavigationResult,
+        HoverHintRequest, HoverPointRequest, InputResult, InteractionSettleResult, KeyPressRequest,
+        NavigateRequest, NavigationResult, PageMetrics, PageMetricsRequest, PageTextRequest,
+        PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer,
+        RendererError, RendererErrorKind, ScrollRequest, ScrollResult, SelectHintRequest,
+        SelectionTextRequest, SelectionTextResult, ShutdownResult, TextInputRequest,
+        ToggleHintRequest, WheelPointRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -359,7 +359,7 @@ impl Renderer for ChromiumRenderer {
         let point = self
             .tab
             .evaluate(&script, true)
-            .map_err(render_error)?
+            .map_err(|error| render_context_error("hint point evaluation failed", error))?
             .value
             .ok_or_else(|| {
                 RendererError::new(
@@ -373,7 +373,7 @@ impl Renderer for ChromiumRenderer {
                 x: point.x,
                 y: point.y,
             })
-            .map_err(render_error)?;
+            .map_err(|error| render_context_error("hint click failed", error))?;
         Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
@@ -540,6 +540,13 @@ impl Renderer for ChromiumRenderer {
         Ok(self.read_page_metrics())
     }
 
+    fn focused_element(
+        &mut self,
+        _request: FocusedElementRequest,
+    ) -> Result<Option<FocusedElement>, RendererError> {
+        self.read_focused_element()
+    }
+
     fn page_text(&mut self, request: PageTextRequest) -> Result<PageTextSnapshot, RendererError> {
         let value = self
             .tab
@@ -580,8 +587,11 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
-        self.adopt_new_page_target_after_interaction()?;
-        let settled = self.wait_for_interaction_settle()?;
+        self.adopt_new_page_target_after_interaction()
+            .map_err(|error| context_renderer_error("target adoption failed", error))?;
+        let settled = self
+            .wait_for_interaction_settle()
+            .map_err(|error| context_renderer_error("interaction settle failed", error))?;
         let url = settled.url;
         let title = settled.title;
         self.current_url = Some(url.clone());
@@ -647,9 +657,30 @@ impl ChromiumRenderer {
         else {
             return Ok(false);
         };
-        self.ensure_dialog_handler(&tab)?;
-        tab.activate().map_err(render_error)?;
-        resize_tab(&tab, self.active_viewport)?;
+        if let Err(error) = self.ensure_dialog_handler(&tab) {
+            if is_closed_target_error(&error) {
+                self.pending_page_target_ids.remove(&target_id);
+                self.known_target_ids.insert(target_id);
+                return Ok(false);
+            }
+            return Err(error);
+        }
+        if let Err(error) = tab.activate().map_err(render_error) {
+            if is_closed_target_error(&error) {
+                self.pending_page_target_ids.remove(&target_id);
+                self.known_target_ids.insert(target_id);
+                return Ok(false);
+            }
+            return Err(error);
+        }
+        if let Err(error) = resize_tab(&tab, self.active_viewport) {
+            if is_closed_target_error(&error) {
+                self.pending_page_target_ids.remove(&target_id);
+                self.known_target_ids.insert(target_id);
+                return Ok(false);
+            }
+            return Err(error);
+        }
         self.tab = tab;
         self.pending_page_target_ids.remove(&target_id);
         self.known_target_ids = tabs
@@ -858,6 +889,29 @@ impl ChromiumRenderer {
             .and_then(|metrics| parse_page_metrics_json(metrics).ok())
     }
 
+    fn read_focused_element(&self) -> Result<Option<FocusedElement>, RendererError> {
+        let value = self
+            .tab
+            .evaluate(ACTIVE_ELEMENT_SCRIPT, true)
+            .map_err(render_error)?
+            .value;
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        if value.is_null() {
+            return Ok(None);
+        }
+        let text = value.as_str().ok_or_else(|| {
+            RendererError::new(
+                RendererErrorKind::InvalidState,
+                "focused element extraction did not return JSON text",
+            )
+        })?;
+        parse_focused_element_json(text)
+            .map(Some)
+            .map_err(render_error)
+    }
+
     fn wait_for_current_url(&self, target_url: &str) -> Result<String, RendererError> {
         for _ in 0..20 {
             let url = self.tab.get_url();
@@ -913,13 +967,16 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
     return null;
   };
   const labelFor = (element) => {
+    const tag = element.tagName.toLowerCase();
+    const inputType = tag === 'input' ? (element.getAttribute('type') || 'text').toLowerCase() : '';
+    const passwordLike = tag === 'input' && inputType === 'password';
     const candidates = [
       element.getAttribute('aria-label'),
       labelledByText(element),
       labelElementText(element),
       element.getAttribute('title'),
       element.getAttribute('placeholder'),
-      element.value,
+      !passwordLike ? element.value : null,
       element.innerText,
       element.textContent,
       element.getAttribute('href')
@@ -1074,6 +1131,109 @@ const FOCUS_HINT_SCRIPT: &str = r#"
 })()
 "#;
 
+const ACTIVE_ELEMENT_SCRIPT: &str = r#"
+(() => {
+  const element = document.activeElement;
+  if (!element || element === document.body || element === document.documentElement) return null;
+  const normalizeText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+  const labelledByText = (element) => {
+    const raw = normalizeText(element.getAttribute('aria-labelledby'));
+    if (raw.length === 0) return null;
+    const text = raw.split(' ').map((id) => {
+      const label = document.getElementById(id);
+      return label ? normalizeText(label.textContent) : '';
+    }).filter(Boolean).join(' ');
+    return text.length > 0 ? text : null;
+  };
+  const labelElementText = (element) => {
+    if (element.labels && element.labels.length > 0) {
+      const text = Array.from(element.labels).map((label) => normalizeText(label.textContent)).filter(Boolean).join(' ');
+      if (text.length > 0) return text;
+    }
+    const wrapping = typeof element.closest === 'function' ? element.closest('label') : null;
+    if (wrapping) {
+      const text = normalizeText(wrapping.textContent);
+      if (text.length > 0) return text;
+    }
+    return null;
+  };
+  const kindFor = (element) => {
+    const tag = element.tagName.toLowerCase();
+    const role = (element.getAttribute('role') || '').toLowerCase();
+    if (tag === 'a' || role === 'link') return 'link';
+    if (tag === 'button' || role === 'button') return 'button';
+    if (tag === 'input') {
+      const type = (element.getAttribute('type') || 'text').toLowerCase();
+      if (type === 'checkbox') return 'checkbox';
+      if (type === 'radio') return 'radio';
+      return 'input';
+    }
+    if (tag === 'textarea') return 'text_area';
+    if (tag === 'select') return 'select';
+    if (element.isContentEditable) return 'editable';
+    return 'other';
+  };
+  const labelFor = (element) => {
+    const candidates = [
+      element.getAttribute('aria-label'),
+      labelledByText(element),
+      labelElementText(element),
+      element.getAttribute('title'),
+      element.getAttribute('placeholder'),
+      passwordLike ? null : element.value,
+      element.innerText,
+      element.textContent,
+      element.getAttribute('href')
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate !== 'string') continue;
+      const label = normalizeText(candidate);
+      if (label.length > 0) return label.slice(0, 80);
+    }
+    return null;
+  };
+  const tag = element.tagName.toLowerCase();
+  const role = (element.getAttribute('role') || '').toLowerCase();
+  const inputType = tag === 'input' ? (element.getAttribute('type') || 'text').toLowerCase() : '';
+  const passwordLike = tag === 'input' && inputType === 'password';
+  const kind = kindFor(element);
+  const editable = kind === 'input' || kind === 'text_area' || kind === 'select' || kind === 'editable';
+  const value = editable && !passwordLike && typeof element.value === 'string'
+    ? normalizeText(element.value).slice(0, 120)
+    : null;
+  const checked = (kind === 'checkbox' || kind === 'radio') ? element.checked === true : null;
+  const submittable = kind === 'input'
+    || kind === 'text_area'
+    || kind === 'select'
+    || kind === 'checkbox'
+    || kind === 'radio'
+    || kind === 'editable'
+    || role === 'textbox'
+    || role === 'searchbox'
+    || role === 'combobox';
+  const focusable = tag === 'input'
+    || tag === 'textarea'
+    || tag === 'select'
+    || tag === 'button'
+    || tag === 'a'
+    || element.isContentEditable
+    || element.tabIndex >= 0
+    || role === 'textbox'
+    || role === 'combobox'
+    || role === 'searchbox'
+    || role === 'button'
+    || role === 'link';
+  return JSON.stringify({
+    kind,
+    label: labelFor(element),
+    value,
+    checked,
+    focusable,
+    submittable
+  });
+})()
+"#;
+
 const CLICK_HINT_POINT_SCRIPT: &str = r#"
 (() => {
   const hintId = __HINT_ID__;
@@ -1125,6 +1285,9 @@ const SELECT_HINT_SCRIPT: &str = r#"
     selectedIndex = options.findIndex((option) => !option.disabled && normalize(option.textContent).toLowerCase() === wanted);
   }
   if (selectedIndex < 0) return false;
+  if (typeof element.focus === 'function') {
+    element.focus({ preventScroll: true });
+  }
   element.selectedIndex = selectedIndex;
   element.value = options[selectedIndex].value;
   element.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1147,6 +1310,9 @@ const TOGGLE_HINT_SCRIPT: &str = r#"
   if (element.disabled || element.getAttribute('aria-disabled') === 'true') return false;
   const type = (element.getAttribute('type') || 'text').toLowerCase();
   if (type !== 'checkbox' && type !== 'radio') return false;
+  if (typeof element.focus === 'function') {
+    element.focus({ preventScroll: true });
+  }
   element.click();
   return true;
 })()
@@ -1483,6 +1649,22 @@ fn render_error(error: impl std::fmt::Display) -> RendererError {
     RendererError::new(RendererErrorKind::RenderFailed, error.to_string())
 }
 
+fn render_context_error(context: &str, error: impl std::fmt::Display) -> RendererError {
+    RendererError::new(
+        RendererErrorKind::RenderFailed,
+        format!("{context}: {error}"),
+    )
+}
+
+fn context_renderer_error(context: &str, error: RendererError) -> RendererError {
+    RendererError::new(error.kind(), format!("{context}: {}", error.message()))
+}
+
+fn is_closed_target_error(error: &RendererError) -> bool {
+    error.kind() == RendererErrorKind::RenderFailed
+        && error.message().contains("underlying connection is closed")
+}
+
 const SELECTION_TEXT_SCRIPT: &str = r#"
 (() => {
   const active = document.activeElement;
@@ -1529,6 +1711,10 @@ fn chromium_key_with_modifiers(key: &str) -> (&str, Vec<ModifierKey>) {
 
 fn parse_page_metrics_json(metrics: &str) -> Result<PageMetrics, serde_json::Error> {
     serde_json::from_str(metrics)
+}
+
+fn parse_focused_element_json(text: &str) -> Result<FocusedElement, serde_json::Error> {
+    serde_json::from_str(text)
 }
 
 fn find_text_script(query: &str, backwards: bool) -> Result<String, RendererError> {
@@ -1912,6 +2098,14 @@ mod tests {
         assert!(!TOGGLE_HINT_SCRIPT.contains("new Event('input'"));
         assert!(!TOGGLE_HINT_SCRIPT.contains("new Event('change'"));
         assert!(!TOGGLE_HINT_SCRIPT.contains("[hintId - 1]"));
+    }
+
+    #[test]
+    fn active_element_script_redacts_password_values() {
+        assert!(ACTIVE_ELEMENT_SCRIPT.contains("const inputType ="));
+        assert!(ACTIVE_ELEMENT_SCRIPT.contains("inputType === 'password'"));
+        assert!(ACTIVE_ELEMENT_SCRIPT.contains("passwordLike ? null : element.value"));
+        assert!(ACTIVE_ELEMENT_SCRIPT.contains("!passwordLike"));
     }
 
     #[test]

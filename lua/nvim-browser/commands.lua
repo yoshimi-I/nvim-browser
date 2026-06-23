@@ -57,8 +57,33 @@ function M.register(browser, opts)
     return table.concat(parts, " ")
   end
 
+  local function focused_element_label(focused)
+    if type(focused) ~= "table" then
+      return nil
+    end
+    local kind = focused.kind ~= nil and tostring(focused.kind) or nil
+    if kind == nil or kind == "" then
+      return nil
+    end
+    local label = focused.label ~= nil and focused.label ~= vim.NIL and tostring(focused.label) or nil
+    if label ~= nil then
+      label = label:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+      if label == "" then
+        label = nil
+      end
+    end
+    if label ~= nil then
+      return "focus=" .. kind .. " " .. label
+    end
+    return "focus=" .. kind
+  end
+
   local function warn_hint_input_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: hint input failed, stale, or browser session is inactive", "WarningMsg" } }, false, {})
+  end
+
+  local function warn_submit_focused_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: focused element is not submittable or browser session is inactive", "WarningMsg" } }, false, {})
   end
 
   local function current_hint_error()
@@ -412,6 +437,12 @@ function M.register(browser, opts)
     nargs = "+",
   })
 
+  vim.api.nvim_create_user_command("NBrowserSubmitFocused", function()
+    if not browser.submit_focused or not browser.submit_focused() then
+      warn_submit_focused_unavailable()
+    end
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserSelectHint", function(opts)
     local label, choice = parse_hint_text(opts.args)
     if label == nil or choice == nil or not browser.select_hint(label, choice) then
@@ -572,12 +603,16 @@ function M.register(browser, opts)
     local error = browser.status_error and browser.status_error() or nil
     local scroll = browser.page_metrics and page_scroll_label(browser.page_metrics()) or nil
     local runtime = browser.runtime_metadata and runtime_status_label(browser.runtime_metadata()) or nil
+    local focused = browser.focused_element and focused_element_label(browser.focused_element()) or nil
     local message = status
     if title ~= nil and title ~= "" then
       message = message .. " " .. title
     end
     if scroll ~= nil then
       message = message .. " " .. scroll
+    end
+    if focused ~= nil then
+      message = message .. " " .. focused
     end
     if runtime ~= nil then
       message = message .. " " .. runtime

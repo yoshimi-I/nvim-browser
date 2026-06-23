@@ -12,12 +12,13 @@ use nvbrowser_core::{
     render_markdown_document_with_base_url,
     renderer::chromium::{render_url_png, ChromiumOptions},
     BrowserSession, ChromiumRenderer, ClickHintRequest, ClickPointRequest, ElementHint,
-    ElementHintsRequest, FindTextRequest, FocusHintRequest, FocusSelectorRequest, FrameArtifact,
-    HistoryNavigationRequest, HoverHintRequest, HoverPointRequest, KeyPressRequest,
-    KittyImageDelete, KittyImageTransfer, NavigateRequest, PageMetrics, PageMetricsRequest,
-    PageTextRequest, PageTextSnapshot, ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer,
-    ScrollRequest, SelectHintRequest, SelectionTextRequest, SessionId, TextInputRequest,
-    ToggleHintRequest, Viewport, WheelPointRequest,
+    ElementHintsRequest, FindTextRequest, FocusHintRequest, FocusSelectorRequest, FocusedElement,
+    FocusedElementRequest, FrameArtifact, HistoryNavigationRequest, HoverHintRequest,
+    HoverPointRequest, KeyPressRequest, KittyImageDelete, KittyImageTransfer, NavigateRequest,
+    PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
+    RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest,
+    SelectHintRequest, SelectionTextRequest, SessionId, TextInputRequest, ToggleHintRequest,
+    Viewport, WheelPointRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -347,6 +348,9 @@ enum ServeRequest {
         id: u64,
         hint_id: u32,
     },
+    SubmitFocused {
+        id: u64,
+    },
     TypePoint {
         id: u64,
         x: f64,
@@ -397,6 +401,8 @@ struct ServeResponse {
     title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     page: Option<PageMetrics>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    focused: Option<Option<FocusedElement>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     text: Option<PageTextSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -608,6 +614,7 @@ struct ServeRuntime<R: Renderer> {
 struct CapturePayload {
     payload: Option<String>,
     page: Option<PageMetrics>,
+    focused: Option<Option<FocusedElement>>,
     text: Option<PageTextSnapshot>,
     selection: Option<String>,
     hints: Vec<ElementHint>,
@@ -631,11 +638,12 @@ impl<R: Renderer> ServeRuntime<R> {
         let id = request.id();
         match self.try_handle(request) {
             Ok(capture) => {
-                let (payload, page, text, selection, hints, hint_error, found) = capture
+                let (payload, page, focused, text, selection, hints, hint_error, found) = capture
                     .map(|capture| {
                         (
                             capture.payload,
                             capture.page,
+                            capture.focused,
                             capture.text,
                             capture.selection,
                             capture.hints,
@@ -643,7 +651,7 @@ impl<R: Renderer> ServeRuntime<R> {
                             capture.found,
                         )
                     })
-                    .unwrap_or((None, None, None, None, Vec::new(), None, None));
+                    .unwrap_or((None, None, None, None, None, Vec::new(), None, None));
                 ServeResponse {
                     id,
                     status: ServeStatus::Ok,
@@ -652,6 +660,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     url: self.session.active_page().url().map(str::to_string),
                     title: self.session.active_page().title().map(str::to_string),
                     page,
+                    focused,
                     text,
                     selection,
                     hints,
@@ -668,6 +677,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 url: self.session.active_page().url().map(str::to_string),
                 title: self.session.active_page().title().map(str::to_string),
                 page: None,
+                focused: None,
                 text: None,
                 selection: None,
                 hints: Vec::new(),
@@ -681,7 +691,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 10,
+            protocol_version: 11,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -711,9 +721,9 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.session
                     .navigate_active_page_with_title(navigation.url, navigation.title);
                 self.session.finish_active_page_load();
-                self.capture_payload().map(Some)
+                self.capture_payload(true).map(Some)
             }
-            ServeRequest::Capture { .. } => self.capture_payload().map(Some),
+            ServeRequest::Capture { .. } => self.capture_payload(true).map(Some),
             ServeRequest::Scroll {
                 delta_x, delta_y, ..
             } => {
@@ -723,7 +733,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     delta_x,
                     delta_y,
                 ))?;
-                self.capture_payload().map(Some)
+                self.capture_payload(true).map(Some)
             }
             ServeRequest::Reload { .. } => {
                 let reload = self.renderer.reload(ReloadRequest::new(
@@ -733,7 +743,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.session
                     .navigate_active_page_with_title(reload.url, reload.title);
                 self.session.finish_active_page_load();
-                self.capture_payload().map(Some)
+                self.capture_payload(true).map(Some)
             }
             ServeRequest::Back { .. } => {
                 let navigation = self.renderer.go_back(HistoryNavigationRequest::new(
@@ -743,7 +753,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.session
                     .navigate_active_page_with_title(navigation.url, navigation.title);
                 self.session.finish_active_page_load();
-                self.capture_payload().map(Some)
+                self.capture_payload(true).map(Some)
             }
             ServeRequest::Forward { .. } => {
                 let navigation = self.renderer.go_forward(HistoryNavigationRequest::new(
@@ -753,7 +763,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.session
                     .navigate_active_page_with_title(navigation.url, navigation.title);
                 self.session.finish_active_page_load();
-                self.capture_payload().map(Some)
+                self.capture_payload(false).map(Some)
             }
             ServeRequest::TextInput { text, capture, .. } => {
                 self.renderer.input_text(TextInputRequest::new(
@@ -763,7 +773,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 ))?;
                 self.settle_after_interaction()?;
                 if capture {
-                    self.capture_payload().map(Some)
+                    self.capture_payload(true).map(Some)
                 } else {
                     Ok(None)
                 }
@@ -782,7 +792,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 ))?;
                 self.settle_after_interaction()?;
                 if capture {
-                    self.capture_payload().map(Some)
+                    self.capture_payload(true).map(Some)
                 } else {
                     Ok(None)
                 }
@@ -794,7 +804,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     selector,
                 ))?;
                 self.settle_after_interaction()?;
-                self.capture_payload().map(Some)
+                self.capture_payload(true).map(Some)
             }
             ServeRequest::ClickPoint { x, y, .. } => {
                 self.renderer.click_point(ClickPointRequest::new(
@@ -804,7 +814,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     y,
                 ))?;
                 self.settle_after_interaction()?;
-                self.capture_payload().map(Some)
+                self.capture_payload(true).map(Some)
             }
             ServeRequest::HoverPoint { x, y, .. } => {
                 self.renderer.hover_point(HoverPointRequest::new(
@@ -814,7 +824,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     y,
                 ))?;
                 self.settle_after_interaction()?;
-                self.capture_payload().map(Some)
+                self.capture_payload(false).map(Some)
             }
             ServeRequest::WheelPoint {
                 x,
@@ -832,7 +842,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     delta_y,
                 ))?;
                 self.settle_after_interaction()?;
-                self.capture_payload().map(Some)
+                self.capture_payload(false).map(Some)
             }
             ServeRequest::ClickHint { hint_id, .. } => {
                 self.renderer.click_hint(ClickHintRequest::new(
@@ -841,7 +851,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     hint_id,
                 ))?;
                 self.settle_after_interaction()?;
-                self.capture_payload().map(Some)
+                self.capture_payload(true).map(Some)
             }
             ServeRequest::FocusHint { hint_id, .. } => {
                 self.renderer.focus_hint(FocusHintRequest::new(
@@ -850,7 +860,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     hint_id,
                 ))?;
                 self.settle_after_interaction()?;
-                self.capture_payload().map(Some)
+                self.capture_payload(true).map(Some)
             }
             ServeRequest::HoverHint { hint_id, .. } => {
                 self.renderer.hover_hint(HoverHintRequest::new(
@@ -859,7 +869,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     hint_id,
                 ))?;
                 self.settle_after_interaction()?;
-                self.capture_payload().map(Some)
+                self.capture_payload(false).map(Some)
             }
             ServeRequest::SelectHint {
                 hint_id, choice, ..
@@ -871,7 +881,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     choice,
                 ))?;
                 self.settle_after_interaction()?;
-                self.capture_payload().map(Some)
+                self.capture_payload(true).map(Some)
             }
             ServeRequest::ToggleHint { hint_id, .. } => {
                 self.renderer.toggle_hint(ToggleHintRequest::new(
@@ -880,7 +890,35 @@ impl<R: Renderer> ServeRuntime<R> {
                     hint_id,
                 ))?;
                 self.settle_after_interaction()?;
-                self.capture_payload().map(Some)
+                self.capture_payload(true).map(Some)
+            }
+            ServeRequest::SubmitFocused { .. } => {
+                let focused = self
+                    .renderer
+                    .focused_element(FocusedElementRequest::new(
+                        self.session.id(),
+                        self.session.active_page_id(),
+                    ))?
+                    .ok_or_else(|| {
+                        RendererError::new(
+                            RendererErrorKind::InvalidState,
+                            "no focused element to submit",
+                        )
+                    })?;
+                if !focused.submittable {
+                    return Err(RendererError::new(
+                        RendererErrorKind::InvalidState,
+                        "focused element is not submittable",
+                    )
+                    .into());
+                }
+                self.renderer.press_key(KeyPressRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    "Enter",
+                ))?;
+                self.settle_after_interaction()?;
+                self.capture_payload(true).map(Some)
             }
             ServeRequest::TypePoint {
                 x, y, text, submit, ..
@@ -906,7 +944,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     ))?;
                     self.settle_after_interaction()?;
                 }
-                self.capture_payload().map(Some)
+                self.capture_payload(true).map(Some)
             }
             ServeRequest::TypeHint {
                 hint_id,
@@ -934,7 +972,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     ))?;
                     self.settle_after_interaction()?;
                 }
-                self.capture_payload().map(Some)
+                self.capture_payload(true).map(Some)
             }
             ServeRequest::FindText {
                 query, backwards, ..
@@ -943,7 +981,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     FindTextRequest::new(self.session.id(), self.session.active_page_id(), query)
                         .backwards(backwards),
                 )?;
-                let mut capture = self.capture_payload()?;
+                let mut capture = self.capture_payload(false)?;
                 capture.found = Some(result.found);
                 Ok(Some(capture))
             }
@@ -955,6 +993,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 Ok(Some(CapturePayload {
                     payload: None,
                     page: None,
+                    focused: None,
                     text: Some(snapshot),
                     selection: None,
                     hints: Vec::new(),
@@ -970,6 +1009,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 Ok(Some(CapturePayload {
                     payload: None,
                     page: None,
+                    focused: None,
                     text: None,
                     selection: Some(selection.text),
                     hints: Vec::new(),
@@ -988,7 +1028,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.rows = rows;
                 self.session
                     .update_active_viewport(Viewport::new(width, height));
-                self.capture_payload().map(Some)
+                self.capture_payload(false).map(Some)
             }
             ServeRequest::Quit { .. } => {
                 self.renderer.shutdown()?;
@@ -997,7 +1037,10 @@ impl<R: Renderer> ServeRuntime<R> {
         }
     }
 
-    fn capture_payload(&mut self) -> Result<CapturePayload, Box<dyn std::error::Error>> {
+    fn capture_payload(
+        &mut self,
+        include_focused: bool,
+    ) -> Result<CapturePayload, Box<dyn std::error::Error>> {
         let frame = self.renderer.render_frame(RenderFrameRequest::new(
             self.session.id(),
             self.session.active_page_id(),
@@ -1015,10 +1058,23 @@ impl<R: Renderer> ServeRuntime<R> {
             self.session.id(),
             self.session.active_page_id(),
         ))?;
+        let focused = if include_focused {
+            Some(
+                self.renderer
+                    .focused_element(FocusedElementRequest::new(
+                        self.session.id(),
+                        self.session.active_page_id(),
+                    ))
+                    .unwrap_or(None),
+            )
+        } else {
+            None
+        };
         let payload = frame_to_payload(frame, self.output, self.columns, Some(self.rows))?;
         Ok(CapturePayload {
             payload: Some(payload),
             page,
+            focused,
             text: None,
             selection: None,
             hints,
@@ -1056,6 +1112,7 @@ impl ServeRequest {
             | ServeRequest::HoverHint { id, .. }
             | ServeRequest::SelectHint { id, .. }
             | ServeRequest::ToggleHint { id, .. }
+            | ServeRequest::SubmitFocused { id }
             | ServeRequest::TypePoint { id, .. }
             | ServeRequest::TypeHint { id, .. }
             | ServeRequest::FindText { id, .. }
@@ -1175,6 +1232,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         url: None,
                         title: None,
                         page: None,
+                        focused: None,
                         text: None,
                         selection: None,
                         hints: Vec::new(),
@@ -1503,10 +1561,10 @@ fn rgba_to_rgb(pixel: Rgba<u8>) -> (u8, u8, u8) {
 mod tests {
     use super::*;
     use nvbrowser_core::{
-        ElementHintKind, ElementHintsRequest, FrameId, FrameMetadata, HistoryNavigationResult,
-        InputResult, InteractionSettleResult, NavigationResult, PageId, PageMetricsRequest,
-        PageTextRequest, ReloadResult, RendererError, RendererErrorKind, ScrollResult,
-        SelectHintRequest, SelectionTextRequest, SelectionTextResult, ShutdownResult,
+        ElementHintKind, ElementHintsRequest, FocusedElementRequest, FrameId, FrameMetadata,
+        HistoryNavigationResult, InputResult, InteractionSettleResult, NavigationResult, PageId,
+        PageMetricsRequest, PageTextRequest, ReloadResult, RendererError, RendererErrorKind,
+        ScrollResult, SelectHintRequest, SelectionTextRequest, SelectionTextResult, ShutdownResult,
         ToggleHintRequest, WheelPointRequest,
     };
 
@@ -1534,6 +1592,7 @@ mod tests {
         fail_toggle_hint: bool,
         fail_hints: bool,
         fail_focus_hint: bool,
+        fail_focused_element: bool,
         operations: Vec<&'static str>,
         history: Vec<String>,
         history_index: Option<usize>,
@@ -1543,6 +1602,7 @@ mod tests {
         next_frame_url: Option<String>,
         next_frame_title: Option<String>,
         hints: Vec<ElementHint>,
+        focused: Option<FocusedElement>,
         shutdown: bool,
     }
 
@@ -1572,6 +1632,7 @@ mod tests {
                 fail_toggle_hint: false,
                 fail_hints: false,
                 fail_focus_hint: false,
+                fail_focused_element: false,
                 operations: Vec::new(),
                 history: Vec::new(),
                 history_index: None,
@@ -1581,6 +1642,7 @@ mod tests {
                 next_frame_url: None,
                 next_frame_title: None,
                 hints: Vec::new(),
+                focused: None,
                 shutdown: false,
             }
         }
@@ -1656,6 +1718,23 @@ mod tests {
                 document_width: 10.0,
                 document_height: 30.0,
             }))
+        }
+
+        fn focused_element(
+            &mut self,
+            _request: FocusedElementRequest,
+        ) -> Result<Option<FocusedElement>, RendererError> {
+            if self.fail_focused_element {
+                self.operations.push("focused_element");
+                return Err(RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "focused element extraction failed",
+                ));
+            }
+            if self.focused.is_some() {
+                self.operations.push("focused_element");
+            }
+            Ok(self.focused.clone())
         }
 
         fn page_text(
@@ -2281,6 +2360,11 @@ mod tests {
                 .expect("toggle hint request should parse"),
             ServeRequest::ToggleHint { id: 12, hint_id: 7 }
         );
+        assert_eq!(
+            parse_serve_request(r##"{"type":"submit_focused","id":14}"##)
+                .expect("submit focused request should parse"),
+            ServeRequest::SubmitFocused { id: 14 }
+        );
     }
 
     #[test]
@@ -2356,6 +2440,7 @@ mod tests {
             url: None,
             title: None,
             page: None,
+            focused: None,
             text: None,
             selection: None,
             hints: Vec::new(),
@@ -2380,6 +2465,7 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example Domain".to_string()),
             page: None,
+            focused: None,
             text: None,
             selection: None,
             hints: vec![ElementHint {
@@ -2416,6 +2502,7 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
+            focused: None,
             text: None,
             selection: None,
             hints: Vec::new(),
@@ -2447,6 +2534,7 @@ mod tests {
                 document_width: 800.0,
                 document_height: 1600.0,
             }),
+            focused: None,
             text: None,
             selection: None,
             hints: Vec::new(),
@@ -2462,6 +2550,63 @@ mod tests {
     }
 
     #[test]
+    fn serve_response_encodes_focused_element_when_present() {
+        let response = ServeResponse {
+            id: 17,
+            status: ServeStatus::Ok,
+            runtime: None,
+            payload: Some("frame".to_string()),
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            page: None,
+            focused: Some(Some(FocusedElement {
+                kind: ElementHintKind::Input,
+                label: Some("Search".to_string()),
+                value: Some("query".to_string()),
+                checked: None,
+                focusable: true,
+                submittable: true,
+            })),
+            text: None,
+            selection: None,
+            hints: Vec::new(),
+            hint_error: None,
+            found: None,
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r#"{"id":17,"status":"ok","payload":"frame","url":"https://example.com","title":"Example","focused":{"kind":"input","label":"Search","value":"query","focusable":true,"submittable":true}}"#
+        );
+    }
+
+    #[test]
+    fn serve_response_encodes_null_focused_when_checked_without_active_element() {
+        let response = ServeResponse {
+            id: 18,
+            status: ServeStatus::Ok,
+            runtime: None,
+            payload: Some("frame".to_string()),
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            page: None,
+            focused: Some(None),
+            text: None,
+            selection: None,
+            hints: Vec::new(),
+            hint_error: None,
+            found: None,
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r#"{"id":18,"status":"ok","payload":"frame","url":"https://example.com","title":"Example","focused":null}"#
+        );
+    }
+
+    #[test]
     fn serve_response_encodes_page_text_when_present() {
         let response = ServeResponse {
             id: 14,
@@ -2471,6 +2616,7 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
+            focused: None,
             text: Some(PageTextSnapshot {
                 session_id: SessionId::new(1),
                 page_id: PageId::new(1),
@@ -2502,6 +2648,7 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
+            focused: None,
             text: None,
             selection: Some("selected text".to_string()),
             hints: Vec::new(),
@@ -2522,7 +2669,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 10,
+                protocol_version: 11,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -2540,6 +2687,7 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
+            focused: None,
             text: None,
             selection: None,
             hints: Vec::new(),
@@ -2550,7 +2698,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":10,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":11,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -2577,7 +2725,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 10);
+        assert_eq!(runtime_info.protocol_version, 11);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -2658,6 +2806,7 @@ mod tests {
         assert_eq!(response.status, ServeStatus::Ok);
         assert_eq!(response.url, Some("https://example.com".to_string()));
         assert_eq!(response.title, Some("https://example.com".to_string()));
+        assert_eq!(response.focused, Some(None));
         assert_eq!(
             response.page,
             Some(PageMetrics {
@@ -2689,10 +2838,13 @@ mod tests {
             },
         );
 
-        let response = runtime.handle(ServeRequest::Navigate {
+        let navigate = runtime.handle(ServeRequest::Navigate {
             id: 3,
             url: "https://example.com".to_string(),
         });
+        assert_eq!(navigate.status, ServeStatus::Ok);
+
+        let response = runtime.handle(ServeRequest::Capture { id: 4 });
         let payload = response.payload.expect("payload");
 
         assert_eq!(response.status, ServeStatus::Ok);
@@ -2847,6 +2999,51 @@ mod tests {
             Some("hint extraction failed")
         );
         assert_eq!(runtime.renderer.operations, vec!["capture", "hints"]);
+    }
+
+    #[test]
+    fn serve_runtime_ignores_focused_element_extraction_failure_without_failing_frame() {
+        let mut renderer = FakeRenderer::new();
+        renderer.fail_focused_element = true;
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        let navigate = runtime.handle(ServeRequest::Navigate {
+            id: 3,
+            url: "https://example.com".to_string(),
+        });
+        assert_eq!(navigate.status, ServeStatus::Ok);
+
+        let response = runtime.handle(ServeRequest::Capture { id: 4 });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(
+            response.payload.is_some(),
+            "frame payload should still render"
+        );
+        assert_eq!(response.focused, Some(None));
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "focused_element",
+                "capture",
+                "hints",
+                "focused_element"
+            ]
+        );
     }
 
     #[test]
@@ -3219,6 +3416,108 @@ mod tests {
                 "capture",
                 "hints"
             ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_submits_current_focused_element_before_capturing_next_frame() {
+        let mut renderer = FakeRenderer::new();
+        renderer.focused = Some(FocusedElement {
+            kind: ElementHintKind::Input,
+            label: Some("Search".to_string()),
+            value: Some("hello".to_string()),
+            checked: None,
+            focusable: true,
+            submittable: true,
+        });
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::SubmitFocused { id: 2 });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(runtime.renderer.key_presses, vec!["Enter"]);
+        assert_eq!(
+            response
+                .focused
+                .as_ref()
+                .and_then(|focus| focus.as_ref())
+                .and_then(|focus| focus.label.as_deref()),
+            Some("Search")
+        );
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "focused_element",
+                "focused_element",
+                "key_press",
+                "settle",
+                "capture",
+                "hints",
+                "focused_element"
+            ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_rejects_submit_focused_when_active_element_is_not_submittable() {
+        let mut renderer = FakeRenderer::new();
+        renderer.focused = Some(FocusedElement {
+            kind: ElementHintKind::Button,
+            label: Some("Cancel".to_string()),
+            value: None,
+            checked: None,
+            focusable: true,
+            submittable: false,
+        });
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::SubmitFocused { id: 2 });
+
+        assert_eq!(response.status, ServeStatus::Error);
+        assert!(response.payload.is_none());
+        assert!(runtime.renderer.key_presses.is_empty());
+        assert_eq!(
+            response.error.as_deref(),
+            Some("InvalidState: focused element is not submittable")
+        );
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["capture", "hints", "focused_element", "focused_element"]
         );
     }
 

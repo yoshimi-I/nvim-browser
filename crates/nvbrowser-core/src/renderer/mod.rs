@@ -82,6 +82,13 @@ pub trait Renderer {
         Ok(None)
     }
 
+    fn focused_element(
+        &mut self,
+        _request: FocusedElementRequest,
+    ) -> Result<Option<FocusedElement>, RendererError> {
+        Ok(None)
+    }
+
     fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError>;
 
     fn shutdown(&mut self) -> Result<ShutdownResult, RendererError>;
@@ -164,6 +171,34 @@ pub struct PageMetrics {
     pub viewport_height: f64,
     pub document_width: f64,
     pub document_height: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct FocusedElementRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+}
+
+impl FocusedElementRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId) -> Self {
+        Self {
+            session_id,
+            page_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct FocusedElement {
+    pub kind: ElementHintKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<bool>,
+    pub focusable: bool,
+    pub submittable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

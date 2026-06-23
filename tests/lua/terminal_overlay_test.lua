@@ -210,6 +210,47 @@ assert(runtime_info.output == "kitty-unicode", "runtime metadata should preserve
 assert(runtime_info.cells.columns == 80, "runtime metadata should preserve preview columns")
 assert(runtime_info.viewport.width == 800, "runtime metadata should preserve viewport width")
 terminal._test.apply_serve_response({
+  id = 99,
+  status = "ok",
+  payload = "focused frame",
+  focused = {
+    kind = "input",
+    label = "Search",
+    value = "hello",
+    focusable = true,
+    submittable = true,
+  },
+})
+local focused = terminal.state().focused_element
+assert(focused ~= nil, "serve responses should store focused element metadata")
+assert(focused.kind == "input", "focused metadata should preserve element kind")
+assert(focused.label == "Search", "focused metadata should preserve the readable label")
+assert(focused.value == "hello", "focused metadata should preserve input value")
+assert(focused.submittable == true, "focused metadata should preserve submit capability")
+assert(
+  terminal._test.preview_footer_line(120):match("focus=input Search"),
+  "preview footer should include focused element metadata"
+)
+terminal._test.apply_serve_response({
+  id = 99,
+  status = "ok",
+  payload = "frame without focused metadata",
+})
+assert(
+  terminal.state().focused_element ~= nil,
+  "serve responses without a focused field should preserve existing focused metadata"
+)
+terminal._test.apply_serve_response({
+  id = 99,
+  status = "ok",
+  payload = "frame with no active focused element",
+  focused = vim.NIL,
+})
+assert(
+  terminal.state().focused_element == nil,
+  "serve responses with focused=null should clear focused metadata"
+)
+terminal._test.apply_serve_response({
   id = 100,
   status = "ok",
   payload = "runtime frame",
@@ -232,6 +273,7 @@ terminal.close()
 assert(terminal.state().page_metrics == nil, "closing a browser session should clear page metrics")
 assert(terminal.state().runtime_metadata == nil, "closing a browser session should clear runtime metadata")
 assert(terminal.state().rendered_frame_geometry == nil, "closing a browser session should clear rendered frame geometry")
+assert(terminal.state().focused_element == nil, "closing a browser session should clear focused element metadata")
 terminal._test.apply_serve_response({ id = 100, status = "error", error = "navigation failed" })
 assert(terminal.state().page_metrics == nil, "responses without page metrics should clear stale page metrics")
 

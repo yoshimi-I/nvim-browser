@@ -203,6 +203,10 @@ function M.press_key(key, opts)
   return terminal.press_key(key, opts)
 end
 
+function M.submit_focused()
+  return terminal.submit_focused()
+end
+
 function M.focus_selector(selector)
   return terminal.focus_selector(selector)
 end
@@ -433,6 +437,10 @@ end
 
 function M.runtime_metadata()
   return terminal.state().runtime_metadata
+end
+
+function M.focused_element()
+  return terminal.state().focused_element
 end
 
 function M.status()

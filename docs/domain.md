@@ -60,10 +60,11 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   motions, repeatable find next/previous, focused input, key presses, selector
   focus, point clicks, CDP mouse-move hovers, native CDP mouse-wheel input at
   preview coordinates, hints, hinted focus for search/input workflows, hinted
-  `<select>` option selection, hinted checkbox/radio toggles, and direct href
-  following.
+  `<select>` option selection, hinted checkbox/radio toggles, direct href
+  following, focused-element metadata, and submit-current-focus form UX.
 - Shows live browser state in a preview footer: status, title/URL, scroll
-  progress, output mode, cells, viewport, and errors.
+  progress, focused element kind/label, output mode, cells, viewport, and
+  errors.
 - Performs live recapture while idle and suppresses background recapture while a
   navigation-like operation is pending.
 - Extracts a reader buffer from the current browser page and resolves reader
@@ -82,12 +83,15 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   tmux passthrough needs real validation.
 - Click accuracy depends on configured terminal cell pixel dimensions. Doctor
   output and future auto-detection should reduce this burden.
-- Quiet input improves text latency but means metadata, hints, and screenshots
-  can lag until Enter, exit, or a later capture.
+- Quiet input improves text latency but means metadata, hints, focused-element
+  state, and screenshots can lag until Enter, exit, or a later capture.
 - Chromium target lifecycle is a core reliability area. `target=_blank`,
   `window.open`, and delayed `about:blank` navigations should stay covered by
   opt-in E2E because real pages commonly create and navigate child targets
   asynchronously.
+- A `target=_blank` hint click can still fail before adoption when CDP reports
+  `underlying connection is closed` during the click. Keep that opt-in E2E as
+  the next renderer reliability target instead of treating it as terminal noise.
 - Long-running Chromium lifecycle, stuck navigation cancellation, and late
   response handling remain operational risk areas and should stay covered by
   tests.

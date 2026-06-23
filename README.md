@@ -266,9 +266,11 @@ cursor-addressable, then fall back to page-level scrolling if coordinates are
 not available.
 
 Browser preview footers show the latest serve status, title or URL, scroll
-progress, output mode, cell geometry, and current URL when reported by the
-Chromium/CDP session. `:NBrowserStatus` echoes the same browser-session state in
-the command line.
+progress, focused element kind/label, output mode, cell geometry, and current
+URL when reported by the Chromium/CDP session. `:NBrowserStatus` echoes the
+same browser-session state in the command line. Focus metadata is reported as
+`focus=input Search`, `focus=text_area Notes`, and similar compact labels after
+captured browser interactions.
 
 While a browser session is idle, nvim-browser periodically sends a lightweight
 capture request to keep the preview current. It does not send background
@@ -336,6 +338,9 @@ repeat the current page find like a normal editor search.
 `:NBrowserInputMode` prompts once for text and sends it to the focused element.
 `:NBrowserPaste [register]` sends the contents of a Neovim register to the
 focused browser element, defaulting to the unnamed register.
+`:NBrowserSubmitFocused` submits the current focused form-capable browser
+element by sending Enter only when the backend reports the active element as
+submittable.
 `:NBrowserYankSelection [register]` reads the browser's current selected text
 and writes it into a Neovim register, defaulting to the unnamed register.
 `:NBrowserTextMode` enters an interactive browser text mode for the focused

@@ -79,6 +79,7 @@ local original_terminal_type_here = terminal.type_here
 local original_terminal_stop = terminal.stop
 local original_terminal_input_text = terminal.input_text
 local original_terminal_press_key = terminal.press_key
+local original_terminal_submit_focused = terminal.submit_focused
 local original_terminal_start_text_mode = terminal.start_text_mode
 local original_terminal_page_scroll = terminal.page_scroll
 local original_terminal_yank_selection = terminal.yank_selection
@@ -418,6 +419,14 @@ assert(browser.press_key("Tab", { modifiers = { "shift" } }) == true, "press_key
 assert(pressed_key.key == "Tab", "press_key should pass the key to terminal")
 assert(pressed_key.modifiers[1] == "shift", "press_key should pass modifiers to terminal")
 
+local submitted_focused = false
+terminal.submit_focused = function()
+  submitted_focused = true
+  return true
+end
+assert(browser.submit_focused() == true, "submit_focused should delegate to terminal")
+assert(submitted_focused == true, "submit_focused should call terminal.submit_focused")
+
 local page_scroll_direction = nil
 local page_scroll_fraction = nil
 terminal.page_scroll = function(direction, opts)
@@ -631,6 +640,7 @@ terminal.type_here = original_terminal_type_here
 terminal.stop = original_terminal_stop
 terminal.input_text = original_terminal_input_text
 terminal.press_key = original_terminal_press_key
+terminal.submit_focused = original_terminal_submit_focused
 terminal.start_text_mode = original_terminal_start_text_mode
 terminal.page_scroll = original_terminal_page_scroll
 terminal.yank_selection = original_terminal_yank_selection

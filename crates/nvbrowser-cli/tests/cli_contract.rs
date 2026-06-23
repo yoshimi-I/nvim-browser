@@ -775,6 +775,158 @@ fn opt_in_e2e_serve_loop_focuses_hint_for_text_entry() {
 }
 
 #[test]
+fn opt_in_e2e_serve_loop_reports_focused_elements_and_submits_current_focus() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let fixture_path = directory.path().join("focused-elements.html");
+    std::fs::write(
+        &fixture_path,
+        r##"<!doctype html>
+<html>
+  <head><title>NBrowser Focus Metadata E2E Fixture</title></head>
+  <body>
+    <main>
+      <form onsubmit="event.preventDefault(); document.getElementById('out').textContent='submitted ' + document.getElementById('search').value">
+        <label>Search <input id="search" aria-label="Search" value="query"></label>
+        <label>Notes <textarea aria-label="Notes"></textarea></label>
+        <label>Country
+          <select aria-label="Country" onchange="document.getElementById('country-out').textContent='country ' + this.value">
+            <option value="jp">Japan</option>
+            <option value="ca">Canada</option>
+          </select>
+        </label>
+        <label><input id="newsletter" type="checkbox"> Newsletter</label>
+      </form>
+      <p id="out">empty</p>
+      <p id="country-out">country empty</p>
+    </main>
+  </body>
+</html>"##,
+    )
+    .expect("focus metadata fixture should be written");
+    let fixture_url = format!("file://{}", fixture_path.display());
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--url",
+            &fixture_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok", "initial navigation should succeed");
+    assert!(
+        initial.get("focused").is_none_or(Value::is_null),
+        "initial page load should not report a body-only active element"
+    );
+    let hints = initial["hints"]
+        .as_array()
+        .expect("initial response should include hints");
+    let search_hint_id = hints
+        .iter()
+        .find(|hint| hint["kind"] == "input" && hint["label"] == "Search")
+        .expect("real Chromium hints should include the search input")["id"]
+        .as_u64()
+        .expect("search hint should include id");
+    let select_hint_id = hints
+        .iter()
+        .find(|hint| hint["kind"] == "select" && hint["label"] == "Country")
+        .expect("real Chromium hints should include the select")["id"]
+        .as_u64()
+        .expect("select hint should include id");
+    let checkbox_hint_id = hints
+        .iter()
+        .find(|hint| hint["kind"] == "checkbox" && hint["label"] == "Newsletter")
+        .expect("real Chromium hints should include the checkbox")["id"]
+        .as_u64()
+        .expect("checkbox hint should include id");
+
+    let focused_input = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "focus_hint",
+        "hint_id": search_hint_id
+    }));
+    assert_eq!(focused_input["status"], "ok");
+    assert_eq!(focused_input["focused"]["kind"], "input");
+    assert_eq!(focused_input["focused"]["label"], "Search");
+    assert_eq!(focused_input["focused"]["value"], "query");
+    assert_eq!(focused_input["focused"]["submittable"], true);
+
+    let submitted = serve.request(serde_json::json!({
+        "id": 2,
+        "type": "submit_focused"
+    }));
+    assert_eq!(
+        submitted["status"], "ok",
+        "submit_focused should submit a focused form input"
+    );
+    let submitted_text = serve.request(serde_json::json!({ "id": 3, "type": "page_text" }));
+    assert!(
+        submitted_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("submitted query")),
+        "page_text should observe form submit triggered by submit_focused"
+    );
+
+    let tabbed = serve.request(serde_json::json!({
+        "id": 4,
+        "type": "key_press",
+        "key": "Tab"
+    }));
+    assert_eq!(tabbed["status"], "ok");
+    assert_eq!(tabbed["focused"]["kind"], "text_area");
+    assert_eq!(tabbed["focused"]["label"], "Notes");
+
+    let selected = serve.request(serde_json::json!({
+        "id": 5,
+        "type": "select_hint",
+        "hint_id": select_hint_id,
+        "choice": "Canada"
+    }));
+    assert_eq!(selected["status"], "ok", "select_hint should succeed");
+    assert_eq!(selected["focused"]["kind"], "select");
+    assert_eq!(selected["focused"]["label"], "Country");
+    assert_eq!(selected["focused"]["value"], "ca");
+
+    let checked = serve.request(serde_json::json!({
+        "id": 6,
+        "type": "toggle_hint",
+        "hint_id": checkbox_hint_id
+    }));
+    assert_eq!(checked["status"], "ok", "toggle_hint should succeed");
+    assert_eq!(checked["focused"]["kind"], "checkbox");
+    assert_eq!(checked["focused"]["label"], "Newsletter");
+    assert_eq!(checked["focused"]["checked"], true);
+
+    let quit = serve.request(serde_json::json!({ "id": 7, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
+#[test]
 fn opt_in_e2e_serve_loop_reports_metrics_for_top_bottom_scroll() {
     if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
         return;

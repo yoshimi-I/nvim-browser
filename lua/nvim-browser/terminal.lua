@@ -19,6 +19,7 @@ local state = {
   current_url = nil,
   current_title = nil,
   page_metrics = nil,
+  focused_element = nil,
   runtime_metadata = nil,
   rendered_frame_geometry = nil,
   status = nil,
@@ -687,6 +688,11 @@ local function apply_serve_response_metadata(response)
   else
     state.page_metrics = nil
   end
+  if response.focused ~= nil and response.focused ~= vim.NIL then
+    state.focused_element = response.focused
+  elseif response.focused == vim.NIL then
+    state.focused_element = nil
+  end
   if response.runtime ~= nil and response.runtime ~= vim.NIL then
     state.runtime_metadata = response.runtime
   end
@@ -1085,6 +1091,27 @@ local function page_scroll_label(metrics)
   return "scroll " .. percent .. "%"
 end
 
+local function focused_element_label(focused)
+  if type(focused) ~= "table" then
+    return nil
+  end
+  local kind = focused.kind ~= nil and tostring(focused.kind) or nil
+  if kind == nil or kind == "" then
+    return nil
+  end
+  local label = focused.label ~= nil and focused.label ~= vim.NIL and tostring(focused.label) or nil
+  if label ~= nil then
+    label = label:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    if label == "" then
+      label = nil
+    end
+  end
+  if label ~= nil then
+    return "focus=" .. kind .. " " .. label
+  end
+  return "focus=" .. kind
+end
+
 local function runtime_footer_label(runtime)
   if type(runtime) ~= "table" then
     return nil
@@ -1145,6 +1172,11 @@ local function preview_footer_line(width)
   local scroll = page_scroll_label(state.page_metrics)
   if scroll ~= nil then
     table.insert(parts, scroll)
+  end
+
+  local focused = focused_element_label(state.focused_element)
+  if focused ~= nil then
+    table.insert(parts, focused)
   end
 
   local runtime = runtime_footer_label(state.runtime_metadata)
@@ -1331,6 +1363,7 @@ function M.open(command)
   state.current_url = nil
   state.current_title = nil
   state.page_metrics = nil
+  state.focused_element = nil
   state.runtime_metadata = nil
   state.rendered_frame_geometry = nil
   state.status = nil
@@ -1497,6 +1530,7 @@ function M.open(command)
           state.serve_output = nil
           state.runtime_metadata = nil
           state.rendered_frame_geometry = nil
+          state.focused_element = nil
           state.element_hints = {}
           state.element_hints_geometry = nil
           state.cursor_addressable_preview = false
@@ -1631,6 +1665,7 @@ function M.close()
   state.current_url = nil
   state.current_title = nil
   state.page_metrics = nil
+  state.focused_element = nil
   state.runtime_metadata = nil
   state.rendered_frame_geometry = nil
   state.status = nil
@@ -1844,6 +1879,17 @@ function M.press_key(key, opts)
     modifiers = opts.modifiers or {},
     capture = opts.capture,
   })
+end
+
+function M.submit_focused()
+  if state.mode ~= "serve" or state.job_id == nil then
+    return false
+  end
+  request_resize()
+  cancel_in_flight_capture()
+  return send_pending_request({
+    type = "submit_focused",
+  }, state.current_url or state.last_target or "submit", "submit")
 end
 
 local function text_mode_key_action(key)
@@ -2409,6 +2455,7 @@ function M.state()
     current_url = state.current_url,
     current_title = state.current_title,
     page_metrics = state.page_metrics,
+    focused_element = state.focused_element,
     runtime_metadata = state.runtime_metadata,
     rendered_frame_geometry = state.rendered_frame_geometry,
     status = state.status,
@@ -2440,6 +2487,7 @@ M._test = {
   apply_serve_response = apply_serve_response_metadata,
   apply_payload_to_buffer = apply_payload_to_buffer,
   preview_footer_line = preview_footer_line,
+  focused_element_label = focused_element_label,
   append_preview_footer = append_preview_footer,
   set_pending_operation = function(value)
     state.pending_operation = value

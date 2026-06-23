@@ -14,6 +14,7 @@ local found_next = false
 local found_previous = false
 local typed_hint = nil
 local submitted_hint = nil
+local submitted_focused = false
 local selected_hint = nil
 local toggled_hint = nil
 local focused_hint = nil
@@ -126,6 +127,10 @@ local browser = {
     toggled_hint = label
     return true
   end,
+  submit_focused = function()
+    submitted_focused = true
+    return true
+  end,
   type_here = function(text, opts)
     if opts ~= nil and opts.submit then
       submitted_here = text
@@ -168,6 +173,15 @@ local browser = {
       output = "kitty-unicode",
       cells = { columns = 80, rows = 24 },
       viewport = { width = 800, height = 600, device_scale_factor = 1 },
+    }
+  end,
+  focused_element = function()
+    return {
+      kind = "input",
+      label = "Search",
+      value = "hello",
+      focusable = true,
+      submittable = true,
     }
   end,
   hint_error = function()
@@ -225,6 +239,7 @@ assert(echoed == "nvim-browser doctor\nbrowser output: kitty-unicode", "NBrowser
 
 vim.cmd("NBrowserStatus")
 assert(echoed:match("scroll 25%%"), "NBrowserStatus should include scroll progress when page metrics exist")
+assert(echoed:match("focus=input Search"), "NBrowserStatus should include focused element metadata")
 assert(echoed:match("output=kitty%-unicode"), "NBrowserStatus should include runtime output when available")
 assert(echoed:match("viewport=800x600"), "NBrowserStatus should include runtime viewport when available")
 assert(echoed:match("cells=80x24"), "NBrowserStatus should include runtime cell size when available")
@@ -323,6 +338,9 @@ assert(typed_hint == "s:hello world", "NBrowserTypeHint should pass the label an
 
 vim.cmd("NBrowserSubmitHint s hello world")
 assert(submitted_hint == "s:hello world", "NBrowserSubmitHint should request submit mode")
+
+vim.cmd("NBrowserSubmitFocused")
+assert(submitted_focused == true, "NBrowserSubmitFocused should call browser.submit_focused")
 
 vim.cmd("NBrowserSelectHint s Canada")
 assert(selected_hint == "s:Canada", "NBrowserSelectHint should pass the label and choice to browser.select_hint")
