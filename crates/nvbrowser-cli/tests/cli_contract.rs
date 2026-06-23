@@ -198,6 +198,8 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
   <body>
     <main>
       <p>blank target adopted text</p>
+      <button onclick="alert('adopted alert'); document.getElementById('adopted-out').textContent='adopted alert handled'">Adopted Alert</button>
+      <p id="adopted-out">adopted empty</p>
       <button onclick="setTimeout(() => window.open('{opened_url}', '_blank'), 150)">Open Window Target</button>
     </main>
   </body>
@@ -232,6 +234,9 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
       <label>Search <input aria-label="Search" oninput="document.getElementById('out').textContent=this.value"></label>
       <a href="#docs">Docs</a>
       <button onpointerdown="document.getElementById('out').textContent='clicked from jsonl'">Go</button>
+      <button onclick="alert('hello'); document.getElementById('out').textContent='alert handled'">Alert Dialog</button>
+      <button onclick="document.getElementById('out').textContent = confirm('continue?') ? 'confirm accepted' : 'confirm dismissed'">Confirm Dialog</button>
+      <button onclick="const value = prompt('name', 'default'); document.getElementById('out').textContent = value === null ? 'prompt dismissed' : value">Prompt Dialog</button>
       <button id="hover-source">Menu</button>
       <a id="hover-menu" href="#hovered">Hover Docs</a>
       <div contenteditable="true">Editable target</div>
@@ -370,6 +375,75 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         "page_text should observe DOM updated by clicked button"
     );
 
+    let dialog_hints = clicked["hints"]
+        .as_array()
+        .expect("clicked response should include fresh hints");
+    let alert_hint_id = dialog_hints
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Alert Dialog")
+        .expect("real Chromium hints should include the alert button")["id"]
+        .as_u64()
+        .expect("alert hint should include id");
+    let alerted = serve.request(serde_json::json!({
+        "id": 6,
+        "type": "click_hint",
+        "hint_id": alert_hint_id
+    }));
+    assert_eq!(alerted["status"], "ok", "alert click should not hang");
+    let alerted_text = serve.request(serde_json::json!({ "id": 7, "type": "page_text" }));
+    assert!(
+        alerted_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("alert handled")),
+        "alert should be accepted so page script can continue"
+    );
+
+    let dialog_hints = alerted["hints"]
+        .as_array()
+        .expect("alert response should include fresh hints");
+    let confirm_hint_id = dialog_hints
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Confirm Dialog")
+        .expect("real Chromium hints should include the confirm button")["id"]
+        .as_u64()
+        .expect("confirm hint should include id");
+    let confirmed = serve.request(serde_json::json!({
+        "id": 8,
+        "type": "click_hint",
+        "hint_id": confirm_hint_id
+    }));
+    assert_eq!(confirmed["status"], "ok", "confirm click should not hang");
+    let confirmed_text = serve.request(serde_json::json!({ "id": 9, "type": "page_text" }));
+    assert!(
+        confirmed_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("confirm dismissed")),
+        "confirm should be dismissed by default"
+    );
+
+    let dialog_hints = confirmed["hints"]
+        .as_array()
+        .expect("confirm response should include fresh hints");
+    let prompt_hint_id = dialog_hints
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Prompt Dialog")
+        .expect("real Chromium hints should include the prompt button")["id"]
+        .as_u64()
+        .expect("prompt hint should include id");
+    let prompted = serve.request(serde_json::json!({
+        "id": 10,
+        "type": "click_hint",
+        "hint_id": prompt_hint_id
+    }));
+    assert_eq!(prompted["status"], "ok", "prompt click should not hang");
+    let prompted_text = serve.request(serde_json::json!({ "id": 11, "type": "page_text" }));
+    assert!(
+        prompted_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("prompt dismissed")),
+        "prompt should be dismissed by default"
+    );
+
     let menu_hint = hints
         .iter()
         .find(|hint| hint["kind"] == "button" && hint["label"] == "Menu")
@@ -378,12 +452,12 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         .as_u64()
         .expect("menu hint should include id");
     let hovered = serve.request(serde_json::json!({
-        "id": 6,
+        "id": 12,
         "type": "hover_hint",
         "hint_id": menu_hint_id
     }));
     assert_eq!(
-        hovered["id"], 6,
+        hovered["id"], 12,
         "hover_hint response should preserve request id"
     );
     assert_eq!(hovered["status"], "ok", "hover_hint should succeed");
@@ -401,7 +475,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
     );
 
     let resized = serve.request(serde_json::json!({
-        "id": 7,
+        "id": 13,
         "type": "resize",
         "columns": 32,
         "rows": 10,
@@ -420,7 +494,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         .as_u64()
         .expect("target blank link hint should include id");
     let adopted_blank = serve.request(serde_json::json!({
-        "id": 8,
+        "id": 14,
         "type": "click_hint",
         "hint_id": blank_target_hint
     }));
@@ -438,7 +512,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
             .is_some_and(|url| url.ends_with("blank-target.html")),
         "target blank response should use the adopted page URL"
     );
-    let adopted_blank_text = serve.request(serde_json::json!({ "id": 9, "type": "page_text" }));
+    let adopted_blank_text = serve.request(serde_json::json!({ "id": 15, "type": "page_text" }));
     assert!(
         adopted_blank_text["text"]["text"]
             .as_str()
@@ -446,16 +520,41 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         "page_text should read from the adopted target blank page"
     );
 
-    let open_window_hint = adopted_blank["hints"]
+    let adopted_alert_hint = adopted_blank["hints"]
         .as_array()
         .expect("adopted blank response should include hints")
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Adopted Alert")
+        .expect("adopted blank page should expose alert button")["id"]
+        .as_u64()
+        .expect("adopted alert hint should include id");
+    let adopted_alert = serve.request(serde_json::json!({
+        "id": 16,
+        "type": "click_hint",
+        "hint_id": adopted_alert_hint
+    }));
+    assert_eq!(
+        adopted_alert["status"], "ok",
+        "adopted tab alert should not hang"
+    );
+    let adopted_alert_text = serve.request(serde_json::json!({ "id": 17, "type": "page_text" }));
+    assert!(
+        adopted_alert_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("adopted alert handled")),
+        "adopted tab alert should be handled by the installed dialog listener"
+    );
+
+    let open_window_hint = adopted_alert["hints"]
+        .as_array()
+        .expect("adopted alert response should include hints")
         .iter()
         .find(|hint| hint["kind"] == "button" && hint["label"] == "Open Window Target")
         .expect("adopted blank page should expose window.open button")["id"]
         .as_u64()
         .expect("window open button hint should include id");
     let adopted_window = serve.request(serde_json::json!({
-        "id": 10,
+        "id": 18,
         "type": "click_hint",
         "hint_id": open_window_hint
     }));
@@ -467,7 +566,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         adopted_window["title"], "Window Open Adopted",
         "window.open click should adopt the newly opened page target"
     );
-    let adopted_window_text = serve.request(serde_json::json!({ "id": 11, "type": "page_text" }));
+    let adopted_window_text = serve.request(serde_json::json!({ "id": 19, "type": "page_text" }));
     assert!(
         adopted_window_text["text"]["text"]
             .as_str()
@@ -475,8 +574,8 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         "page_text should read from the adopted window.open page"
     );
 
-    let quit = serve.request(serde_json::json!({ "id": 12, "type": "quit" }));
-    assert_eq!(quit["id"], 12);
+    let quit = serve.request(serde_json::json!({ "id": 20, "type": "quit" }));
+    assert_eq!(quit["id"], 20);
     assert_eq!(quit["status"], "ok");
 
     serve.wait_success();

@@ -2,15 +2,15 @@ use std::{
     collections::HashSet,
     ffi::OsStr,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{mpsc, Arc},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use headless_chrome::{
     browser::tab::{point::Point, ModifierKey, Tab},
-    protocol::cdp::types::Method,
-    protocol::cdp::Page::{CaptureScreenshotFormatOption, Viewport as CdpViewport},
+    protocol::cdp::types::{Event, Method},
+    protocol::cdp::Page::{CaptureScreenshotFormatOption, DialogType, Viewport as CdpViewport},
     types::Bounds,
     Browser, LaunchOptions,
 };
@@ -96,6 +96,7 @@ pub fn render_url_png(
 ) -> Result<RenderedFrame, RendererError> {
     let browser = open_browser(&options, viewport)?;
     let tab = browser.new_tab().map_err(render_error)?;
+    install_default_dialog_handler(&tab)?;
     resize_tab(&tab, viewport)?;
     let png = tab
         .navigate_to(url)
@@ -129,6 +130,7 @@ pub struct ChromiumRenderer {
     browser: Browser,
     tab: Arc<Tab>,
     known_target_ids: HashSet<String>,
+    dialog_handler_target_ids: HashSet<String>,
     active_viewport: Viewport,
     current_url: Option<String>,
     current_title: Option<String>,
@@ -139,6 +141,8 @@ impl ChromiumRenderer {
     pub fn launch(viewport: Viewport, options: ChromiumOptions) -> Result<Self, RendererError> {
         let browser = open_browser(&options, viewport)?;
         let tab = browser.new_tab().map_err(render_error)?;
+        install_default_dialog_handler(&tab)?;
+        let dialog_handler_target_ids = HashSet::from([tab.get_target_id().clone()]);
         resize_tab(&tab, viewport)?;
         browser.register_missing_tabs();
         let known_target_ids = collect_tab_target_ids(&browser);
@@ -147,6 +151,7 @@ impl ChromiumRenderer {
             browser,
             tab,
             known_target_ids,
+            dialog_handler_target_ids,
             active_viewport: viewport,
             current_url: None,
             current_title: None,
@@ -523,6 +528,7 @@ impl ChromiumRenderer {
         else {
             return Ok(false);
         };
+        self.ensure_dialog_handler(&tab)?;
         tab.activate().map_err(render_error)?;
         resize_tab(&tab, self.active_viewport)?;
         self.tab = tab;
@@ -531,6 +537,16 @@ impl ChromiumRenderer {
             .map(|tab| tab.get_target_id().clone())
             .collect::<HashSet<_>>();
         Ok(true)
+    }
+
+    fn ensure_dialog_handler(&mut self, tab: &Arc<Tab>) -> Result<(), RendererError> {
+        let target_id = tab.get_target_id().clone();
+        if self.dialog_handler_target_ids.contains(&target_id) {
+            return Ok(());
+        }
+        install_default_dialog_handler(tab)?;
+        self.dialog_handler_target_ids.insert(target_id);
+        Ok(())
     }
 
     fn current_target_candidates(&self) -> (Vec<Arc<Tab>>, Vec<TargetCandidate>) {
@@ -1153,6 +1169,45 @@ fn resize_tab(tab: &Tab, viewport: Viewport) -> Result<(), RendererError> {
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DialogPolicy {
+    Accept,
+    Dismiss,
+}
+
+fn default_dialog_policy(dialog_type: &DialogType) -> DialogPolicy {
+    match dialog_type {
+        DialogType::Alert => DialogPolicy::Accept,
+        DialogType::Confirm | DialogType::Prompt | DialogType::Beforeunload => {
+            DialogPolicy::Dismiss
+        }
+    }
+}
+
+fn install_default_dialog_handler(tab: &Arc<Tab>) -> Result<(), RendererError> {
+    let dialog = tab.get_dialog();
+    let (dialog_tx, dialog_rx) = mpsc::channel::<DialogPolicy>();
+    thread::Builder::new()
+        .name("nvbrowser-dialog-handler".to_string())
+        .spawn(move || {
+            while let Ok(policy) = dialog_rx.recv() {
+                let _ = match policy {
+                    DialogPolicy::Accept => dialog.accept(None),
+                    DialogPolicy::Dismiss => dialog.dismiss(),
+                };
+            }
+        })
+        .map_err(render_error)?;
+
+    tab.add_event_listener(Arc::new(move |event: &Event| {
+        if let Event::PageJavascriptDialogOpening(event) = event {
+            let _ = dialog_tx.send(default_dialog_policy(&event.params.Type));
+        }
+    }))
+    .map(|_| ())
+    .map_err(render_error)
+}
+
 fn viewport_clip(viewport: Viewport) -> CdpViewport {
     CdpViewport {
         x: 0.0,
@@ -1659,6 +1714,26 @@ mod tests {
         ];
 
         assert!(choose_new_page_target_id("active", &second_scan).is_none());
+    }
+
+    #[test]
+    fn default_dialog_policy_accepts_alert_and_dismisses_blocking_prompts() {
+        assert_eq!(
+            default_dialog_policy(&DialogType::Alert),
+            DialogPolicy::Accept
+        );
+        assert_eq!(
+            default_dialog_policy(&DialogType::Confirm),
+            DialogPolicy::Dismiss
+        );
+        assert_eq!(
+            default_dialog_policy(&DialogType::Prompt),
+            DialogPolicy::Dismiss
+        );
+        assert_eq!(
+            default_dialog_policy(&DialogType::Beforeunload),
+            DialogPolicy::Dismiss
+        );
     }
 
     #[test]
