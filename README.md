@@ -246,7 +246,8 @@ untouched; choose another prefix or mapping key if one is already in use.
 
 Focused preview buffers also install buffer-local browser controls by default:
 `r` reload, `H` back, `L` forward, `j`/`k` scroll, `a` address, `/` find, `f`
-hint mode, `t` type into a hinted field, `s` type and submit, and `q` close.
+hint mode, `t` type into a hinted field, `s` type and submit, left click to
+click the browser viewport, scroll wheel to scroll the page, and `q` close.
 Disable or remap them with
 `preview_keymaps = { enabled = false }` or `preview_keymaps.mappings`.
 

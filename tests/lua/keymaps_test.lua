@@ -32,6 +32,9 @@ local browser = {
     local suffix = opts ~= nil and opts.submit == true and ":submit" or ":type"
     table.insert(calls, "type_hints" .. suffix .. ":" .. value)
   end,
+  click_mouse = function()
+    table.insert(calls, "click_mouse")
+  end,
   close = function()
     table.insert(calls, "close")
   end,
@@ -189,6 +192,9 @@ assert_buffer_mapping(first_bufnr, "f", "buffer-local controls should install hi
 assert_buffer_mapping(first_bufnr, "t", "buffer-local controls should install hinted input mapping")
 assert_buffer_mapping(first_bufnr, "s", "buffer-local controls should install hinted submit mapping")
 assert_buffer_mapping(first_bufnr, "q", "buffer-local controls should install close mapping")
+assert_buffer_mapping(first_bufnr, "<LeftMouse>", "buffer-local controls should install left-click mouse mapping")
+assert_buffer_mapping(first_bufnr, "<ScrollWheelDown>", "buffer-local controls should install wheel-down mapping")
+assert_buffer_mapping(first_bufnr, "<ScrollWheelUp>", "buffer-local controls should install wheel-up mapping")
 assert_no_buffer_mapping(second_bufnr, "r", "buffer-local controls should not leak to other buffers")
 
 local buffer_call_start = #calls
@@ -203,6 +209,9 @@ trigger_buffer(first_bufnr, "f")
 trigger_buffer(first_bufnr, "t")
 trigger_buffer(first_bufnr, "s")
 trigger_buffer(first_bufnr, "q")
+trigger_buffer(first_bufnr, "<LeftMouse>")
+trigger_buffer(first_bufnr, "<ScrollWheelDown>")
+trigger_buffer(first_bufnr, "<ScrollWheelUp>")
 
 local buffer_calls = {}
 for index = buffer_call_start + 1, #calls do
@@ -210,7 +219,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,address,find:local,hints,type_hints:type:buffer text,type_hints:submit:buffer text,close",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,address,find:local,hints,type_hints:type:buffer text,type_hints:submit:buffer text,close,click_mouse,scroll:120:0,scroll:-120:0",
   "buffer-local controls should call browser APIs"
 )
 
@@ -231,6 +240,16 @@ assert(calls[#calls] == "buffer-existing", "buffer-local controls should not ove
 assert_no_buffer_mapping(first_bufnr, "L", "false buffer-local mappings should disable defaults after reinstall")
 assert_buffer_mapping(first_bufnr, "i", "custom buffer-local hinted input mapping should be installed")
 assert_no_buffer_mapping(first_bufnr, "s", "false buffer-local hinted submit mapping should disable default")
+assert_buffer_mapping(first_bufnr, "<LeftMouse>", "mouse mappings should remain enabled by default after reinstall")
+
+vim.keymap.set("n", "<LeftMouse>", function()
+  table.insert(calls, "mouse-existing")
+end, { buffer = second_bufnr })
+keymaps.setup_buffer(browser, second_bufnr, {
+  enabled = true,
+})
+trigger_buffer(second_bufnr, "<LeftMouse>")
+assert(calls[#calls] == "mouse-existing", "buffer-local mouse controls should not overwrite existing mouse mappings")
 
 keymaps.setup_buffer(browser, first_bufnr, {
   enabled = false,

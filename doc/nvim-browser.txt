@@ -265,6 +265,9 @@ a  address prompt
 f  hint mode
 t  type into hinted field
 s  type into hinted field and submit
+<LeftMouse>        click browser viewport
+<ScrollWheelDown> scroll down
+<ScrollWheelUp>   scroll up
 q  close preview
 <
 Disable or remap these with:
@@ -273,8 +276,11 @@ require("nvim-browser").setup({
   preview_keymaps = {
     enabled = false,
     mappings = {
+      left_click = false,
       scroll_down = "<C-d>",
       scroll_up = "<C-u>",
+      wheel_down = "<ScrollWheelDown>",
+      wheel_up = "<ScrollWheelUp>",
     },
   },
 })

@@ -1349,6 +1349,30 @@ function M.click_here()
   return M.click_point(point.x, point.y)
 end
 
+function M.click_mouse(mousepos)
+  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+    return false
+  end
+  mousepos = mousepos or vim.fn.getmousepos()
+  if type(mousepos) ~= "table" or mousepos.winid ~= state.winid then
+    return false
+  end
+
+  local row = tonumber(mousepos.line)
+  local column = tonumber(mousepos.column)
+  if row == nil or column == nil or row <= 0 or column <= 0 then
+    return false
+  end
+
+  local geometry = current_preview_geometry()
+  if row > geometry.rows then
+    return false
+  end
+
+  local point = M.viewport_point_for_cell(row, column, geometry)
+  return M.click_point(point.x, point.y)
+end
+
 function M.click_hint(id)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false

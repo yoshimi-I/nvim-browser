@@ -208,6 +208,18 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.type_hint_mode(input, { submit = true })
   end, "nvim-browser: submit hinted input", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "left_click", "<LeftMouse>"), function()
+    browser.click_mouse()
+  end, "nvim-browser: click preview", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "wheel_down", "<ScrollWheelDown>"), function()
+    browser.scroll(scroll_pixels, 0)
+  end, "nvim-browser: wheel down", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "wheel_up", "<ScrollWheelUp>"), function()
+    browser.scroll(-scroll_pixels, 0)
+  end, "nvim-browser: wheel up", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "close", "q"), function()
     browser.close()
   end, "nvim-browser: close", buffer_opts)

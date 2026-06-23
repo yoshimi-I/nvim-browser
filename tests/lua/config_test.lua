@@ -36,6 +36,18 @@ assert(
 assert(configured.preview_keymaps.enabled == true, "preview-local keymaps should be enabled by default")
 assert(configured.preview_keymaps.mappings.close == "q", "preview-local keymaps should include a close mapping")
 assert(
+  configured.preview_keymaps.mappings.left_click == "<LeftMouse>",
+  "preview-local keymaps should include a left-click mouse mapping"
+)
+assert(
+  configured.preview_keymaps.mappings.wheel_down == "<ScrollWheelDown>",
+  "preview-local keymaps should include a wheel-down mouse mapping"
+)
+assert(
+  configured.preview_keymaps.mappings.wheel_up == "<ScrollWheelUp>",
+  "preview-local keymaps should include a wheel-up mouse mapping"
+)
+assert(
   configured.keymaps.mappings.type_hint_mode == "t",
   "global keymaps should include a hinted input mapping"
 )
@@ -60,6 +72,10 @@ local remapped = config.setup({
 })
 assert(remapped.preview_keymaps.mappings.scroll_down == "<C-d>", "preview-local keymaps should allow partial remaps")
 assert(remapped.preview_keymaps.mappings.close == "q", "preview-local partial remaps should retain defaults")
+assert(
+  remapped.preview_keymaps.mappings.left_click == "<LeftMouse>",
+  "preview-local partial remaps should retain mouse defaults"
+)
 assert(
   remapped.preview_keymaps.mappings.type_hint_mode == "t",
   "preview-local partial remaps should retain hinted input mapping"

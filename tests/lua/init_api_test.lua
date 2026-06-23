@@ -18,6 +18,7 @@ assert(type(browser.doctor) == "function", "doctor API should exist")
 assert(type(browser.page_metrics) == "function", "page_metrics API should exist")
 assert(type(browser.reader) == "function", "reader API should exist")
 assert(type(browser.reader_follow) == "function", "reader_follow API should exist")
+assert(type(browser.click_mouse) == "function", "click_mouse API should exist")
 
 assert(browser.resolve_address_target("https://example.com") == "https://example.com", "address resolver should preserve explicit URLs")
 assert(browser.resolve_address_target("example.com") == "https://example.com", "address resolver should add https to host-like inputs")
@@ -34,6 +35,7 @@ local original_follow_hint = browser.follow_hint
 local original_input_text = browser.input_text
 local original_press_key = browser.press_key
 local original_terminal_follow_hint = terminal.follow_hint
+local original_terminal_click_mouse = terminal.click_mouse
 local original_terminal_type_hint = terminal.type_hint
 
 browser.hints = function()
@@ -78,6 +80,15 @@ terminal.follow_hint = function(label)
 end
 assert(browser.follow_hint("a") == "followed", "follow_hint should delegate to terminal follow semantics")
 assert(followed_terminal_hint == "a", "follow_hint should pass the hint label to terminal")
+
+local clicked_mouse = nil
+terminal.click_mouse = function(mousepos)
+  clicked_mouse = mousepos
+  return "clicked"
+end
+local mousepos = { winid = 10, line = 3, column = 8 }
+assert(browser.click_mouse(mousepos) == "clicked", "click_mouse should delegate to terminal mouse click semantics")
+assert(clicked_mouse == mousepos, "click_mouse should pass explicit mouse position to terminal")
 
 local typed_hint = nil
 terminal.type_hint = function(label, text, opts)
@@ -154,6 +165,7 @@ browser.follow_hint = original_follow_hint
 browser.input_text = original_input_text
 browser.press_key = original_press_key
 terminal.follow_hint = original_terminal_follow_hint
+terminal.click_mouse = original_terminal_click_mouse
 terminal.type_hint = original_terminal_type_hint
 
 local original_open = browser.open

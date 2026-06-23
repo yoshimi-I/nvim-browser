@@ -358,13 +358,33 @@ terminal._test.set_job_id(99)
 terminal._test.set_cursor_addressable_preview(true)
 vim.api.nvim_set_current_win(image_win)
 vim.api.nvim_win_set_buf(image_win, payload_bufnr)
-vim.api.nvim_win_set_cursor(image_win, { 12, 0 })
 local footer_click_requests = {}
 local original_chansend_for_footer = vim.fn.chansend
 vim.fn.chansend = function(job_id, payload)
   table.insert(footer_click_requests, { job_id = job_id, payload = payload })
   return 1
 end
+
+local expected_mouse_point = terminal.viewport_point_for_cell(6, 25, { columns = 50, rows = 11, width = 500, height = 220 })
+assert(terminal.click_mouse({ winid = image_win, line = 6, column = 25 }) == true, "mouse click should send a browser click")
+local mouse_click_seen = false
+for _, request in ipairs(footer_click_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "click_point" and decoded.x == expected_mouse_point.x and decoded.y == expected_mouse_point.y then
+    mouse_click_seen = true
+  end
+end
+assert(mouse_click_seen, "mouse click should map preview cells to viewport pixels")
+
+footer_click_requests = {}
+assert(terminal.click_mouse({ winid = image_win, line = 12, column = 25 }) == false, "mouse click on footer should be ignored")
+assert(#footer_click_requests == 0, "footer mouse clicks should not reach the serve backend")
+
+footer_click_requests = {}
+assert(terminal.click_mouse({ winid = second_bufnr, line = 6, column = 25 }) == false, "mouse click from another window should be ignored")
+assert(#footer_click_requests == 0, "wrong-window mouse clicks should not reach the serve backend")
+
+vim.api.nvim_win_set_cursor(image_win, { 12, 0 })
 assert(terminal.click_here() == false, "clicking the footer row should not send a browser click")
 assert(#footer_click_requests == 0, "footer clicks should not reach the serve backend")
 vim.fn.chansend = original_chansend_for_footer

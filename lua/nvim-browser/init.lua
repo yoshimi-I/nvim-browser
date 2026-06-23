@@ -170,6 +170,10 @@ function M.click_here()
   return terminal.click_here()
 end
 
+function M.click_mouse(mousepos)
+  return terminal.click_mouse(mousepos)
+end
+
 function M.click_hint(id)
   return terminal.click_hint(id)
 end
