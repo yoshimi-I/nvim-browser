@@ -117,6 +117,9 @@ local browser = {
       viewport = { width = 800, height = 600, device_scale_factor = 1 },
     }
   end,
+  hint_error = function()
+    return nil
+  end,
   reader = function()
     reader_called = true
     return true
@@ -376,6 +379,9 @@ local empty_browser = {
   hints = function()
     return {}
   end,
+  hint_error = function()
+    return nil
+  end,
   click_hint = function()
     error("click_hint should not be called without hints")
   end,
@@ -398,6 +404,30 @@ commands.register(empty_browser, {
 vim.cmd("NBrowserTypeHintMode")
 assert(warnings[#warnings] == "nvim-browser: no browser hints available", "NBrowserTypeHintMode should warn when no hints exist")
 assert(no_hint_input_called == false, "NBrowserTypeHintMode should not prompt when no hints exist")
+
+local hint_error_browser = {
+  hints = function()
+    return {}
+  end,
+  hint_error = function()
+    return "hint extraction failed"
+  end,
+}
+commands.register(hint_error_browser, {
+  input = function()
+    error("input should not be called when hint extraction failed")
+  end,
+})
+vim.cmd("NBrowserHintMode")
+assert(
+  warnings[#warnings] == "nvim-browser: hint extraction failed: hint extraction failed",
+  "NBrowserHintMode should distinguish hint extraction failures from empty hint sets"
+)
+vim.cmd("NBrowserTypeHintMode")
+assert(
+  warnings[#warnings] == "nvim-browser: hint extraction failed: hint extraction failed",
+  "NBrowserTypeHintMode should distinguish hint extraction failures from empty hint sets"
+)
 
 local no_default_prompt = nil
 local no_default_browser = {

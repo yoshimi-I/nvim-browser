@@ -22,6 +22,7 @@ local state = {
   runtime_metadata = nil,
   status = nil,
   status_error = nil,
+  hint_error = nil,
   pending_operation = nil,
   live_refresh_timer = nil,
   live_refresh_generation = 0,
@@ -649,6 +650,11 @@ local function apply_serve_response_metadata(response)
   end
   state.status = response.status
   state.status_error = response.error
+  if response.hint_error ~= nil and response.hint_error ~= vim.NIL and response.hint_error ~= "" then
+    state.hint_error = tostring(response.hint_error)
+  else
+    state.hint_error = nil
+  end
   if response.url ~= nil then
     state.current_url = response.url
   end
@@ -1138,6 +1144,7 @@ local function mark_pending_operation(id, label, target)
   }
   state.stopped_operation = nil
   state.status_error = nil
+  state.hint_error = nil
   hints_overlay.clear(state.bufnr)
   state.element_hints = {}
   state.element_hints_geometry = nil
@@ -1264,6 +1271,7 @@ function M.open(command)
   state.runtime_metadata = nil
   state.status = nil
   state.status_error = nil
+  state.hint_error = nil
   state.pending_operation = nil
   state.live_refresh_request_id = nil
   state.stopped_operation = nil
@@ -1558,6 +1566,7 @@ function M.close()
   state.runtime_metadata = nil
   state.status = nil
   state.status_error = nil
+  state.hint_error = nil
   state.pending_operation = nil
   state.live_refresh_request_id = nil
   state.stopped_operation = nil
@@ -1624,6 +1633,7 @@ function M.stop()
     target = pending.target,
   }
   state.status_error = nil
+  state.hint_error = nil
   state.response_handlers[pending.id] = nil
   state.generation = state.generation + 1
   stop_live_refresh()
@@ -2081,6 +2091,7 @@ function M.state()
     runtime_metadata = state.runtime_metadata,
     status = state.status,
     status_error = state.status_error,
+    hint_error = state.hint_error,
     pending_operation = state.pending_operation,
     live_refresh_request_id = state.live_refresh_request_id,
     stopped_operation = state.stopped_operation,

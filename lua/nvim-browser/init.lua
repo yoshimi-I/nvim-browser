@@ -335,6 +335,10 @@ function M.status_error()
   return terminal.state().status_error
 end
 
+function M.hint_error()
+  return terminal.state().hint_error
+end
+
 function M.doctor()
   return doctor.run(M.config, terminal.state())
 end

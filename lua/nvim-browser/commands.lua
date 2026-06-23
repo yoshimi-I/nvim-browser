@@ -61,7 +61,23 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: hint input failed, stale, or browser session is inactive", "WarningMsg" } }, false, {})
   end
 
+  local function current_hint_error()
+    if browser.hint_error == nil then
+      return nil
+    end
+    local hint_error = browser.hint_error()
+    if hint_error == nil or hint_error == vim.NIL or hint_error == "" then
+      return nil
+    end
+    return tostring(hint_error)
+  end
+
   local function warn_no_hints()
+    local hint_error = current_hint_error()
+    if hint_error ~= nil then
+      vim.api.nvim_echo({ { "nvim-browser: hint extraction failed: " .. hint_error, "WarningMsg" } }, false, {})
+      return
+    end
     vim.api.nvim_echo({ { "nvim-browser: no browser hints available", "WarningMsg" } }, false, {})
   end
 

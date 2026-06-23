@@ -169,6 +169,16 @@ terminal._test.handle_find_text_response({ status = "ok", found = true })
 assert(terminal.state().last_find_found == true, "found responses should update find state to true")
 
 terminal._test.apply_serve_response({
+  id = 98,
+  status = "ok",
+  payload = "frame with hint failure",
+  hint_error = "hint extraction failed",
+  hints = {},
+})
+assert(terminal.state().hint_error == "hint extraction failed", "serve responses should store hint extraction failures")
+assert(#terminal.state().element_hints == 0, "hint extraction failures should keep active hints empty")
+
+terminal._test.apply_serve_response({
   id = 99,
   status = "ok",
   url = "https://example.com/long",

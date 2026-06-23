@@ -25,6 +25,7 @@ assert(type(browser.page_metrics) == "function", "page_metrics API should exist"
 assert(type(browser.page_scroll) == "function", "page_scroll API should exist")
 assert(type(browser.page_down) == "function", "page_down API should exist")
 assert(type(browser.page_up) == "function", "page_up API should exist")
+assert(type(browser.hint_error) == "function", "hint_error API should exist")
 assert(type(browser.reader) == "function", "reader API should exist")
 assert(type(browser.reader_follow) == "function", "reader_follow API should exist")
 assert(type(browser.click_mouse) == "function", "click_mouse API should exist")

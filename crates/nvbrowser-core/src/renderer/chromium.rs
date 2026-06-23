@@ -424,7 +424,7 @@ impl Renderer for ChromiumRenderer {
         &mut self,
         _request: ElementHintsRequest,
     ) -> Result<Vec<ElementHint>, RendererError> {
-        Ok(self.read_element_hints().unwrap_or_default())
+        self.read_element_hints()
     }
 
     fn page_metrics(
@@ -576,15 +576,27 @@ impl ChromiumRenderer {
             })
     }
 
-    fn read_element_hints(&self) -> Option<Vec<ElementHint>> {
+    fn read_element_hints(&self) -> Result<Vec<ElementHint>, RendererError> {
         let value = self
             .tab
             .evaluate(ELEMENT_HINTS_SCRIPT, true)
-            .ok()
-            .and_then(|remote_object| remote_object.value)?;
+            .map_err(render_error)?
+            .value
+            .ok_or_else(|| {
+                RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "hint extraction did not return a value",
+                )
+            })?;
         value
             .as_str()
-            .and_then(|hints| serde_json::from_str(hints).ok())
+            .ok_or_else(|| {
+                RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "hint extraction did not return JSON text",
+                )
+            })
+            .and_then(parse_element_hints_json)
     }
 
     fn read_page_metrics(&self) -> Option<PageMetrics> {
@@ -1108,6 +1120,10 @@ fn parse_hint_point_json(value: serde_json::Value) -> Result<HintPoint, Renderer
             "hint id was not found or is stale",
         )
     })?;
+    serde_json::from_str(text).map_err(render_error)
+}
+
+fn parse_element_hints_json(text: &str) -> Result<Vec<ElementHint>, RendererError> {
     serde_json::from_str(text).map_err(render_error)
 }
 

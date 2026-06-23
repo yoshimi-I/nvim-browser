@@ -364,6 +364,8 @@ struct ServeResponse {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     hints: Vec<ElementHint>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    hint_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     found: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
@@ -567,6 +569,7 @@ struct CapturePayload {
     page: Option<PageMetrics>,
     text: Option<PageTextSnapshot>,
     hints: Vec<ElementHint>,
+    hint_error: Option<String>,
     found: Option<bool>,
 }
 
@@ -586,17 +589,18 @@ impl<R: Renderer> ServeRuntime<R> {
         let id = request.id();
         match self.try_handle(request) {
             Ok(capture) => {
-                let (payload, page, text, hints, found) = capture
+                let (payload, page, text, hints, hint_error, found) = capture
                     .map(|capture| {
                         (
                             capture.payload,
                             capture.page,
                             capture.text,
                             capture.hints,
+                            capture.hint_error,
                             capture.found,
                         )
                     })
-                    .unwrap_or((None, None, None, Vec::new(), None));
+                    .unwrap_or((None, None, None, Vec::new(), None, None));
                 ServeResponse {
                     id,
                     status: ServeStatus::Ok,
@@ -607,6 +611,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     page,
                     text,
                     hints,
+                    hint_error,
                     found,
                     error: None,
                 }
@@ -621,6 +626,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 page: None,
                 text: None,
                 hints: Vec::new(),
+                hint_error: None,
                 found: None,
                 error: Some(error.to_string()),
             },
@@ -857,6 +863,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     page: None,
                     text: Some(snapshot),
                     hints: Vec::new(),
+                    hint_error: None,
                     found: None,
                 }))
             }
@@ -887,10 +894,13 @@ impl<R: Renderer> ServeRuntime<R> {
             self.session.active_page().viewport(),
         ))?;
         self.session.set_active_page_frame(frame.metadata.clone());
-        let hints = self.renderer.element_hints(ElementHintsRequest::new(
+        let (hints, hint_error) = match self.renderer.element_hints(ElementHintsRequest::new(
             self.session.id(),
             self.session.active_page_id(),
-        ))?;
+        )) {
+            Ok(hints) => (hints, None),
+            Err(error) => (Vec::new(), Some(error.message().to_string())),
+        };
         let page = self.renderer.page_metrics(PageMetricsRequest::new(
             self.session.id(),
             self.session.active_page_id(),
@@ -901,6 +911,7 @@ impl<R: Renderer> ServeRuntime<R> {
             page,
             text: None,
             hints,
+            hint_error,
             found: None,
         })
     }
@@ -1050,6 +1061,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         page: None,
                         text: None,
                         hints: Vec::new(),
+                        hint_error: None,
                         found: None,
                         error: Some(error.to_string()),
                     })
@@ -1385,6 +1397,7 @@ mod tests {
         fail_click: bool,
         fail_click_hint: bool,
         fail_hover_hint: bool,
+        fail_hints: bool,
         fail_focus_hint: bool,
         operations: Vec<&'static str>,
         history: Vec<String>,
@@ -1416,6 +1429,7 @@ mod tests {
                 fail_click: false,
                 fail_click_hint: false,
                 fail_hover_hint: false,
+                fail_hints: false,
                 fail_focus_hint: false,
                 operations: Vec::new(),
                 history: Vec::new(),
@@ -1708,6 +1722,12 @@ mod tests {
             _request: ElementHintsRequest,
         ) -> Result<Vec<ElementHint>, RendererError> {
             self.operations.push("hints");
+            if self.fail_hints {
+                return Err(RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "hint extraction failed",
+                ));
+            }
             Ok(self.hints.clone())
         }
 
@@ -2078,6 +2098,7 @@ mod tests {
             page: None,
             text: None,
             hints: Vec::new(),
+            hint_error: None,
             found: None,
             error: None,
         };
@@ -2111,6 +2132,7 @@ mod tests {
                 clickable: true,
                 focusable: false,
             }],
+            hint_error: None,
             found: None,
             error: None,
         };
@@ -2133,6 +2155,7 @@ mod tests {
             page: None,
             text: None,
             hints: Vec::new(),
+            hint_error: None,
             found: Some(true),
             error: None,
         };
@@ -2162,6 +2185,7 @@ mod tests {
             }),
             text: None,
             hints: Vec::new(),
+            hint_error: None,
             found: None,
             error: None,
         };
@@ -2191,6 +2215,7 @@ mod tests {
                 truncated: false,
             }),
             hints: Vec::new(),
+            hint_error: None,
             found: None,
             error: None,
         };
@@ -2227,6 +2252,7 @@ mod tests {
             page: None,
             text: None,
             hints: Vec::new(),
+            hint_error: None,
             found: None,
             error: None,
         };
@@ -2480,6 +2506,48 @@ mod tests {
         assert_eq!(response.status, ServeStatus::Ok);
         assert_eq!(response.hints.len(), 1);
         assert_eq!(response.hints[0].label, "Search");
+        assert_eq!(runtime.renderer.operations, vec!["capture", "hints"]);
+    }
+
+    #[test]
+    fn serve_runtime_surfaces_hint_extraction_failure_without_failing_frame() {
+        let mut renderer = FakeRenderer::new();
+        renderer.fail_hints = true;
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+            },
+        );
+
+        let response = runtime.handle(ServeRequest::Navigate {
+            id: 3,
+            url: "https://example.com".to_string(),
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(
+            response.payload.is_some(),
+            "frame payload should still render"
+        );
+        assert!(
+            response.page.is_some(),
+            "page metrics should still be attached"
+        );
+        assert!(
+            response.hints.is_empty(),
+            "failed hint extraction should not invent hints"
+        );
+        assert_eq!(
+            response.hint_error.as_deref(),
+            Some("hint extraction failed")
+        );
         assert_eq!(runtime.renderer.operations, vec!["capture", "hints"]);
     }
 
