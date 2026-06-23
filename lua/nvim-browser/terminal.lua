@@ -12,8 +12,10 @@ local state = {
   last_target = nil,
   stream_buffer = "",
   mode = nil,
+  serve_output = nil,
   next_request_id = 1,
   stop_timer = nil,
+  resize_autocmd = nil,
   current_url = nil,
   current_title = nil,
   status = nil,
@@ -48,6 +50,8 @@ local hint_label_keys = {
   "q", "w", "e", "r", "t", "y", "u", "i", "o", "p",
   "z", "x", "c", "v", "b", "n", "m",
 }
+
+local resize_augroup = vim.api.nvim_create_augroup("nvim-browser-resize", { clear = true })
 
 local function preview_width()
   return math.max(40, math.min(120, math.floor(vim.o.columns * 0.48)))
@@ -125,6 +129,18 @@ end
 
 local function command_uses_serve(command)
   return type(command) == "table" and command[2] == "serve"
+end
+
+local function command_output(command)
+  if type(command) ~= "table" then
+    return nil
+  end
+  for index, value in ipairs(command) do
+    if value == "--output" then
+      return command[index + 1]
+    end
+  end
+  return nil
 end
 
 local function command_uses_show_image(command)
@@ -359,6 +375,43 @@ local function request_resize()
   })
 end
 
+local function ensure_resize_autocmd()
+  if state.resize_autocmd ~= nil then
+    return
+  end
+
+  state.resize_autocmd = vim.api.nvim_create_autocmd({ "VimResized", "WinResized" }, {
+    group = resize_augroup,
+    callback = function()
+      request_resize()
+    end,
+  })
+end
+
+local function reuse_active_serve_command(command)
+  if state.mode ~= "serve" or state.job_id == nil or not is_valid_buffer() then
+    return nil
+  end
+  if not command_uses_serve(command) then
+    return nil
+  end
+  local output = command_output(command)
+  if state.serve_output ~= nil and output ~= nil and output ~= state.serve_output then
+    return nil
+  end
+  local target = command_target(command)
+  if target == nil or target == "" then
+    return nil
+  end
+
+  state.last_target = target
+  request_resize()
+  return send_serve_request({
+    type = "navigate",
+    url = target,
+  })
+end
+
 function M.viewport_point_for_cell(row, column, geometry)
   if geometry == nil then
     geometry = current_preview_geometry()
@@ -551,6 +604,11 @@ function M.open(command)
   ensure_window()
   command = command_for_window(command)
 
+  local reused = reuse_active_serve_command(command)
+  if reused ~= nil then
+    return reused
+  end
+
   stop_existing_job(false)
 
   state.generation = state.generation + 1
@@ -559,6 +617,7 @@ function M.open(command)
   state.last_target = command_target(command)
   state.stream_buffer = ""
   state.mode = nil
+  state.serve_output = nil
   state.next_request_id = 1
   state.current_url = nil
   state.current_title = nil
@@ -587,6 +646,8 @@ function M.open(command)
 
   if command_uses_serve(command) then
     state.mode = "serve"
+    state.serve_output = command_output(command)
+    ensure_resize_autocmd()
     local bufnr = state.bufnr
     local generation = state.generation
     local target = command_target(command)
@@ -694,6 +755,7 @@ function M.open(command)
           end
           state.job_id = nil
           state.mode = nil
+          state.serve_output = nil
           state.element_hints = {}
           state.element_hints_geometry = nil
           state.cursor_addressable_preview = false
@@ -822,6 +884,7 @@ function M.close()
   state.last_target = nil
   state.stream_buffer = ""
   state.mode = nil
+  state.serve_output = nil
   state.current_url = nil
   state.current_title = nil
   state.status = nil
@@ -1030,6 +1093,8 @@ function M.state()
     has_window = is_valid_window(),
     has_payload = state.last_payload ~= nil,
     mode = state.mode,
+    serve_output = state.serve_output,
+    last_target = state.last_target,
     current_url = state.current_url,
     current_title = state.current_title,
     status = state.status,

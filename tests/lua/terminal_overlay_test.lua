@@ -155,4 +155,96 @@ assert(vim.tbl_contains(image_command, "--height"), "show-image should receive p
 assert(vim.tbl_contains(image_command, "50"), "show-image columns should come from preview width minus borders")
 assert(vim.tbl_contains(image_command, "12"), "show-image rows should come from preview height minus borders")
 
+terminal.close()
+local original_jobstart = vim.fn.jobstart
+local original_chansend = vim.fn.chansend
+local original_jobstop = vim.fn.jobstop
+local original_termopen = vim.fn.termopen
+local jobstart_calls = {}
+local sent_requests = {}
+local jobstop_calls = {}
+local termopen_calls = {}
+vim.fn.jobstart = function(command)
+  table.insert(jobstart_calls, command)
+  return 1234
+end
+vim.fn.chansend = function(job_id, payload)
+  table.insert(sent_requests, { job_id = job_id, payload = payload })
+  return 1
+end
+vim.fn.jobstop = function()
+  table.insert(jobstop_calls, true)
+  return 1
+end
+vim.fn.termopen = function(command)
+  table.insert(termopen_calls, command)
+  return 5678
+end
+
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
+local first_state = terminal.state()
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.org" })
+local second_state = terminal.state()
+
+assert(#jobstart_calls == 1, "opening a new URL in an active serve session should reuse the existing job")
+assert(#jobstop_calls == 0, "serve URL reuse should not stop the existing backend job")
+assert(second_state.bufnr == first_state.bufnr, "serve URL reuse should keep the same preview buffer")
+assert(second_state.job_id == first_state.job_id, "serve URL reuse should keep the same backend job")
+assert(second_state.last_target == "https://example.org", "serve URL reuse should update the remembered target")
+local navigate_seen = false
+local quit_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "navigate" and decoded.url == "https://example.org" then
+    navigate_seen = true
+  end
+  if ok and decoded.type == "quit" then
+    quit_seen = true
+  end
+end
+assert(navigate_seen, "serve URL reuse should send a navigate request to the active backend")
+assert(not quit_seen, "serve URL reuse should not send quit to the active backend")
+
+jobstart_calls = {}
+sent_requests = {}
+local served_bufnr = second_state.bufnr
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--markdown", "/tmp/README.md" })
+local markdown_state = terminal.state()
+assert(#jobstart_calls == 1, "opening Markdown should start a replacement serve job so the backend can render HTML")
+assert(markdown_state.bufnr ~= served_bufnr, "Markdown serve replacement should use a fresh preview buffer")
+
+sent_requests = {}
+vim.cmd("doautocmd VimResized")
+local resize_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "resize" then
+    resize_seen = true
+  end
+end
+assert(resize_seen, "active serve sessions should resize when Neovim is resized")
+
+sent_requests = {}
+vim.cmd("doautocmd WinResized")
+local win_resize_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "resize" then
+    win_resize_seen = true
+  end
+end
+assert(win_resize_seen, "active serve sessions should resize when the preview window changes size")
+
+local reused_bufnr = second_state.bufnr
+terminal.open({ "nvbrowser", "show-image", "/tmp/image.png", "--output", "ansi" })
+local replacement_state = terminal.state()
+assert(#termopen_calls == 1, "non-serve previews should still replace an active serve session")
+assert(replacement_state.bufnr ~= reused_bufnr, "non-serve previews should use a replacement buffer")
+
+vim.fn.jobstart = original_jobstart
+vim.fn.chansend = original_chansend
+vim.fn.jobstop = original_jobstop
+vim.fn.termopen = original_termopen
+terminal.close()
+
 vim.api.nvim_echo = original_echo
