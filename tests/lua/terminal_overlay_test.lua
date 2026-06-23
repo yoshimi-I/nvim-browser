@@ -227,6 +227,41 @@ assert(
 )
 assert(terminal._test.reader_url_at_line("<https://example.com/from-angle>", 3) == "https://example.com/from-angle", "reader URL extraction should read angle links")
 assert(terminal._test.reader_url_at_line("bare https://example.com/bare link", 10) == "https://example.com/bare", "reader URL extraction should read bare links")
+assert(terminal._test.reader_url_at_line("[Docs](/docs)", 2) == "/docs", "reader URL extraction should read root-relative Markdown links")
+assert(terminal._test.reader_url_at_line("[Next](guide/page.html)", 1) == "guide/page.html", "reader URL extraction should read relative Markdown links")
+assert(terminal._test.reader_url_at_line("[Section](#intro)", 1) == "#intro", "reader URL extraction should read fragment Markdown links")
+assert(terminal._test.reader_url_at_line("[Local](file:///tmp/page.html)", 1) == "file:///tmp/page.html", "reader URL extraction should read file URLs")
+assert(terminal._test.reader_url_at_line("bare file:///tmp/page.html link", 1) == "file:///tmp/page.html", "reader URL extraction should read bare file URLs")
+assert(terminal._test.reader_url_at_line("[Mail](mailto:a@example.com)", 1) == nil, "reader URL extraction should ignore unsupported schemes")
+assert(terminal._test.reader_url_at_line("[Script](javascript:alert(1))", 1) == nil, "reader URL extraction should ignore javascript links")
+assert(
+  terminal._test.reader_url_at_line("[Mail](mailto:a@example.com) and [Docs](/docs)", 2) == nil,
+  "reader URL extraction should not follow a supported link when the cursor is on an unsupported link"
+)
+assert(
+  terminal._test.reader_url_at_line("[Bad](mailto:https://example.com) and [Docs](/docs)", 16) == nil,
+  "reader URL extraction should not extract bare URLs nested inside unsupported Markdown links"
+)
+assert(
+  terminal._test.reader_url_at_line("[Mail](mailto:a@example.com) and [Docs](/docs)", 31) == nil,
+  "reader URL extraction should not guess when a line mixes unsupported and supported links"
+)
+assert(
+  terminal._test.reader_url_at_line("single link away from cursor [Docs](/docs)", 1) == "/docs",
+  "reader URL extraction should follow a single link on the line even when the cursor is outside it"
+)
+assert(
+  terminal._test.reader_url_at_line("single absolute link [Docs](https://example.com/docs)", 1) == "https://example.com/docs",
+  "reader URL extraction should not double-count a single Markdown absolute URL as an ambiguous line"
+)
+assert(
+  terminal._test.reader_url_at_line("[One](/one) and [Two](/two)", 1) == "/one",
+  "reader URL extraction should keep cursor-sensitive selection when multiple links exist"
+)
+assert(
+  terminal._test.reader_url_at_line("[One](/one) and [Two](/two)", 14) == nil,
+  "reader URL extraction should not guess when multiple links exist and the cursor is between links"
+)
 
 terminal._test.set_mode("serve")
 terminal._test.set_job_id(99)
@@ -248,6 +283,82 @@ assert(followed_request ~= nil, "reader follow should send a serve request")
 assert(followed_request.request.type == "navigate", "reader follow should reuse the active browser session")
 assert(followed_request.request.url == "https://example.com/docs", "reader follow should navigate to the link URL")
 assert(terminal.state().last_target == "https://example.com/docs", "reader follow mappings should update terminal last target")
+
+terminal._test.apply_serve_response({
+  id = 222,
+  status = "ok",
+  url = "https://example.com/base/current.html",
+  title = "Reader Base",
+})
+terminal._test.handle_reader_response({
+  status = "ok",
+  text = {
+    title = "Reader Base",
+    url = "https://example.com/base/current.html",
+    text = "# Reader Base\n\n[Docs](/docs)\n\n[Next](guide/page.html)\n\n[Section](#intro)\n\n[Search](?q=x)",
+  },
+})
+vim.api.nvim_set_current_buf(terminal.state().reader_bufnr)
+reader_requests = {}
+vim.fn.chansend = function(job_id, payload)
+  table.insert(reader_requests, { job_id = job_id, request = vim.json.decode(payload) })
+  return 1
+end
+vim.api.nvim_win_set_cursor(0, { 5, 1 })
+assert(terminal.reader_follow() == "https://example.com/docs", "reader follow should resolve root-relative links from the current page")
+vim.api.nvim_win_set_cursor(0, { 7, 1 })
+assert(terminal.reader_follow() == "https://example.com/base/guide/page.html", "reader follow should resolve relative links from the current page directory")
+vim.api.nvim_win_set_cursor(0, { 9, 1 })
+assert(terminal.reader_follow() == "https://example.com/base/current.html#intro", "reader follow should resolve fragments from the current page")
+vim.api.nvim_win_set_cursor(0, { 11, 1 })
+assert(terminal.reader_follow() == "https://example.com/base/current.html?q=x", "reader follow should resolve query-only links from the current page")
+terminal._test.apply_serve_response({
+  id = 223,
+  status = "ok",
+  url = "https://other.example/new/page.html",
+  title = "Other Page",
+})
+vim.api.nvim_win_set_cursor(0, { 7, 1 })
+assert(
+  terminal.reader_follow() == "https://example.com/base/guide/page.html",
+  "reader follow should keep resolving relative links against the reader snapshot URL after the active page changes"
+)
+vim.fn.chansend = original_chansend_for_reader
+assert(reader_requests[1].request.url == "https://example.com/docs", "root-relative follow should send the resolved URL")
+assert(reader_requests[2].request.url == "https://example.com/base/guide/page.html", "relative follow should send the resolved URL")
+assert(reader_requests[3].request.url == "https://example.com/base/current.html#intro", "fragment follow should send the resolved URL")
+assert(reader_requests[4].request.url == "https://example.com/base/current.html?q=x", "query-only follow should send the resolved URL")
+assert(reader_requests[5].request.url == "https://example.com/base/guide/page.html", "old reader buffers should keep using their snapshot URL as base")
+
+terminal._test.apply_serve_response({
+  id = 224,
+  status = "ok",
+  url = "file:///tmp/site/index.html",
+  title = "Local Reader",
+})
+terminal._test.handle_reader_response({
+  status = "ok",
+  text = {
+    title = "Local Reader",
+    url = "file:///tmp/site/index.html",
+    text = "# Local Reader\n\n[Next](guide/page.html)\n\n[Docs](/docs)\n\n[Section](#intro)\n\n[Search](?q=x)",
+  },
+})
+vim.api.nvim_set_current_buf(terminal.state().reader_bufnr)
+reader_requests = {}
+vim.fn.chansend = function(job_id, payload)
+  table.insert(reader_requests, { job_id = job_id, request = vim.json.decode(payload) })
+  return 1
+end
+vim.api.nvim_win_set_cursor(0, { 5, 1 })
+assert(terminal.reader_follow() == "file:///tmp/site/guide/page.html", "reader follow should resolve relative file links from the reader snapshot")
+vim.api.nvim_win_set_cursor(0, { 7, 1 })
+assert(terminal.reader_follow() == "file:///docs", "reader follow should resolve root-relative file links")
+vim.api.nvim_win_set_cursor(0, { 9, 1 })
+assert(terminal.reader_follow() == "file:///tmp/site/index.html#intro", "reader follow should resolve file fragments")
+vim.api.nvim_win_set_cursor(0, { 11, 1 })
+assert(terminal.reader_follow() == "file:///tmp/site/index.html?q=x", "reader follow should resolve file query-only links")
+vim.fn.chansend = original_chansend_for_reader
 
 terminal._test.handle_reader_response({
   status = "ok",

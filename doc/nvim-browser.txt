@@ -237,12 +237,15 @@ COMMANDS                                           *nvim-browser-commands*
 	Capture the active browser page as Markdown-like text in a normal scratch
 	buffer for selection, search, and yank workflows. Links are preserved as
 	Markdown links where possible. In the reader buffer, press <CR> or gf on a
-	link to navigate the active browser session.
+	link to navigate the active browser session. Root-relative paths,
+	page-relative paths, and #fragment links are resolved against the current
+	page URL.
 
 							*:NBrowserReaderFollow*
 :NBrowserReaderFollow
 	Follow the URL under the cursor in a reader buffer and navigate the active
-	browser session to that URL.
+	browser session to that URL. If the current line has exactly one link, the
+	link is followed even when the cursor is not directly on the link text.
 
 							*:NBrowserDoctor*
 :NBrowserDoctor

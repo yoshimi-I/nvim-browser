@@ -34,6 +34,7 @@ local state = {
   element_hints_geometry = nil,
   cursor_addressable_preview = false,
   reader_bufnr = nil,
+  reader_base_url = nil,
 }
 
 local options = {
@@ -394,6 +395,37 @@ local function reader_url_at_line(line, column)
     return value:gsub("\\(.)", "%1")
   end
 
+  local function is_supported_reader_url(value)
+    return type(value) == "string"
+      and (
+        value:match("^https?://") ~= nil
+        or value:match("^file://") ~= nil
+        or value:match("^/") ~= nil
+        or value:match("^#") ~= nil
+        or value:match("^[^%s:]+$") ~= nil
+      )
+  end
+
+  local candidates = {}
+  local link_ranges = {}
+  local function add_link_range(start_index, end_index)
+    table.insert(link_ranges, { start_index = start_index, end_index = end_index })
+  end
+  local function add_candidate(url, start_index, end_index)
+    add_link_range(start_index, end_index)
+    if url ~= nil and url ~= "" and is_supported_reader_url(url) then
+      table.insert(candidates, { url = url, start_index = start_index, end_index = end_index })
+    end
+  end
+  local function overlaps_existing(start_index, end_index)
+    for _, link_range in ipairs(link_ranges) do
+      if start_index <= link_range.end_index and end_index >= link_range.start_index then
+        return true
+      end
+    end
+    return false
+  end
+
   local index = 1
   while index <= #line do
     local label_start = line:find("%[", index)
@@ -427,9 +459,7 @@ local function reader_url_at_line(line, column)
       if cursor <= #line then
         local link_end = cursor
         local url = unescape_markdown(line:sub(url_start, cursor - 1))
-        if url:match("^https?://") and column >= label_start and column <= link_end then
-          return url
-        end
+        add_candidate(url, label_start, link_end)
         index = link_end + 1
       else
         index = label_start + 1
@@ -445,8 +475,20 @@ local function reader_url_at_line(line, column)
     if start_index == nil then
       break
     end
-    if column >= start_index and column <= end_index then
-      return url
+    if not overlaps_existing(start_index, end_index) then
+      add_candidate(url, start_index, end_index)
+    end
+    search_start = end_index + 1
+  end
+
+  search_start = 1
+  while true do
+    local start_index, end_index, url = line:find("<(file://[^>%s]+)>", search_start)
+    if start_index == nil then
+      break
+    end
+    if not overlaps_existing(start_index, end_index) then
+      add_candidate(url, start_index, end_index)
     end
     search_start = end_index + 1
   end
@@ -455,13 +497,82 @@ local function reader_url_at_line(line, column)
   while true do
     local start_index, end_index, url = line:find("(https?://[^%s%)>%]]+)", search_start)
     if start_index == nil then
-      return nil
+      break
     end
-    if column >= start_index and column <= end_index then
-      return url
+    if not overlaps_existing(start_index, end_index) then
+      add_candidate(url, start_index, end_index)
     end
     search_start = end_index + 1
   end
+
+  search_start = 1
+  while true do
+    local start_index, end_index, url = line:find("(file://[^%s%)>%]]+)", search_start)
+    if start_index == nil then
+      break
+    end
+    if not overlaps_existing(start_index, end_index) then
+      add_candidate(url, start_index, end_index)
+    end
+    search_start = end_index + 1
+  end
+
+  for _, candidate in ipairs(candidates) do
+    if column >= candidate.start_index and column <= candidate.end_index then
+      return candidate.url
+    end
+  end
+  if #candidates == 1 then
+    if #link_ranges == 1 then
+      return candidates[1].url
+    end
+  end
+  return nil
+end
+
+local function has_url_scheme(value)
+  return type(value) == "string" and value:match("^%a[%w+.-]*:") ~= nil
+end
+
+local function reader_resolve_url(target, base)
+  if target == nil or target == "" then
+    return nil
+  end
+  if has_url_scheme(target) then
+    return target
+  end
+  if base == nil or base == "" or not has_url_scheme(base) then
+    return nil
+  end
+  if target:sub(1, 1) == "#" then
+    return (base:gsub("#.*$", "")) .. target
+  end
+  if target:sub(1, 1) == "?" then
+    return (base:gsub("[?#].*$", "")) .. target
+  end
+  local scheme, authority, path_prefix = base:match("^(https?://)([^/#?]+)([^#?]*)")
+  if scheme ~= nil then
+    if target:sub(1, 1) == "/" then
+      return scheme .. authority .. target
+    end
+    local directory = path_prefix:gsub("[^/]*$", "")
+    if directory == "" then
+      directory = "/"
+    end
+    return scheme .. authority .. directory .. target
+  end
+  local file_path = base:match("^file://([^#?]*)")
+  if file_path == nil then
+    return nil
+  end
+  if target:sub(1, 1) == "/" then
+    return "file://" .. target
+  end
+  local directory = file_path:gsub("[^/]*$", "")
+  if directory == "" then
+    directory = "/"
+  end
+  return "file://" .. directory .. target
 end
 
 local function warn_reader_follow(message)
@@ -481,6 +592,7 @@ local function delete_reader_buffer()
     vim.api.nvim_buf_delete(state.reader_bufnr, { force = true })
   end
   state.reader_bufnr = nil
+  state.reader_base_url = nil
 end
 
 local function apply_reader_snapshot(snapshot)
@@ -497,6 +609,7 @@ local function apply_reader_snapshot(snapshot)
   if snapshot.url ~= nil and snapshot.url ~= "" then
     table.insert(lines, "<" .. snapshot.url .. ">")
     table.insert(lines, "")
+    state.reader_base_url = snapshot.url
   end
   vim.list_extend(lines, vim.split(snapshot.text or "", "\n", { plain = true }))
   if snapshot.truncated == true then
@@ -1550,7 +1663,8 @@ function M.reader_follow()
 
   local cursor = vim.api.nvim_win_get_cursor(0)
   local line = vim.api.nvim_buf_get_lines(state.reader_bufnr, cursor[1] - 1, cursor[1], false)[1]
-  local url = reader_url_at_line(line, cursor[2] + 1)
+  local target = reader_url_at_line(line, cursor[2] + 1)
+  local url = reader_resolve_url(target, state.reader_base_url or state.current_url or state.last_target)
   if url == nil then
     warn_reader_follow("nvim-browser: no reader link under cursor")
     return false
