@@ -303,6 +303,8 @@ match through the browser's native find behavior, and captures a fresh frame.
 
 `:NBrowserInput {text}` types text into the currently focused browser element.
 `:NBrowserInputMode` prompts once for text and sends it to the focused element.
+`:NBrowserPaste [register]` sends the contents of a Neovim register to the
+focused browser element, defaulting to the unnamed register.
 `:NBrowserTextMode` enters an interactive browser text mode for the focused
 preview: printable keys are sent as text, `<CR>`, `<Tab>`, `<S-Tab>`, `<BS>`,
 Delete, and arrow keys are forwarded as browser keys, and `<Esc>` exits the text
@@ -346,7 +348,8 @@ Focused preview buffers also install buffer-local browser controls by default:
 `r` reload, `H` back, `L` forward, `j`/`k` scroll, `<PageDown>/<PageUp>` scroll
 by 90% of the browser viewport, `a` address, `/` find, `f` hint mode, `t` type
 into a hinted field, `s` type and submit, `i` type into the focused element with
-browser text mode, `<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
+browser text mode, `p` paste the selected register into the focused element,
+`<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
 Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` Meta-L
 focus location, arrow keys, `gc` click the browser viewport at the cursor, `gh`
 hover the browser viewport at the cursor, `<Esc>` stop a pending load, left

@@ -65,6 +65,7 @@ M.options = {
       type_hint_mode = "t",
       submit_hint_mode = "s",
       input_text_mode = "i",
+      paste_register = "p",
       key_enter = "<CR>",
       key_tab = "<Tab>",
       key_shift_tab = "<S-Tab>",

@@ -217,6 +217,15 @@ function M.register(browser, opts)
     nargs = "+",
   })
 
+  vim.api.nvim_create_user_command("NBrowserPaste", function(opts)
+    local register = opts.args ~= "" and opts.args or nil
+    if not browser.paste_register(register) then
+      warn_focused_input_unavailable()
+    end
+  end, {
+    nargs = "?",
+  })
+
   vim.api.nvim_create_user_command("NBrowserInputMode", function()
     local text = input("nvim-browser text: ")
     if text == nil or text == "" then

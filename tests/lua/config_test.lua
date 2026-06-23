@@ -60,6 +60,7 @@ assert(configured.viewport.cell_width_px == 10, "viewport cell width should defa
 assert(configured.viewport.cell_height_px == 20, "viewport cell height should default to the existing 20px geometry")
 assert(configured.preview_keymaps.mappings.stop == "<Esc>", "preview-local keymaps should include a stop mapping")
 assert(configured.preview_keymaps.mappings.input_text_mode == "i", "preview-local keymaps should include focused input mode")
+assert(configured.preview_keymaps.mappings.paste_register == "p", "preview-local keymaps should include register paste")
 assert(configured.preview_keymaps.mappings.key_enter == "<CR>", "preview-local keymaps should include Enter forwarding")
 assert(configured.preview_keymaps.mappings.key_tab == "<Tab>", "preview-local keymaps should include Tab forwarding")
 assert(configured.preview_keymaps.mappings.key_shift_tab == "<S-Tab>", "preview-local keymaps should include Shift-Tab forwarding")
@@ -131,6 +132,10 @@ assert(
 assert(
   remapped.preview_keymaps.mappings.input_text_mode == "i",
   "preview-local partial remaps should retain focused input mode"
+)
+assert(
+  remapped.preview_keymaps.mappings.paste_register == "p",
+  "preview-local partial remaps should retain register paste"
 )
 assert(
   remapped.preview_keymaps.mappings.key_enter == "<CR>",

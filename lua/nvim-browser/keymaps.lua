@@ -236,6 +236,10 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.input_text_mode(input)
   end, "nvim-browser: browser text mode", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "paste_register", "p"), function()
+    browser.paste_register(vim.v.register)
+  end, "nvim-browser: paste register", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "key_enter", "<CR>"), function()
     browser.press_key("Enter")
   end, "nvim-browser: press Enter", buffer_opts)

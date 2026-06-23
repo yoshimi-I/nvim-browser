@@ -17,6 +17,7 @@ assert(type(browser.type_here) == "function", "type_here API should exist")
 assert(type(browser.type_hint) == "function", "type_hint API should exist")
 assert(type(browser.type_hint_mode) == "function", "type_hint_mode API should exist")
 assert(type(browser.input_text_mode) == "function", "focused input text mode API should exist")
+assert(type(browser.paste_register) == "function", "register paste API should exist")
 assert(type(browser.start_text_mode) == "function", "interactive browser text mode API should exist")
 assert(type(browser.address) == "function", "address API should exist")
 assert(type(browser.resolve_address_target) == "function", "address target resolver should exist")
@@ -264,6 +265,30 @@ assert(focused_input == "focused text", "input_text_mode should pass prompted te
 assert(browser.input_text_mode(function()
   return ""
 end) == false, "input_text_mode should cancel on empty text")
+
+local unnamed_register = vim.fn.getreg('"')
+local plus_register = vim.fn.getreg("+")
+vim.fn.setreg('"', "hello from unnamed\nregister")
+vim.fn.setreg("+", "hello from clipboard")
+
+focused_input = nil
+assert(browser.paste_register() == true, "paste_register should paste the unnamed register by default")
+assert(focused_input == "hello from unnamed\nregister", "paste_register should pass unnamed register text to terminal")
+
+focused_input = nil
+assert(browser.paste_register("+") == true, "paste_register should paste an explicit register")
+assert(focused_input == "hello from clipboard", "paste_register should pass explicit register text to terminal")
+
+focused_input = nil
+vim.fn.setreg("a", "should not paste")
+assert(browser.paste_register("ab") == false, "paste_register should reject multi-character register names")
+assert(focused_input == nil, "invalid register names should not be passed to terminal")
+
+vim.fn.setreg('"', "")
+assert(browser.paste_register() == false, "paste_register should reject empty register contents")
+
+vim.fn.setreg('"', unnamed_register)
+vim.fn.setreg("+", plus_register)
 
 local text_mode_opts = nil
 terminal.start_text_mode = function(opts)

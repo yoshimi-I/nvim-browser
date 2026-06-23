@@ -154,6 +154,18 @@ function M.input_text(text)
   return terminal.input_text(text)
 end
 
+function M.paste_register(register)
+  register = register or '"'
+  if type(register) ~= "string" or #register ~= 1 then
+    return false
+  end
+  local ok, text = pcall(vim.fn.getreg, register)
+  if not ok or text == nil or text == "" then
+    return false
+  end
+  return M.input_text(text)
+end
+
 function M.input_text_mode(input)
   input = input or vim.fn.input
   local text = input("nvim-browser text: ")
