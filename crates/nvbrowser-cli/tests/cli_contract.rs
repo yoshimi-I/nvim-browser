@@ -275,26 +275,22 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         .iter()
         .find(|hint| hint["kind"] == "input" && hint["label"] == "Search")
         .expect("real Chromium hints should include the labeled input");
-    let input_x = input_hint["x"]
-        .as_f64()
-        .expect("input hint should include x");
-    let input_y = input_hint["y"]
-        .as_f64()
-        .expect("input hint should include y");
+    let input_hint_id = input_hint["id"]
+        .as_u64()
+        .expect("input hint should include id");
 
     let typed = serve.request(serde_json::json!({
         "id": 1,
-        "type": "type_point",
-        "x": input_x,
-        "y": input_y,
+        "type": "type_hint",
+        "hint_id": input_hint_id,
         "text": "hello from jsonl",
         "submit": false
     }));
     assert_eq!(
         typed["id"], 1,
-        "type_point response should preserve request id"
+        "type_hint response should preserve request id"
     );
-    assert_eq!(typed["status"], "ok", "type_point should succeed");
+    assert_eq!(typed["status"], "ok", "type_hint should succeed");
 
     let page_text = serve.request(serde_json::json!({ "id": 2, "type": "page_text" }));
     assert_eq!(page_text["status"], "ok", "page_text should succeed");

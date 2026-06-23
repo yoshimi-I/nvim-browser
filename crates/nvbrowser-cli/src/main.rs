@@ -12,11 +12,11 @@ use nvbrowser_core::{
     render_markdown_document_with_base_url,
     renderer::chromium::{render_url_png, ChromiumOptions},
     BrowserSession, ChromiumRenderer, ClickPointRequest, ElementHint, ElementHintsRequest,
-    FindTextRequest, FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest,
-    HoverPointRequest, KeyPressRequest, KittyImageDelete, KittyImageTransfer, NavigateRequest,
-    PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
-    RenderFrameRequest, RenderedFrame, Renderer, ScrollRequest, SessionId, TextInputRequest,
-    Viewport,
+    FindTextRequest, FocusHintRequest, FocusSelectorRequest, FrameArtifact,
+    HistoryNavigationRequest, HoverPointRequest, KeyPressRequest, KittyImageDelete,
+    KittyImageTransfer, NavigateRequest, PageMetrics, PageMetricsRequest, PageTextRequest,
+    PageTextSnapshot, ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer, ScrollRequest,
+    SessionId, TextInputRequest, Viewport,
 };
 use serde::{Deserialize, Serialize};
 
@@ -310,6 +310,12 @@ enum ServeRequest {
         id: u64,
         x: f64,
         y: f64,
+        text: String,
+        submit: bool,
+    },
+    TypeHint {
+        id: u64,
+        hint_id: u32,
         text: String,
         submit: bool,
     },
@@ -616,7 +622,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 1,
+            protocol_version: 2,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -777,6 +783,34 @@ impl<R: Renderer> ServeRuntime<R> {
                 }
                 self.capture_payload().map(Some)
             }
+            ServeRequest::TypeHint {
+                hint_id,
+                text,
+                submit,
+                ..
+            } => {
+                self.renderer.focus_hint(FocusHintRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    hint_id,
+                ))?;
+                self.settle_after_interaction()?;
+                self.renderer.input_text(TextInputRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    text,
+                ))?;
+                self.settle_after_interaction()?;
+                if submit {
+                    self.renderer.press_key(KeyPressRequest::new(
+                        self.session.id(),
+                        self.session.active_page_id(),
+                        "Enter",
+                    ))?;
+                    self.settle_after_interaction()?;
+                }
+                self.capture_payload().map(Some)
+            }
             ServeRequest::FindText { query, .. } => {
                 let result = self.renderer.find_text(FindTextRequest::new(
                     self.session.id(),
@@ -869,6 +903,7 @@ impl ServeRequest {
             | ServeRequest::ClickPoint { id, .. }
             | ServeRequest::HoverPoint { id, .. }
             | ServeRequest::TypePoint { id, .. }
+            | ServeRequest::TypeHint { id, .. }
             | ServeRequest::FindText { id, .. }
             | ServeRequest::PageText { id }
             | ServeRequest::Resize { id, .. }
@@ -1313,10 +1348,12 @@ mod tests {
         text_inputs: Vec<String>,
         key_presses: Vec<String>,
         focused_selectors: Vec<String>,
+        focused_hints: Vec<u32>,
         clicked_points: Vec<(f64, f64)>,
         hovered_points: Vec<(f64, f64)>,
         find_queries: Vec<String>,
         fail_click: bool,
+        fail_focus_hint: bool,
         operations: Vec<&'static str>,
         history: Vec<String>,
         history_index: Option<usize>,
@@ -1338,10 +1375,12 @@ mod tests {
                 text_inputs: Vec::new(),
                 key_presses: Vec::new(),
                 focused_selectors: Vec::new(),
+                focused_hints: Vec::new(),
                 clicked_points: Vec::new(),
                 hovered_points: Vec::new(),
                 find_queries: Vec::new(),
                 fail_click: false,
+                fail_focus_hint: false,
                 operations: Vec::new(),
                 history: Vec::new(),
                 history_index: None,
@@ -1533,6 +1572,21 @@ mod tests {
         ) -> Result<InputResult, RendererError> {
             self.operations.push("focus_selector");
             self.focused_selectors.push(request.selector);
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn focus_hint(&mut self, request: FocusHintRequest) -> Result<InputResult, RendererError> {
+            self.operations.push("focus_hint");
+            self.focused_hints.push(request.hint_id);
+            if self.fail_focus_hint {
+                return Err(RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "hint focus failed",
+                ));
+            }
             Ok(InputResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
@@ -1905,6 +1959,18 @@ mod tests {
                 submit: true,
             }
         );
+        assert_eq!(
+            parse_serve_request(
+                r##"{"type":"type_hint","id":8,"hint_id":2,"text":"hello \"world\"","submit":true}"##
+            )
+            .expect("type hint request should parse"),
+            ServeRequest::TypeHint {
+                id: 8,
+                hint_id: 2,
+                text: "hello \"world\"".to_string(),
+                submit: true,
+            }
+        );
     }
 
     #[test]
@@ -2065,7 +2131,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 1,
+                protocol_version: 2,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -2091,7 +2157,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":1,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":2,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -2117,7 +2183,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 1);
+        assert_eq!(runtime_info.protocol_version, 2);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -3081,6 +3147,95 @@ mod tests {
         assert_eq!(
             runtime.renderer.operations,
             vec!["capture", "hints", "click_point"]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_types_at_hint_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::TypeHint {
+            id: 2,
+            hint_id: 2,
+            text: "hello".to_string(),
+            submit: true,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(runtime.renderer.focused_hints, vec![2]);
+        assert!(runtime.renderer.clicked_points.is_empty());
+        assert_eq!(runtime.renderer.text_inputs, vec!["hello"]);
+        assert_eq!(runtime.renderer.key_presses, vec!["Enter"]);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "focus_hint",
+                "settle",
+                "text_input",
+                "settle",
+                "key_press",
+                "settle",
+                "capture",
+                "hints"
+            ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_does_not_type_at_hint_when_focus_fails() {
+        let mut renderer = FakeRenderer::new();
+        renderer.fail_focus_hint = true;
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::TypeHint {
+            id: 2,
+            hint_id: 404,
+            text: "hello".to_string(),
+            submit: true,
+        });
+
+        assert_eq!(response.status, ServeStatus::Error);
+        assert!(response.payload.is_none());
+        assert_eq!(runtime.renderer.focused_hints, vec![404]);
+        assert!(runtime.renderer.clicked_points.is_empty());
+        assert!(runtime.renderer.text_inputs.is_empty());
+        assert!(runtime.renderer.key_presses.is_empty());
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["capture", "hints", "focus_hint"]
         );
     }
 

@@ -259,9 +259,9 @@ session on the navigated URL; non-link hints fall back to a coordinate click.
 default `f` mapping enters a transient hint mode instead: type the visible hint
 label directly, use additional keys for multi-character labels such as `aa`, or
 press `<Esc>` to cancel.
-`:NBrowserTypeHint {id-or-label} {text}` clicks a hinted element and types text
-into it. `:NBrowserSubmitHint {id-or-label} {text}` also presses Enter after the
-text is queued.
+`:NBrowserTypeHint {id-or-label} {text}` focuses the backend hint id and types
+text into it without relying on viewport coordinates. `:NBrowserSubmitHint
+{id-or-label} {text}` also presses Enter after the text is queued.
 
 `:NBrowserTypeHintMode` prompts for a hint label and text, then types into the
 hinted element. `:NBrowserSubmitHintMode` does the same and presses Enter after

@@ -17,11 +17,12 @@ use serde::{Deserialize, Serialize};
 use crate::{
     renderer::{
         ClickPointRequest, ElementHint, ElementHintsRequest, FindTextRequest, FindTextResult,
-        FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest, HistoryNavigationResult,
-        HoverPointRequest, InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest,
-        NavigationResult, PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot,
-        ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
-        RendererErrorKind, ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
+        FocusHintRequest, FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest,
+        HistoryNavigationResult, HoverPointRequest, InputResult, InteractionSettleResult,
+        KeyPressRequest, NavigateRequest, NavigationResult, PageMetrics, PageMetricsRequest,
+        PageTextRequest, PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest,
+        RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest, ScrollResult,
+        ShutdownResult, TextInputRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -293,6 +294,28 @@ impl Renderer for ChromiumRenderer {
             .find_element(&request.selector)
             .map_err(render_error)?;
         element.focus().map_err(render_error)?;
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn focus_hint(&mut self, request: FocusHintRequest) -> Result<InputResult, RendererError> {
+        let hint_id = serde_json::to_string(&request.hint_id).map_err(render_error)?;
+        let script = FOCUS_HINT_SCRIPT.replace("__HINT_ID__", &hint_id);
+        let focused = self
+            .tab
+            .evaluate(&script, true)
+            .map_err(render_error)?
+            .value
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        if !focused {
+            return Err(RendererError::new(
+                RendererErrorKind::InvalidState,
+                "hint id was not found or is stale",
+            ));
+        }
         Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
@@ -611,7 +634,7 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
     const top = document.elementFromPoint(x, y);
     return top === element || (top !== null && element.contains(top));
   };
-  const hints = Array.from(document.querySelectorAll(selectors))
+  const candidates = Array.from(document.querySelectorAll(selectors))
     .filter((element) => !isDisabled(element))
     .filter(isVisible)
     .map((element) => ({ element, rect: element.getBoundingClientRect() }))
@@ -626,10 +649,33 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
     })
     .filter(({ element, x, y }) => isTopmostAt(element, x, y))
     .sort((a, b) => (a.rect.top - b.rect.top) || (a.rect.left - b.rect.left))
-    .slice(0, 80)
-    .map(({ element, left, top, right, bottom, x, y }, index) => {
+    .slice(0, 80);
+  const registry = (() => {
+    const existing = window.__nvbrowserHintRegistry;
+    if (existing && existing.elements instanceof Map && Number.isFinite(existing.nextId)) {
+      return existing;
+    }
+    const created = { nextId: 1, elements: new Map() };
+    window.__nvbrowserHintRegistry = created;
+    return created;
+  })();
+  for (const [id, element] of registry.elements) {
+    if (!element || !element.isConnected) {
+      registry.elements.delete(id);
+    }
+  }
+  const idFor = (element) => {
+    for (const [id, existing] of registry.elements) {
+      if (existing === element) return id;
+    }
+    const id = registry.nextId++;
+    registry.elements.set(id, element);
+    return id;
+  };
+  const hints = candidates.map(({ element, left, top, right, bottom, x, y }) => {
+      const id = idFor(element);
       return {
-        id: index + 1,
+        id,
         kind: kindFor(element),
         label: labelFor(element),
         href: hrefFor(element),
@@ -642,6 +688,25 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
       };
     });
   return JSON.stringify(hints);
+})()
+"#;
+
+const FOCUS_HINT_SCRIPT: &str = r#"
+(() => {
+  const hintId = __HINT_ID__;
+  const registry = window.__nvbrowserHintRegistry;
+  const element = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  if (!element || !element.isConnected) return false;
+  if (typeof element.scrollIntoView === 'function') {
+    element.scrollIntoView({ block: 'center', inline: 'center' });
+  }
+  if (typeof element.focus === 'function') {
+    element.focus();
+  }
+  if (document.activeElement !== element && typeof element.click === 'function') {
+    element.click();
+  }
+  return document.activeElement === element || element.contains(document.activeElement);
 })()
 "#;
 
@@ -1098,6 +1163,16 @@ mod tests {
         assert!(error
             .message()
             .contains("set NVBROWSER_CDP_WS_URL or NVBROWSER_CHROME"));
+    }
+
+    #[test]
+    fn hint_scripts_use_opaque_registry_ids_instead_of_capture_local_indexes() {
+        assert!(ELEMENT_HINTS_SCRIPT.contains("__nvbrowserHintRegistry"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("registry.elements.set(id, element)"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("id,"));
+        assert!(FOCUS_HINT_SCRIPT.contains("__nvbrowserHintRegistry"));
+        assert!(FOCUS_HINT_SCRIPT.contains("registry.elements.get(hintId)"));
+        assert!(!FOCUS_HINT_SCRIPT.contains("[hintId - 1]"));
     }
 
     #[test]

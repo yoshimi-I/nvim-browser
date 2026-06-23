@@ -710,6 +710,7 @@ local function stop_existing_job(force)
 end
 
 local clear_in_flight_capture
+local cancel_in_flight_capture
 
 local function request_resize()
   if state.mode ~= "serve" or not is_valid_window() then
@@ -723,10 +724,7 @@ local function request_resize()
   if geometry == nil then
     return false
   end
-  if state.live_refresh_request_id ~= nil then
-    state.canceled_request_ids[state.live_refresh_request_id] = true
-    clear_in_flight_capture()
-  end
+  cancel_in_flight_capture()
   return send_serve_request({
     type = "resize",
     columns = geometry.columns,
@@ -754,6 +752,13 @@ clear_in_flight_capture = function()
     state.response_handlers[state.live_refresh_request_id] = nil
   end
   state.live_refresh_request_id = nil
+end
+
+cancel_in_flight_capture = function()
+  if state.live_refresh_request_id ~= nil then
+    state.canceled_request_ids[state.live_refresh_request_id] = true
+  end
+  clear_in_flight_capture()
 end
 
 stop_live_refresh = function()
@@ -810,10 +815,7 @@ end
 send_capture_request = function(opts)
   opts = opts or {}
   if opts.force == true then
-    if state.live_refresh_request_id ~= nil then
-      state.canceled_request_ids[state.live_refresh_request_id] = true
-    end
-    clear_in_flight_capture()
+    cancel_in_flight_capture()
   end
   if state.live_refresh_request_id ~= nil then
     return false
@@ -1969,18 +1971,15 @@ function M.type_hint(id, text, opts)
   if hint == nil then
     return false
   end
-  request_resize()
   local request = {
-    type = "type_point",
-    x = hint.x,
-    y = hint.y,
+    type = "type_hint",
+    hint_id = hint.id,
     text = text,
     submit = opts.submit == true,
   }
-  if opts.submit == true then
-    return send_pending_request(request, state.current_url or state.last_target or "submit")
-  end
-  return send_serve_request(request)
+  local label = opts.submit == true and "submit" or "typing"
+  cancel_in_flight_capture()
+  return send_pending_request(request, state.current_url or state.last_target or label, label)
 end
 
 function M.toggle()

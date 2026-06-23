@@ -8,12 +8,12 @@ pub use markdown::{render_markdown_document, render_markdown_document_with_base_
 pub use renderer::chromium::ChromiumRenderer;
 pub use renderer::{
     ClickPointRequest, ElementHint, ElementHintKind, ElementHintsRequest, FindTextRequest,
-    FindTextResult, FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest,
-    HistoryNavigationResult, HoverPointRequest, InputResult, InteractionSettleResult,
-    KeyPressRequest, NavigateRequest, NavigationResult, PageMetrics, PageMetricsRequest,
-    PageTextRequest, PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest,
-    RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest, ScrollResult,
-    ShutdownResult, TextInputRequest,
+    FindTextResult, FocusHintRequest, FocusSelectorRequest, FrameArtifact,
+    HistoryNavigationRequest, HistoryNavigationResult, HoverPointRequest, InputResult,
+    InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult, PageMetrics,
+    PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest, ReloadResult,
+    RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest,
+    ScrollResult, ShutdownResult, TextInputRequest,
 };
 pub use session::{
     BrowserSession, FrameId, FrameMetadata, LoadingState, PageId, PageState, SessionId, Viewport,

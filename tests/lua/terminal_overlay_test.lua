@@ -173,7 +173,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   url = "https://example.com/long",
   runtime = {
-    protocol_version = 1,
+    protocol_version = 2,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -195,7 +195,7 @@ assert(page_metrics.scroll_y == 250, "stored page metrics should preserve scroll
 assert(page_metrics.document_height == 1600, "stored page metrics should preserve document size")
 local runtime_info = terminal.state().runtime_metadata
 assert(runtime_info ~= nil, "serve responses should store runtime metadata")
-assert(runtime_info.protocol_version == 1, "runtime metadata should preserve protocol version")
+assert(runtime_info.protocol_version == 2, "runtime metadata should preserve protocol version")
 assert(runtime_info.output == "kitty-unicode", "runtime metadata should preserve output mode")
 assert(runtime_info.cells.columns == 80, "runtime metadata should preserve preview columns")
 assert(runtime_info.viewport.width == 800, "runtime metadata should preserve viewport width")
@@ -1092,6 +1092,116 @@ assert(fallback_click_seen, "non-link follow fallback should send a coordinate c
 
 sent_requests = {}
 serve_stdout(nil, { hints_response, "" })
+assert(vim.wait(1000, function()
+  return #terminal.state().element_hints == 2
+end), "serve hint response should repopulate element hints before typed input")
+assert(terminal.type_hint("s", "hello", { submit = true }) == true, "type_hint should type into the hinted element")
+local type_hint_seen = false
+local type_point_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "type_hint" and decoded.hint_id == 2 and decoded.text == "hello" and decoded.submit == true then
+    type_hint_seen = true
+  end
+  if ok and decoded.type == "type_point" then
+    type_point_seen = true
+  end
+end
+assert(type_hint_seen, "type_hint should send the backend hint id rather than viewport coordinates")
+assert(not type_point_seen, "type_hint should avoid coordinate-based type_point requests")
+local type_hint_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(type_hint_pending_id ~= nil, "submitting a hinted input should mark the operation as pending")
+serve_stdout(nil, { vim.json.encode({
+  id = type_hint_pending_id,
+  status = "ok",
+  payload = "typed hint frame",
+  url = "https://example.com",
+  title = "Example",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil
+end), "type_hint response should clear pending state before later hint captures")
+
+sent_requests = {}
+local live_hint_response = vim.json.decode(hints_response)
+live_hint_response.id = type_hint_pending_id + 1
+serve_stdout(nil, { vim.json.encode(live_hint_response), "" })
+assert(vim.wait(1000, function()
+  return #terminal.state().element_hints == 2
+end), "serve hint response should repopulate element hints before live-refresh-safe typed input")
+assert(terminal.refresh() == true, "manual refresh should create an in-flight capture before hinted typing")
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id ~= nil
+end), "refresh capture should be in flight before hinted typing")
+local stale_live_before_type_hint_id = terminal.state().live_refresh_request_id
+sent_requests = {}
+assert(terminal.type_hint("s", "live-safe", { submit = false }) == true, "type_hint should work while live refresh is in flight")
+assert(
+  terminal.state().live_refresh_request_id == nil,
+  "type_hint should cancel in-flight refresh before using backend hint ids"
+)
+serve_stdout(nil, { vim.json.encode({
+  id = stale_live_before_type_hint_id,
+  status = "ok",
+  payload = "stale live frame",
+  url = "https://example.com/stale-live",
+  title = "Stale Live",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title ~= "Stale Live"
+end), "canceled refresh responses should not update metadata after type_hint starts")
+local live_safe_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(live_safe_pending_id ~= nil, "live-refresh-safe type_hint should leave the type operation pending")
+serve_stdout(nil, { vim.json.encode({
+  id = live_safe_pending_id,
+  status = "ok",
+  payload = "live-safe typed frame",
+  url = "https://example.com",
+  title = "Example",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil
+end), "live-refresh-safe type_hint response should clear pending state")
+
+sent_requests = {}
+local draft_hints_response = vim.json.decode(hints_response)
+draft_hints_response.id = live_safe_pending_id + 1
+serve_stdout(nil, { vim.json.encode(draft_hints_response), "" })
+assert(vim.wait(1000, function()
+  return #terminal.state().element_hints == 2
+end), "serve hint response should repopulate element hints before non-submit typed input")
+assert(terminal.type_hint("s", "draft", { submit = false }) == true, "non-submit type_hint should type into the hinted element")
+local draft_type_hint_seen = false
+local draft_type_point_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "type_hint" and decoded.hint_id == 2 and decoded.text == "draft" and decoded.submit == false then
+    draft_type_hint_seen = true
+  end
+  if ok and decoded.type == "type_point" then
+    draft_type_point_seen = true
+  end
+end
+assert(draft_type_hint_seen, "non-submit type_hint should send the backend hint id")
+assert(not draft_type_point_seen, "non-submit type_hint should avoid coordinate-based type_point requests")
+local draft_type_hint_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(draft_type_hint_pending_id ~= nil, "non-submit type_hint should mark the operation as pending")
+assert(#terminal.state().element_hints == 0, "non-submit type_hint should clear stale hints while a capture is pending")
+serve_stdout(nil, { vim.json.encode({
+  id = draft_type_hint_pending_id,
+  status = "ok",
+  payload = "draft typed frame",
+  url = "https://example.com",
+  title = "Example",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil
+end), "non-submit type_hint response should clear pending state")
+
+sent_requests = {}
+local hover_hints_response = vim.json.decode(hints_response)
+hover_hints_response.id = draft_type_hint_pending_id + 1
+serve_stdout(nil, { vim.json.encode(hover_hints_response), "" })
 assert(vim.wait(1000, function()
   return #terminal.state().element_hints == 2
 end), "serve hint response should repopulate element hints before hover")

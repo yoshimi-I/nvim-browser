@@ -201,13 +201,14 @@ COMMANDS                                           *nvim-browser-commands*
 
 							*:NBrowserTypeHint*
 :NBrowserTypeHint {id-or-label} {text}
-	Click a browser hint, type text into the focused element, and capture fresh
-	frames through the active browser session.
+	Focus a browser hint by backend hint id, type text into it, and capture
+	fresh frames through the active browser session. This avoids viewport
+	coordinate drift for hinted form input.
 
 							*:NBrowserSubmitHint*
 :NBrowserSubmitHint {id-or-label} {text}
-	Click a browser hint, type text, press Enter, and capture fresh frames
-	through the active browser session.
+	Focus a browser hint by backend hint id, type text, press Enter, and
+	capture fresh frames through the active browser session.
 
 							*:NBrowserTypeHintMode*
 :NBrowserTypeHintMode
