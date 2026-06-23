@@ -221,6 +221,17 @@ COMMANDS                                           *nvim-browser-commands*
 	Focus a browser hint by backend hint id, type text, press Enter, and
 	capture fresh frames through the active browser session.
 
+							*:NBrowserTypeHere*
+:NBrowserTypeHere {text}
+	Map the preview cursor to viewport pixels, click/focus that browser point,
+	type text there, and capture a fresh frame. This requires an ANSI or Kitty
+	Unicode browser preview. The preview footer row is ignored.
+
+							*:NBrowserSubmitHere*
+:NBrowserSubmitHere {text}
+	Map the preview cursor to viewport pixels, click/focus that browser point,
+	type text there, press Enter, and capture a fresh frame.
+
 							*:NBrowserTypeHintMode*
 :NBrowserTypeHintMode
 	Prompt for a browser hint label and text, type into the matching element,

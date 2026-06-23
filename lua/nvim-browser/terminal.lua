@@ -1846,6 +1846,23 @@ function M.hover_point(x, y)
   }, state.current_url or state.last_target or "hover", "hover")
 end
 
+function M.type_point(x, y, text, opts)
+  x = tonumber(x)
+  y = tonumber(y)
+  if x == nil or y == nil or text == nil or text == "" then
+    return false
+  end
+  opts = opts or {}
+  request_resize()
+  return send_pending_request({
+    type = "type_point",
+    x = x,
+    y = y,
+    text = text,
+    submit = opts.submit == true,
+  }, state.current_url or state.last_target or "type", "type")
+end
+
 function M.find_text(query)
   if query == nil or query == "" then
     return false
@@ -1918,6 +1935,26 @@ function M.hover_here()
   end)
   local point = M.viewport_point_for_cell(cursor[1], column, geometry)
   return M.hover_point(point.x, point.y)
+end
+
+function M.type_here(text, opts)
+  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+    return false
+  end
+  if text == nil or text == "" then
+    return false
+  end
+
+  local cursor = vim.api.nvim_win_get_cursor(state.winid)
+  local geometry = current_preview_geometry()
+  if cursor[1] > geometry.rows then
+    return false
+  end
+  local column = vim.api.nvim_win_call(state.winid, function()
+    return vim.fn.virtcol(".")
+  end)
+  local point = M.viewport_point_for_cell(cursor[1], column, geometry)
+  return M.type_point(point.x, point.y, text, opts)
 end
 
 function M.click_mouse(mousepos)

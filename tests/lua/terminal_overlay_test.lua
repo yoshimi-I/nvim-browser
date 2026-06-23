@@ -570,6 +570,52 @@ end
 assert(cursor_hover_seen, "cursor hover should map preview cells to viewport pixels")
 
 footer_click_requests = {}
+vim.api.nvim_win_set_cursor(image_win, { 6, 24 })
+local expected_cursor_type_point = terminal.viewport_point_for_cell(6, vim.api.nvim_win_call(image_win, function()
+  return vim.fn.virtcol(".")
+end), { columns = 50, rows = 11, width = 450, height = 165 })
+assert(terminal.type_here("cursor text") == true, "cursor typing should send browser point text input")
+local cursor_type_seen = false
+local cursor_type_request_id = nil
+for _, request in ipairs(footer_click_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if
+    ok
+    and decoded.type == "type_point"
+    and decoded.x == expected_cursor_type_point.x
+    and decoded.y == expected_cursor_type_point.y
+    and decoded.text == "cursor text"
+    and decoded.submit == false
+  then
+    cursor_type_seen = true
+    cursor_type_request_id = decoded.id
+  end
+end
+assert(cursor_type_seen, "cursor typing should map preview cells to viewport pixels")
+assert(terminal.state().pending_operation ~= nil, "cursor typing should mark the browser input as pending")
+assert(terminal.state().pending_operation.label == "type", "cursor typing pending footer should use a type label")
+assert(#terminal.state().element_hints == 0, "cursor typing should clear stale hints while a capture is pending")
+terminal._test.apply_serve_response({
+  id = cursor_type_request_id,
+  status = "ok",
+  payload = "typed frame",
+  url = "https://example.com/typed",
+  title = "Typed",
+})
+assert(terminal.state().pending_operation == nil, "matching type response should clear pending type state")
+
+footer_click_requests = {}
+assert(terminal.type_here("search", { submit = true }) == true, "cursor submit should send browser point text input")
+local cursor_submit_seen = false
+for _, request in ipairs(footer_click_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "type_point" and decoded.text == "search" and decoded.submit == true then
+    cursor_submit_seen = true
+  end
+end
+assert(cursor_submit_seen, "cursor submit should mark type_point submit true")
+
+footer_click_requests = {}
 assert(terminal.click_mouse({ winid = image_win, line = 12, column = 25 }) == false, "mouse click on footer should be ignored")
 assert(#footer_click_requests == 0, "footer mouse clicks should not reach the serve backend")
 
@@ -580,6 +626,7 @@ assert(#footer_click_requests == 0, "wrong-window mouse clicks should not reach 
 vim.api.nvim_win_set_cursor(image_win, { 12, 0 })
 assert(terminal.click_here() == false, "clicking the footer row should not send a browser click")
 assert(terminal.hover_here() == false, "hovering the footer row should not send a browser hover")
+assert(terminal.type_here("footer text") == false, "typing on the footer row should not send browser input")
 assert(#footer_click_requests == 0, "footer clicks should not reach the serve backend")
 vim.fn.chansend = original_chansend_for_footer
 

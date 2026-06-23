@@ -12,6 +12,8 @@ local addressed = nil
 local found = nil
 local typed_hint = nil
 local submitted_hint = nil
+local typed_here = nil
+local submitted_here = nil
 local input_text = nil
 local pressed_key = nil
 local text_mode_called = false
@@ -78,6 +80,14 @@ local browser = {
       submitted_hint = label .. ":" .. text
     else
       typed_hint = label .. ":" .. text
+    end
+    return true
+  end,
+  type_here = function(text, opts)
+    if opts ~= nil and opts.submit then
+      submitted_here = text
+    else
+      typed_here = text
     end
     return true
   end,
@@ -237,6 +247,12 @@ assert(typed_hint == "s:hello world", "NBrowserTypeHint should pass the label an
 vim.cmd("NBrowserSubmitHint s hello world")
 assert(submitted_hint == "s:hello world", "NBrowserSubmitHint should request submit mode")
 
+vim.cmd("NBrowserTypeHere hello world")
+assert(typed_here == "hello world", "NBrowserTypeHere should type at the preview cursor")
+
+vim.cmd("NBrowserSubmitHere hello world")
+assert(submitted_here == "hello world", "NBrowserSubmitHere should type at the preview cursor and submit")
+
 typed_hint = nil
 local hint_prompts = {}
 local hint_responses = { "s", "hello world" }
@@ -318,6 +334,9 @@ local failed_browser = {
   type_hint = function()
     return false
   end,
+  type_here = function()
+    return false
+  end,
   stop = function()
     return false
   end,
@@ -351,6 +370,12 @@ assert(warnings[#warnings] == "nvim-browser: text mode requires an active cursor
 vim.cmd("NBrowserTypeHint s missing")
 assert(warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive", "NBrowserTypeHint should warn when type_hint fails")
 
+vim.cmd("NBrowserTypeHere missing")
+assert(warnings[#warnings] == "nvim-browser: cursor text input requires an active cursor-addressable browser preview", "NBrowserTypeHere should warn when cursor typing fails")
+
+vim.cmd("NBrowserSubmitHere missing")
+assert(warnings[#warnings] == "nvim-browser: cursor text input requires an active cursor-addressable browser preview", "NBrowserSubmitHere should warn when cursor submit fails")
+
 vim.cmd("NBrowserTypeHintMode")
 assert(
   warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive",
@@ -374,6 +399,18 @@ assert(#warnings == warning_count, "NBrowserFind should silently cancel on empty
 
 vim.cmd("NBrowserInputMode")
 assert(#warnings == warning_count, "NBrowserInputMode should silently cancel on empty input")
+
+vim.cmd("NBrowserTypeHere")
+assert(
+  warnings[#warnings] == "nvim-browser: cursor text input requires an active cursor-addressable browser preview",
+  "NBrowserTypeHere should warn on empty text instead of failing command parsing"
+)
+
+vim.cmd("NBrowserSubmitHere")
+assert(
+  warnings[#warnings] == "nvim-browser: cursor text input requires an active cursor-addressable browser preview",
+  "NBrowserSubmitHere should warn on empty text instead of failing command parsing"
+)
 
 local empty_browser = {
   hints = function()

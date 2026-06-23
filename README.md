@@ -207,6 +207,8 @@ Then run:
 :NBrowserFollowHint a
 :NBrowserTypeHint s hello world
 :NBrowserSubmitHint s hello world
+:NBrowserTypeHere hello world
+:NBrowserSubmitHere hello world
 :NBrowserTypeHintMode
 :NBrowserSubmitHintMode
 :NBrowserHintMode
@@ -265,6 +267,10 @@ press `<Esc>` to cancel.
 `:NBrowserTypeHint {id-or-label} {text}` focuses the backend hint id and types
 text into it without relying on viewport coordinates. `:NBrowserSubmitHint
 {id-or-label} {text}` also presses Enter after the text is queued.
+`:NBrowserTypeHere {text}` maps the preview cursor to browser viewport pixels,
+clicks/focuses that point, and types text there. `:NBrowserSubmitHere {text}`
+does the same and presses Enter after the text is queued. These commands require
+an ANSI or Kitty Unicode browser preview and ignore the preview footer row.
 
 `:NBrowserTypeHintMode` prompts for a hint label and text, then types into the
 hinted element. `:NBrowserSubmitHintMode` does the same and presses Enter after

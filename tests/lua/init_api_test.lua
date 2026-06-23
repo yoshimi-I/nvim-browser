@@ -12,6 +12,8 @@ assert(type(browser.transient_hint_mode) == "function", "transient_hint_mode API
 assert(type(browser.hover_point) == "function", "hover_point API should exist")
 assert(type(browser.hover_here) == "function", "hover_here API should exist")
 assert(type(browser.hover_hint) == "function", "hover_hint API should exist")
+assert(type(browser.type_point) == "function", "type_point API should exist")
+assert(type(browser.type_here) == "function", "type_here API should exist")
 assert(type(browser.type_hint) == "function", "type_hint API should exist")
 assert(type(browser.type_hint_mode) == "function", "type_hint_mode API should exist")
 assert(type(browser.input_text_mode) == "function", "focused input text mode API should exist")
@@ -51,6 +53,8 @@ local original_terminal_type_hint = terminal.type_hint
 local original_terminal_hover_point = terminal.hover_point
 local original_terminal_hover_here = terminal.hover_here
 local original_terminal_hover_hint = terminal.hover_hint
+local original_terminal_type_point = terminal.type_point
+local original_terminal_type_here = terminal.type_here
 local original_terminal_stop = terminal.stop
 local original_terminal_input_text = terminal.input_text
 local original_terminal_press_key = terminal.press_key
@@ -227,6 +231,26 @@ end
 assert(browser.hover_hint("m") == true, "hover_hint should delegate to terminal hint hover")
 assert(hovered_hint == "m", "hover_hint should pass hint label to terminal")
 
+local typed_point = nil
+terminal.type_point = function(x, y, text, opts)
+  typed_point = { x = x, y = y, text = text, submit = opts ~= nil and opts.submit == true }
+  return true
+end
+assert(browser.type_point(12.5, 24.25, "point text", { submit = true }) == true, "type_point should delegate to terminal point typing")
+assert(typed_point.x == 12.5, "type_point should pass x coordinate to terminal")
+assert(typed_point.y == 24.25, "type_point should pass y coordinate to terminal")
+assert(typed_point.text == "point text", "type_point should pass text to terminal")
+assert(typed_point.submit == true, "type_point should pass submit option to terminal")
+
+local typed_here = nil
+terminal.type_here = function(text, opts)
+  typed_here = { text = text, submit = opts ~= nil and opts.submit == true }
+  return "typed-here"
+end
+assert(browser.type_here("cursor text", { submit = true }) == "typed-here", "type_here should delegate to terminal cursor typing")
+assert(typed_here.text == "cursor text", "type_here should pass text to terminal")
+assert(typed_here.submit == true, "type_here should pass submit option to terminal")
+
 local focused_input = nil
 terminal.input_text = function(text)
   focused_input = text
@@ -344,6 +368,8 @@ terminal.type_hint = original_terminal_type_hint
 terminal.hover_point = original_terminal_hover_point
 terminal.hover_here = original_terminal_hover_here
 terminal.hover_hint = original_terminal_hover_hint
+terminal.type_point = original_terminal_type_point
+terminal.type_here = original_terminal_type_here
 terminal.stop = original_terminal_stop
 terminal.input_text = original_terminal_input_text
 terminal.press_key = original_terminal_press_key

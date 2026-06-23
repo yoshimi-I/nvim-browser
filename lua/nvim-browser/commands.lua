@@ -93,6 +93,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: text mode requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
   end
 
+  local function warn_cursor_text_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: cursor text input requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+  end
+
   local function follow_hint(label)
     if browser.follow_hint ~= nil then
       return browser.follow_hint(label)
@@ -357,6 +361,22 @@ function M.register(browser, opts)
     end
   end, {
     nargs = "+",
+  })
+
+  vim.api.nvim_create_user_command("NBrowserTypeHere", function(opts)
+    if opts.args == nil or opts.args == "" or not browser.type_here(opts.args) then
+      warn_cursor_text_unavailable()
+    end
+  end, {
+    nargs = "*",
+  })
+
+  vim.api.nvim_create_user_command("NBrowserSubmitHere", function(opts)
+    if opts.args == nil or opts.args == "" or not browser.type_here(opts.args, { submit = true }) then
+      warn_cursor_text_unavailable()
+    end
+  end, {
+    nargs = "*",
   })
 
   vim.api.nvim_create_user_command("NBrowserTypeHintMode", function()

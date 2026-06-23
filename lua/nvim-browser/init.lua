@@ -183,6 +183,10 @@ function M.hover_point(x, y)
   return terminal.hover_point(x, y)
 end
 
+function M.type_point(x, y, text, opts)
+  return terminal.type_point(x, y, text, opts)
+end
+
 function M.find_text(query)
   return terminal.find_text(query)
 end
@@ -206,6 +210,10 @@ end
 
 function M.hover_here()
   return terminal.hover_here()
+end
+
+function M.type_here(text, opts)
+  return terminal.type_here(text, opts)
 end
 
 function M.click_mouse(mousepos)
