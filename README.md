@@ -93,6 +93,10 @@ Then run:
 :NBrowserInspect https://example.com
 :NBrowserOpen https://example.com
 :NBrowserPreview
+:NBrowserReload
+:NBrowserScrollDown 400
+:NBrowserInput hello
+:NBrowserKey Enter
 :NBrowserToggle
 ```
 

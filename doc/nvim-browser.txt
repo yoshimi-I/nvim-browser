@@ -22,12 +22,37 @@ COMMANDS                                           *nvim-browser-commands*
         Open a URL or file target in the browser preview surface. Markdown files
         are rendered as HTML through the Rust backend. Image files are emitted
         with Kitty graphics protocol escape sequences for terminals such as
-        Ghostty. HTTP and HTTPS URLs are rendered through a one-shot Chromium
-        screenshot backend for the current POC.
+	Ghostty. HTTP and HTTPS URLs are rendered through a one-shot Chromium
+	screenshot backend for the current POC.
 
-                                                        *:NBrowserPreview*
+							*:NBrowserReload*
+:NBrowserReload
+	Reload the active browser page and capture a fresh frame.
+
+							*:NBrowserRefresh*
+:NBrowserRefresh
+	Capture a fresh frame from the active browser page.
+
+							*:NBrowserScrollDown*
+:NBrowserScrollDown [pixels]
+	Scroll the active browser page down and capture a fresh frame.
+
+							*:NBrowserScrollUp*
+:NBrowserScrollUp [pixels]
+	Scroll the active browser page up and capture a fresh frame.
+
+							*:NBrowserInput*
+:NBrowserInput {text}
+	Type text into the focused browser element and capture a fresh frame.
+
+							*:NBrowserKey*
+:NBrowserKey {key}
+	Press a Puppeteer-style key name such as Enter, Tab, Backspace, or
+	ArrowDown in the active browser page and capture a fresh frame.
+
+							*:NBrowserPreview*
 :NBrowserPreview
-        Preview the current buffer path.
+	Preview the current buffer path.
 
                                                         *:NBrowserInspect*
 :NBrowserInspect [target]

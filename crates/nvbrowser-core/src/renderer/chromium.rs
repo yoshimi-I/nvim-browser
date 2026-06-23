@@ -11,9 +11,9 @@ use headless_chrome::{
 
 use crate::{
     renderer::{
-        FrameArtifact, NavigateRequest, NavigationResult, ReloadRequest, ReloadResult,
-        RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
-        ScrollRequest, ScrollResult, ShutdownResult,
+        FrameArtifact, InputResult, KeyPressRequest, NavigateRequest, NavigationResult,
+        ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
+        RendererErrorKind, ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -188,6 +188,22 @@ impl Renderer for ChromiumRenderer {
         self.tab.reload(false, None).map_err(render_error)?;
         self.tab.wait_until_navigated().map_err(render_error)?;
         Ok(ReloadResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn input_text(&mut self, request: TextInputRequest) -> Result<InputResult, RendererError> {
+        self.tab.type_str(&request.text).map_err(render_error)?;
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn press_key(&mut self, request: KeyPressRequest) -> Result<InputResult, RendererError> {
+        self.tab.press_key(&request.key).map_err(render_error)?;
+        Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
         })

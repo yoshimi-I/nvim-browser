@@ -47,6 +47,18 @@ function M.register(browser)
     nargs = "?",
   })
 
+  vim.api.nvim_create_user_command("NBrowserInput", function(opts)
+    browser.input_text(opts.args)
+  end, {
+    nargs = "+",
+  })
+
+  vim.api.nvim_create_user_command("NBrowserKey", function(opts)
+    browser.press_key(opts.args)
+  end, {
+    nargs = 1,
+  })
+
   vim.api.nvim_create_user_command("NBrowserToggle", function()
     browser.toggle()
   end, {})

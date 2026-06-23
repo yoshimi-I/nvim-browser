@@ -14,6 +14,10 @@ pub trait Renderer {
 
     fn reload(&mut self, request: ReloadRequest) -> Result<ReloadResult, RendererError>;
 
+    fn input_text(&mut self, request: TextInputRequest) -> Result<InputResult, RendererError>;
+
+    fn press_key(&mut self, request: KeyPressRequest) -> Result<InputResult, RendererError>;
+
     fn shutdown(&mut self) -> Result<ShutdownResult, RendererError>;
 }
 
@@ -114,6 +118,46 @@ impl ReloadRequest {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ReloadResult {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TextInputRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub text: String,
+}
+
+impl TextInputRequest {
+    pub fn new(session_id: SessionId, page_id: PageId, text: impl Into<String>) -> Self {
+        Self {
+            session_id,
+            page_id,
+            text: text.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct KeyPressRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub key: String,
+}
+
+impl KeyPressRequest {
+    pub fn new(session_id: SessionId, page_id: PageId, key: impl Into<String>) -> Self {
+        Self {
+            session_id,
+            page_id,
+            key: key.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct InputResult {
     pub session_id: SessionId,
     pub page_id: PageId,
 }
@@ -231,6 +275,20 @@ mod tests {
             })
         }
 
+        fn input_text(&mut self, request: TextInputRequest) -> Result<InputResult, RendererError> {
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn press_key(&mut self, request: KeyPressRequest) -> Result<InputResult, RendererError> {
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
         fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
             self.shutdown = true;
             Ok(ShutdownResult {})
@@ -283,5 +341,24 @@ mod tests {
         assert_eq!(reload.page_id, page_id);
         assert!(shutdown.is_ok());
         assert!(renderer.shutdown);
+    }
+
+    #[test]
+    fn renderer_contract_supports_text_input_and_key_press() {
+        let mut renderer = FakeRenderer::new();
+        let session_id = SessionId::new(5);
+        let page_id = PageId::new(8);
+
+        let text = renderer
+            .input_text(TextInputRequest::new(session_id, page_id, "hello"))
+            .expect("text input should succeed");
+        let key = renderer
+            .press_key(KeyPressRequest::new(session_id, page_id, "Enter"))
+            .expect("key press should succeed");
+
+        assert_eq!(text.session_id, session_id);
+        assert_eq!(text.page_id, page_id);
+        assert_eq!(key.session_id, session_id);
+        assert_eq!(key.page_id, page_id);
     }
 }

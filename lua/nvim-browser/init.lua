@@ -52,6 +52,14 @@ function M.scroll(delta_y, delta_x)
   return terminal.scroll(delta_y, delta_x)
 end
 
+function M.input_text(text)
+  return terminal.input_text(text)
+end
+
+function M.press_key(key)
+  return terminal.press_key(key)
+end
+
 function M.toggle()
   return terminal.toggle()
 end

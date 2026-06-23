@@ -621,6 +621,28 @@ function M.scroll(delta_y, delta_x)
   })
 end
 
+function M.input_text(text)
+  if text == nil or text == "" then
+    return false
+  end
+  request_resize()
+  return send_serve_request({
+    type = "text_input",
+    text = text,
+  })
+end
+
+function M.press_key(key)
+  if key == nil or key == "" then
+    return false
+  end
+  request_resize()
+  return send_serve_request({
+    type = "key_press",
+    key = key,
+  })
+end
+
 function M.toggle()
   if is_valid_window() then
     pcall(send_terminal_escape, kitty_delete_escape())

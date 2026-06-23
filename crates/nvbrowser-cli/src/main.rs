@@ -10,8 +10,9 @@ use image::{imageops::FilterType, DynamicImage, GenericImageView, ImageFormat, R
 use nvbrowser_core::{
     inspect_target, kitty_image_escape, render_markdown_document,
     renderer::chromium::{render_url_png, ChromiumOptions},
-    BrowserSession, ChromiumRenderer, FrameArtifact, KittyImageTransfer, NavigateRequest,
-    ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer, ScrollRequest, SessionId, Viewport,
+    BrowserSession, ChromiumRenderer, FrameArtifact, KeyPressRequest, KittyImageTransfer,
+    NavigateRequest, ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer, ScrollRequest,
+    SessionId, TextInputRequest, Viewport,
 };
 use serde::{Deserialize, Serialize};
 
@@ -177,6 +178,14 @@ enum ServeRequest {
     Reload {
         id: u64,
     },
+    TextInput {
+        id: u64,
+        text: String,
+    },
+    KeyPress {
+        id: u64,
+        key: String,
+    },
     Resize {
         id: u64,
         columns: u32,
@@ -294,6 +303,22 @@ impl<R: Renderer> ServeRuntime<R> {
                 ))?;
                 self.capture_payload().map(Some)
             }
+            ServeRequest::TextInput { text, .. } => {
+                self.renderer.input_text(TextInputRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    text,
+                ))?;
+                self.capture_payload().map(Some)
+            }
+            ServeRequest::KeyPress { key, .. } => {
+                self.renderer.press_key(KeyPressRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    key,
+                ))?;
+                self.capture_payload().map(Some)
+            }
             ServeRequest::Resize {
                 columns,
                 rows,
@@ -332,6 +357,8 @@ impl ServeRequest {
             | ServeRequest::Capture { id }
             | ServeRequest::Scroll { id, .. }
             | ServeRequest::Reload { id }
+            | ServeRequest::TextInput { id, .. }
+            | ServeRequest::KeyPress { id, .. }
             | ServeRequest::Resize { id, .. }
             | ServeRequest::Quit { id } => *id,
         }
@@ -488,14 +515,16 @@ fn rgba_to_rgb(pixel: Rgba<u8>) -> (u8, u8, u8) {
 mod tests {
     use super::*;
     use nvbrowser_core::{
-        FrameId, FrameMetadata, NavigationResult, ReloadResult, RendererError, RendererErrorKind,
-        ScrollResult, ShutdownResult,
+        FrameId, FrameMetadata, InputResult, NavigationResult, ReloadResult, RendererError,
+        RendererErrorKind, ScrollResult, ShutdownResult,
     };
 
     struct FakeRenderer {
         url: Option<String>,
         captures: u64,
         scrolls: Vec<(i32, i32)>,
+        text_inputs: Vec<String>,
+        key_presses: Vec<String>,
         shutdown: bool,
     }
 
@@ -505,6 +534,8 @@ mod tests {
                 url: None,
                 captures: 0,
                 scrolls: Vec::new(),
+                text_inputs: Vec::new(),
+                key_presses: Vec::new(),
                 shutdown: false,
             }
         }
@@ -556,6 +587,22 @@ mod tests {
 
         fn reload(&mut self, request: ReloadRequest) -> Result<ReloadResult, RendererError> {
             Ok(ReloadResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn input_text(&mut self, request: TextInputRequest) -> Result<InputResult, RendererError> {
+            self.text_inputs.push(request.text);
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn press_key(&mut self, request: KeyPressRequest) -> Result<InputResult, RendererError> {
+            self.key_presses.push(request.key);
+            Ok(InputResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
             })
@@ -639,6 +686,27 @@ mod tests {
     }
 
     #[test]
+    fn serve_request_parses_text_input_and_key_press_jsonl() {
+        assert_eq!(
+            parse_serve_request(r#"{"type":"text_input","id":3,"text":"hello \"world\"\n"}"#)
+                .expect("text input request should parse"),
+            ServeRequest::TextInput {
+                id: 3,
+                text: "hello \"world\"\n".to_string(),
+            }
+        );
+
+        assert_eq!(
+            parse_serve_request(r#"{"type":"key_press","id":4,"key":"Enter"}"#)
+                .expect("key press request should parse"),
+            ServeRequest::KeyPress {
+                id: 4,
+                key: "Enter".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn serve_response_encodes_single_json_line() {
         let response = ServeResponse {
             id: 7,
@@ -702,6 +770,62 @@ mod tests {
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_some());
         assert_eq!(runtime.renderer.scrolls, vec![(0, 100)]);
+    }
+
+    #[test]
+    fn serve_runtime_applies_text_input_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::TextInput {
+            id: 2,
+            text: "hello".to_string(),
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(runtime.renderer.text_inputs, vec!["hello"]);
+        assert_eq!(runtime.renderer.captures, 2);
+    }
+
+    #[test]
+    fn serve_runtime_applies_key_press_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::KeyPress {
+            id: 2,
+            key: "Enter".to_string(),
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(runtime.renderer.key_presses, vec!["Enter"]);
+        assert_eq!(runtime.renderer.captures, 2);
     }
 
     fn tiny_png() -> Vec<u8> {
