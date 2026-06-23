@@ -359,10 +359,9 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
-        thread::sleep(Duration::from_millis(75));
-        self.tab.wait_until_navigated().map_err(render_error)?;
-        let url = self.tab.get_url();
-        let title = self.read_current_title().unwrap_or(None);
+        let settled = self.wait_for_interaction_settle()?;
+        let url = settled.url;
+        let title = settled.title;
         self.current_url = Some(url.clone());
         self.current_title = title.clone();
         Ok(InteractionSettleResult::new(url, title))
@@ -375,6 +374,48 @@ impl Renderer for ChromiumRenderer {
 }
 
 impl ChromiumRenderer {
+    fn wait_for_interaction_settle(&self) -> Result<InteractionSettleSample, RendererError> {
+        let deadline = std::time::Instant::now() + Duration::from_millis(750);
+        let mut samples = Vec::new();
+        let _ = self.wait_for_dom_quiet();
+
+        loop {
+            samples.push(self.read_interaction_settle_sample()?);
+            if let Some(sample) = choose_interaction_settle_sample(&samples, 2) {
+                return Ok(sample);
+            }
+            if std::time::Instant::now() >= deadline {
+                return latest_interaction_settle_sample(&samples)
+                    .ok_or_else(|| render_error("interaction settle did not collect samples"));
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    fn wait_for_dom_quiet(&self) -> Result<(), RendererError> {
+        self.tab
+            .evaluate(DOM_QUIET_SCRIPT, true)
+            .map(|_| ())
+            .map_err(render_error)
+    }
+
+    fn read_interaction_settle_sample(&self) -> Result<InteractionSettleSample, RendererError> {
+        Ok(InteractionSettleSample {
+            url: self.tab.get_url(),
+            title: self.read_current_title().unwrap_or(None),
+            ready_state: self.read_ready_state().unwrap_or(None),
+        })
+    }
+
+    fn read_ready_state(&self) -> Result<Option<String>, RendererError> {
+        Ok(self
+            .tab
+            .evaluate(READY_STATE_SCRIPT, true)
+            .map_err(render_error)?
+            .value
+            .and_then(|value| value.as_str().map(str::to_string)))
+    }
+
     fn navigate_history(
         &mut self,
         request: HistoryNavigationRequest,
@@ -614,6 +655,47 @@ const PAGE_METRICS_SCRIPT: &str = r#"
 })()
 "#;
 
+const READY_STATE_SCRIPT: &str = r#"
+(() => document.readyState || 'complete')()
+"#;
+
+const DOM_QUIET_SCRIPT: &str = r#"
+(() => new Promise((resolve) => {
+  const quietMs = 120;
+  const maxMs = 650;
+  let quietTimer = null;
+  let maxTimer = null;
+  let observer = null;
+  const finish = () => {
+    if (quietTimer !== null) {
+      clearTimeout(quietTimer);
+    }
+    if (maxTimer !== null) {
+      clearTimeout(maxTimer);
+    }
+    if (observer !== null) {
+      observer.disconnect();
+    }
+    resolve(true);
+  };
+  const scheduleQuiet = () => {
+    if (quietTimer !== null) {
+      clearTimeout(quietTimer);
+    }
+    quietTimer = setTimeout(finish, quietMs);
+  };
+  observer = new MutationObserver(scheduleQuiet);
+  observer.observe(document.documentElement || document, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    characterData: true
+  });
+  maxTimer = setTimeout(finish, maxMs);
+  scheduleQuiet();
+}))()
+"#;
+
 const PAGE_TEXT_SCRIPT: &str = r#"
 (() => {
   const maxLength = 120000;
@@ -835,6 +917,62 @@ fn parse_page_text_json(text: &str) -> Result<ExtractedPageText, serde_json::Err
     serde_json::from_str(text)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InteractionSettleSample {
+    url: String,
+    title: Option<String>,
+    ready_state: Option<String>,
+}
+
+impl InteractionSettleSample {
+    #[cfg(test)]
+    fn new(
+        url: impl Into<String>,
+        title: Option<&str>,
+        ready_state: Option<&str>,
+    ) -> InteractionSettleSample {
+        InteractionSettleSample {
+            url: url.into(),
+            title: title.map(str::to_string),
+            ready_state: ready_state.map(str::to_string),
+        }
+    }
+
+    fn is_loading(&self) -> bool {
+        self.ready_state.as_deref() != Some("complete")
+    }
+}
+
+fn choose_interaction_settle_sample(
+    samples: &[InteractionSettleSample],
+    required_stable_samples: usize,
+) -> Option<InteractionSettleSample> {
+    let latest = samples.last()?.clone();
+    if latest.is_loading() {
+        return None;
+    }
+
+    let mut stable_count = 0;
+    for sample in samples.iter().rev() {
+        if sample.url == latest.url && sample.title == latest.title && !sample.is_loading() {
+            stable_count += 1;
+            if stable_count >= required_stable_samples {
+                return Some(latest);
+            }
+        } else {
+            break;
+        }
+    }
+
+    None
+}
+
+fn latest_interaction_settle_sample(
+    samples: &[InteractionSettleSample],
+) -> Option<InteractionSettleSample> {
+    samples.last().cloned()
+}
+
 fn non_empty_string(value: String) -> Option<String> {
     let value = value.trim().to_string();
     if value.is_empty() {
@@ -973,5 +1111,74 @@ mod tests {
         assert!(PAGE_TEXT_SCRIPT.contains("markdownLink"));
         assert!(!PAGE_TEXT_SCRIPT.contains("innerText"));
         assert!(!PAGE_TEXT_SCRIPT.contains("+ '\\n\\n[truncated]'"));
+    }
+
+    #[test]
+    fn interaction_settle_decision_waits_for_stable_complete_state() {
+        let samples = vec![
+            InteractionSettleSample::new("https://example.com", Some("Old"), Some("loading")),
+            InteractionSettleSample::new(
+                "https://example.com/app",
+                Some("App"),
+                Some("interactive"),
+            ),
+            InteractionSettleSample::new("https://example.com/app", Some("App"), Some("complete")),
+            InteractionSettleSample::new("https://example.com/app", Some("App"), Some("complete")),
+        ];
+
+        let settled = choose_interaction_settle_sample(&samples, 2).expect("sample should settle");
+
+        assert_eq!(settled.url, "https://example.com/app");
+        assert_eq!(settled.title.as_deref(), Some("App"));
+    }
+
+    #[test]
+    fn interaction_settle_decision_does_not_finish_at_interactive_state() {
+        let samples = vec![
+            InteractionSettleSample::new(
+                "https://example.com/app",
+                Some("App"),
+                Some("interactive"),
+            ),
+            InteractionSettleSample::new(
+                "https://example.com/app",
+                Some("App"),
+                Some("interactive"),
+            ),
+        ];
+
+        assert!(choose_interaction_settle_sample(&samples, 2).is_none());
+    }
+
+    #[test]
+    fn interaction_settle_decision_times_out_to_latest_sample() {
+        let samples = vec![
+            InteractionSettleSample::new("https://example.com", Some("Old"), Some("loading")),
+            InteractionSettleSample::new("https://example.com/app", Some("App"), Some("loading")),
+        ];
+
+        let settled =
+            latest_interaction_settle_sample(&samples).expect("latest sample should be returned");
+
+        assert_eq!(settled.url, "https://example.com/app");
+        assert_eq!(settled.title.as_deref(), Some("App"));
+    }
+
+    #[test]
+    fn interaction_settle_decision_treats_unknown_ready_state_as_unstable() {
+        let samples = vec![
+            InteractionSettleSample::new("https://example.com/app", Some("App"), None),
+            InteractionSettleSample::new("https://example.com/app", Some("App"), None),
+        ];
+
+        assert!(choose_interaction_settle_sample(&samples, 2).is_none());
+    }
+
+    #[test]
+    fn dom_quiet_script_waits_for_mutation_quiet_window() {
+        assert!(DOM_QUIET_SCRIPT.contains("new MutationObserver"));
+        assert!(DOM_QUIET_SCRIPT.contains("quietMs = 120"));
+        assert!(DOM_QUIET_SCRIPT.contains("maxMs = 650"));
+        assert!(DOM_QUIET_SCRIPT.contains("observer.disconnect()"));
     }
 }
