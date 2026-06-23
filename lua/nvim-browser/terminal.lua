@@ -33,6 +33,7 @@ local state = {
   quiet_request_ids = {},
   latest_applied_response_id = 0,
   last_find_found = nil,
+  last_find_query = nil,
   response_handlers = {},
   element_hints = {},
   element_hints_geometry = nil,
@@ -1342,6 +1343,7 @@ function M.open(command)
   state.quiet_request_ids = {}
   state.latest_applied_response_id = 0
   state.last_find_found = nil
+  state.last_find_query = nil
   state.response_handlers = {}
   state.element_hints = {}
   state.element_hints_geometry = nil
@@ -1641,6 +1643,7 @@ function M.close()
   state.quiet_request_ids = {}
   state.latest_applied_response_id = 0
   state.last_find_found = nil
+  state.last_find_query = nil
   state.response_handlers = {}
   state.element_hints = {}
   state.element_hints_geometry = nil
@@ -1949,16 +1952,34 @@ function M.type_point(x, y, text, opts)
   }, state.current_url or state.last_target or "type", "type")
 end
 
-function M.find_text(query)
+function M.find_text(query, opts)
   if query == nil or query == "" then
     return false
   end
+  opts = opts or {}
+  local backwards = opts.backwards == true
+  state.last_find_query = query
   state.last_find_found = nil
   request_resize()
   return send_serve_request({
     type = "find_text",
     query = query,
+    backwards = backwards,
   }, handle_find_text_response)
+end
+
+function M.find_next()
+  if state.last_find_query == nil or state.last_find_query == "" then
+    return false
+  end
+  return M.find_text(state.last_find_query, { backwards = false })
+end
+
+function M.find_previous()
+  if state.last_find_query == nil or state.last_find_query == "" then
+    return false
+  end
+  return M.find_text(state.last_find_query, { backwards = true })
 end
 
 function M.reader()
@@ -2281,6 +2302,7 @@ function M.state()
     live_refresh_request_id = state.live_refresh_request_id,
     stopped_operation = state.stopped_operation,
     last_find_found = state.last_find_found,
+    last_find_query = state.last_find_query,
     element_hints = state.element_hints,
     reader_bufnr = state.reader_bufnr,
   }

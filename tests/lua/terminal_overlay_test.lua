@@ -183,7 +183,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   url = "https://example.com/long",
   runtime = {
-    protocol_version = 6,
+    protocol_version = 7,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -205,7 +205,7 @@ assert(page_metrics.scroll_y == 250, "stored page metrics should preserve scroll
 assert(page_metrics.document_height == 1600, "stored page metrics should preserve document size")
 local runtime_info = terminal.state().runtime_metadata
 assert(runtime_info ~= nil, "serve responses should store runtime metadata")
-assert(runtime_info.protocol_version == 6, "runtime metadata should preserve protocol version")
+assert(runtime_info.protocol_version == 7, "runtime metadata should preserve protocol version")
 assert(runtime_info.output == "kitty-unicode", "runtime metadata should preserve output mode")
 assert(runtime_info.cells.columns == 80, "runtime metadata should preserve preview columns")
 assert(runtime_info.viewport.width == 800, "runtime metadata should preserve viewport width")
@@ -214,7 +214,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "runtime frame",
   runtime = {
-    protocol_version = 6,
+    protocol_version = 7,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -548,7 +548,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "interactive frame",
   runtime = {
-    protocol_version = 6,
+    protocol_version = 7,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -565,7 +565,7 @@ end
 
 local function interactive_runtime(width, height)
   return {
-    protocol_version = 6,
+    protocol_version = 7,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -732,7 +732,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "refreshed interactive frame",
   runtime = {
-    protocol_version = 6,
+    protocol_version = 7,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -748,7 +748,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "column guard frame",
   runtime = {
-    protocol_version = 6,
+    protocol_version = 7,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -1256,15 +1256,44 @@ assert(not stale_capture_after_reader_applied, "older live capture should not ov
 assert(terminal.state().live_refresh_request_id == nil, "older live capture handler should still clear in-flight tracking")
 
 sent_requests = {}
+assert(terminal.find_next() == false, "find_next should fail before any find query is stored")
+assert(terminal.find_previous() == false, "find_previous should fail before any find query is stored")
+assert(#sent_requests == 0, "find repeat without a stored query should not send serve requests")
+
 assert(terminal.find_text("needle") == true, "test setup should send an older find request")
 local older_find_id = nil
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "find_text" then
+    assert(decoded.query == "needle", "find request should include the query")
+    assert(decoded.backwards == false, "find request should default to forward search")
     older_find_id = decoded.id
   end
 end
 assert(older_find_id ~= nil, "find request should be sent")
+
+sent_requests = {}
+assert(terminal.find_next() == true, "find_next should repeat the stored query forward")
+local repeat_forward_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "find_text" then
+    repeat_forward_seen = decoded.query == "needle" and decoded.backwards == false
+  end
+end
+assert(repeat_forward_seen, "find_next should send the stored query with forward direction")
+
+sent_requests = {}
+assert(terminal.find_previous() == true, "find_previous should repeat the stored query backward")
+local repeat_backward_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "find_text" then
+    repeat_backward_seen = decoded.query == "needle" and decoded.backwards == true
+  end
+end
+assert(repeat_backward_seen, "find_previous should send the stored query with backward direction")
+
 sent_requests = {}
 assert(terminal.navigate("https://example.com/after-find") == true, "test setup should send a newer navigation after find")
 local after_find_navigation_id = terminal.state().pending_operation and terminal.state().pending_operation.id

@@ -89,6 +89,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: focused text input failed or browser session is inactive", "WarningMsg" } }, false, {})
   end
 
+  local function warn_find_repeat_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: no previous browser find query", "WarningMsg" } }, false, {})
+  end
+
   local function warn_selection_yank_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: browser selection yank failed or no browser selection is active", "WarningMsg" } }, false, {})
   end
@@ -292,12 +296,24 @@ function M.register(browser, opts)
     if query == nil or query == "" then
       return
     end
-    if not browser.find_text(query) then
+    if not browser.find_text(query, { backwards = false }) then
       vim.api.nvim_echo({ { "nvim-browser: text was not found or browser session is inactive", "WarningMsg" } }, false, {})
     end
   end, {
     nargs = "*",
   })
+
+  vim.api.nvim_create_user_command("NBrowserFindNext", function()
+    if browser.find_next == nil or not browser.find_next() then
+      warn_find_repeat_unavailable()
+    end
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserFindPrevious", function()
+    if browser.find_previous == nil or not browser.find_previous() then
+      warn_find_repeat_unavailable()
+    end
+  end, {})
 
   vim.api.nvim_create_user_command("NBrowserClick", function(opts)
     local parts = vim.split(opts.args, "%s+", { trimempty = true })

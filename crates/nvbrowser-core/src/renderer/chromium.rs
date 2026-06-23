@@ -464,8 +464,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn find_text(&mut self, request: FindTextRequest) -> Result<FindTextResult, RendererError> {
-        let query = serde_json::to_string(&request.query).map_err(render_error)?;
-        let script = format!("window.find({query}, false, false, true, false, true, false)");
+        let script = find_text_script(&request.query, request.backwards)?;
         let found = self
             .tab
             .evaluate(&script, false)
@@ -477,6 +476,7 @@ impl Renderer for ChromiumRenderer {
             session_id: request.session_id,
             page_id: request.page_id,
             query: request.query,
+            backwards: request.backwards,
             found,
         })
     }
@@ -1355,6 +1355,13 @@ fn parse_page_metrics_json(metrics: &str) -> Result<PageMetrics, serde_json::Err
     serde_json::from_str(metrics)
 }
 
+fn find_text_script(query: &str, backwards: bool) -> Result<String, RendererError> {
+    let query = serde_json::to_string(query).map_err(render_error)?;
+    Ok(format!(
+        "window.find({query}, false, {backwards}, true, false, true, false)"
+    ))
+}
+
 #[derive(Debug, Deserialize)]
 struct ExtractedPageText {
     url: String,
@@ -1717,6 +1724,18 @@ mod tests {
         assert!(SELECTION_TEXT_SCRIPT.contains("selectionStart"));
         assert!(SELECTION_TEXT_SCRIPT.contains("selectionEnd"));
         assert!(SELECTION_TEXT_SCRIPT.contains("window.getSelection"));
+    }
+
+    #[test]
+    fn find_text_script_uses_requested_direction() {
+        assert_eq!(
+            find_text_script("needle", false).expect("forward find script should build"),
+            r#"window.find("needle", false, false, true, false, true, false)"#
+        );
+        assert_eq!(
+            find_text_script("needle", true).expect("backward find script should build"),
+            r#"window.find("needle", false, true, true, false, true, false)"#
+        );
     }
 
     #[test]

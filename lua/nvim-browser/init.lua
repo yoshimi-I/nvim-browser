@@ -207,8 +207,16 @@ function M.type_point(x, y, text, opts)
   return terminal.type_point(x, y, text, opts)
 end
 
-function M.find_text(query)
-  return terminal.find_text(query)
+function M.find_text(query, opts)
+  return terminal.find_text(query, opts)
+end
+
+function M.find_next()
+  return terminal.find_next()
+end
+
+function M.find_previous()
+  return terminal.find_previous()
 end
 
 function M.reader()

@@ -389,6 +389,7 @@ pub struct FindTextRequest {
     pub session_id: SessionId,
     pub page_id: PageId,
     pub query: String,
+    pub backwards: bool,
 }
 
 impl FindTextRequest {
@@ -397,7 +398,13 @@ impl FindTextRequest {
             session_id,
             page_id,
             query: query.into(),
+            backwards: false,
         }
+    }
+
+    pub const fn backwards(mut self, backwards: bool) -> Self {
+        self.backwards = backwards;
+        self
     }
 }
 
@@ -406,6 +413,7 @@ pub struct FindTextResult {
     pub session_id: SessionId,
     pub page_id: PageId,
     pub query: String,
+    pub backwards: bool,
     pub found: bool,
 }
 
@@ -765,6 +773,7 @@ mod tests {
                 session_id: request.session_id,
                 page_id: request.page_id,
                 query: request.query,
+                backwards: request.backwards,
                 found: true,
             })
         }
@@ -950,12 +959,13 @@ mod tests {
         let page_id = PageId::new(10);
 
         let find = renderer
-            .find_text(FindTextRequest::new(session_id, page_id, "needle"))
+            .find_text(FindTextRequest::new(session_id, page_id, "needle").backwards(true))
             .expect("find text should succeed");
 
         assert_eq!(find.session_id, session_id);
         assert_eq!(find.page_id, page_id);
         assert_eq!(find.query, "needle");
+        assert!(find.backwards);
         assert!(find.found);
     }
 

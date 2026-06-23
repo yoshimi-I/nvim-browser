@@ -87,4 +87,5 @@ Current renderer-independent concepts:
 - `PageState`: current URL, loading state, viewport, and last frame metadata.
 - `Viewport`: pixel dimensions plus device scale factor.
 - `FrameMetadata`: frame ID, page ID, URL, viewport, and capture timestamp.
-- `Renderer`: trait for navigate, render frame, scroll, reload, and shutdown.
+- `Renderer`: trait for navigate, render frame, scroll, find text, reload, and
+  shutdown.

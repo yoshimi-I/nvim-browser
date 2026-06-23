@@ -349,6 +349,8 @@ enum ServeRequest {
     FindText {
         id: u64,
         query: String,
+        #[serde(default)]
+        backwards: bool,
     },
     PageText {
         id: u64,
@@ -665,7 +667,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 6,
+            protocol_version: 7,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -890,12 +892,13 @@ impl<R: Renderer> ServeRuntime<R> {
                 }
                 self.capture_payload().map(Some)
             }
-            ServeRequest::FindText { query, .. } => {
-                let result = self.renderer.find_text(FindTextRequest::new(
-                    self.session.id(),
-                    self.session.active_page_id(),
-                    query,
-                ))?;
+            ServeRequest::FindText {
+                query, backwards, ..
+            } => {
+                let result = self.renderer.find_text(
+                    FindTextRequest::new(self.session.id(), self.session.active_page_id(), query)
+                        .backwards(backwards),
+                )?;
                 let mut capture = self.capture_payload()?;
                 capture.found = Some(result.found);
                 Ok(Some(capture))
@@ -1473,6 +1476,7 @@ mod tests {
         hovered_points: Vec<(f64, f64)>,
         wheeled_points: Vec<(f64, f64, f64, f64)>,
         find_queries: Vec<String>,
+        find_directions: Vec<bool>,
         fail_click: bool,
         fail_click_hint: bool,
         fail_hover_hint: bool,
@@ -1506,6 +1510,7 @@ mod tests {
                 hovered_points: Vec::new(),
                 wheeled_points: Vec::new(),
                 find_queries: Vec::new(),
+                find_directions: Vec::new(),
                 fail_click: false,
                 fail_click_hint: false,
                 fail_hover_hint: false,
@@ -1814,10 +1819,12 @@ mod tests {
         ) -> Result<nvbrowser_core::FindTextResult, RendererError> {
             self.operations.push("find_text");
             self.find_queries.push(request.query.clone());
+            self.find_directions.push(request.backwards);
             Ok(nvbrowser_core::FindTextResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
                 query: request.query,
+                backwards: request.backwards,
                 found: true,
             })
         }
@@ -2200,17 +2207,29 @@ mod tests {
             ServeRequest::FindText {
                 id: 11,
                 query: "hello \"world\"".to_string(),
+                backwards: false,
             }
         );
         assert_eq!(
-            parse_serve_request(r#"{"type":"page_text","id":12}"#)
-                .expect("page text request should parse"),
-            ServeRequest::PageText { id: 12 }
+            parse_serve_request(
+                r#"{"type":"find_text","id":12,"query":"hello \"world\"","backwards":true}"#
+            )
+            .expect("backwards find text request should parse"),
+            ServeRequest::FindText {
+                id: 12,
+                query: "hello \"world\"".to_string(),
+                backwards: true,
+            }
         );
         assert_eq!(
-            parse_serve_request(r#"{"type":"selection_text","id":13}"#)
+            parse_serve_request(r#"{"type":"page_text","id":13}"#)
+                .expect("page text request should parse"),
+            ServeRequest::PageText { id: 13 }
+        );
+        assert_eq!(
+            parse_serve_request(r#"{"type":"selection_text","id":14}"#)
                 .expect("selection text request should parse"),
-            ServeRequest::SelectionText { id: 13 }
+            ServeRequest::SelectionText { id: 14 }
         );
     }
 
@@ -2389,7 +2408,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 6,
+                protocol_version: 7,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -2417,7 +2436,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":6,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":7,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -2444,7 +2463,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 6);
+        assert_eq!(runtime_info.protocol_version, 7);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -3460,12 +3479,14 @@ mod tests {
         let response = runtime.handle(ServeRequest::FindText {
             id: 2,
             query: "needle".to_string(),
+            backwards: true,
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_some());
         assert_eq!(response.found, Some(true));
         assert_eq!(runtime.renderer.find_queries, vec!["needle"]);
+        assert_eq!(runtime.renderer.find_directions, vec![true]);
         assert_eq!(runtime.renderer.captures, 2);
         assert_eq!(
             runtime.renderer.operations,

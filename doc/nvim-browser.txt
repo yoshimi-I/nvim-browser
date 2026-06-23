@@ -159,6 +159,14 @@ COMMANDS                                           *nvim-browser-commands*
 	Find text in the active browser page, scroll to the match through the
 	browser's native find behavior, and capture a fresh frame.
 
+							*:NBrowserFindNext*
+:NBrowserFindNext
+	Repeat the last browser find query forward and capture a fresh frame.
+
+							*:NBrowserFindPrevious*
+:NBrowserFindPrevious
+	Repeat the last browser find query backward and capture a fresh frame.
+
 							*:NBrowserInput*
 :NBrowserInput {text}
 	Type text into the focused browser element and capture a fresh frame.
@@ -376,6 +384,8 @@ k  scroll up
 <PageUp>    page up
 a  address prompt
 /  find prompt
+n  repeat find forward
+N  repeat find backward
 f  hint mode
 t  type into hinted field
 s  type into hinted field and submit
@@ -414,6 +424,8 @@ require("nvim-browser").setup({
       scroll_up = "<C-u>",
       page_down = "<PageDown>",
       page_up = "<PageUp>",
+      find_next = "n",
+      find_previous = "N",
       wheel_down = "<ScrollWheelDown>",
       wheel_up = "<ScrollWheelUp>",
     },

@@ -204,6 +204,14 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.find_text(query)
   end, "nvim-browser: find", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "find_next", "n"), function()
+    browser.find_next()
+  end, "nvim-browser: find next", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "find_previous", "N"), function()
+    browser.find_previous()
+  end, "nvim-browser: find previous", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "hints", "f"), function()
     if browser.transient_hint_mode ~= nil then
       browser.transient_hint_mode()

@@ -78,6 +78,8 @@ assert(configured.preview_keymaps.mappings.page_down == "<PageDown>", "preview-l
 assert(configured.preview_keymaps.mappings.page_up == "<PageUp>", "preview-local keymaps should include page-up")
 assert(configured.preview_keymaps.mappings.click_here == "gc", "preview-local keymaps should include cursor click")
 assert(configured.preview_keymaps.mappings.hover_here == "gh", "preview-local keymaps should include cursor hover")
+assert(configured.preview_keymaps.mappings.find_next == "n", "preview-local keymaps should include find-next")
+assert(configured.preview_keymaps.mappings.find_previous == "N", "preview-local keymaps should include find-previous")
 assert(
   configured.keymaps.mappings.type_hint_mode == "t",
   "global keymaps should include a hinted input mapping"
@@ -125,6 +127,14 @@ assert(
 assert(
   remapped.preview_keymaps.mappings.click_here == "gc",
   "preview-local partial remaps should retain cursor click"
+)
+assert(
+  remapped.preview_keymaps.mappings.find_next == "n",
+  "preview-local partial remaps should retain find-next"
+)
+assert(
+  remapped.preview_keymaps.mappings.find_previous == "N",
+  "preview-local partial remaps should retain find-previous"
 )
 assert(
   remapped.preview_keymaps.mappings.stop == "<Esc>",

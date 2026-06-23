@@ -10,6 +10,8 @@ local prompt_default = nil
 local warnings = {}
 local addressed = nil
 local found = nil
+local found_next = false
+local found_previous = false
 local typed_hint = nil
 local submitted_hint = nil
 local typed_here = nil
@@ -57,8 +59,16 @@ local browser = {
     end
     return true
   end,
-  find_text = function(query)
-    found = query
+  find_text = function(query, opts)
+    found = { query = query, backwards = opts ~= nil and opts.backwards == true }
+    return true
+  end,
+  find_next = function()
+    found_next = true
+    return true
+  end,
+  find_previous = function()
+    found_previous = true
     return true
   end,
   input_text = function(text)
@@ -228,12 +238,20 @@ assert(addressed == "hello world", "NBrowserAddress should accept address text a
 assert(prompted == nil, "NBrowserAddress with arguments should not prompt")
 
 vim.cmd("NBrowserFind needle")
-assert(found == "needle", "NBrowserFind should pass an argument to browser.find_text")
+assert(found.query == "needle", "NBrowserFind should pass an argument to browser.find_text")
+assert(found.backwards == false, "NBrowserFind should search forward")
 
 found = nil
 vim.cmd("NBrowserFind")
 assert(prompted == "nvim-browser find: ", "NBrowserFind should prompt without an argument")
-assert(found == "s", "NBrowserFind should find the entered text")
+assert(found.query == "s", "NBrowserFind should find the entered text")
+assert(found.backwards == false, "prompted NBrowserFind should search forward")
+
+vim.cmd("NBrowserFindNext")
+assert(found_next == true, "NBrowserFindNext should repeat the last find forward")
+
+vim.cmd("NBrowserFindPrevious")
+assert(found_previous == true, "NBrowserFindPrevious should repeat the last find backward")
 
 vim.cmd("NBrowserInput hello world")
 assert(input_text == "hello world", "NBrowserInput should pass text to browser.input_text")
@@ -362,6 +380,12 @@ local failed_browser = {
   find_text = function()
     return false
   end,
+  find_next = function()
+    return false
+  end,
+  find_previous = function()
+    return false
+  end,
   input_text = function()
     return false
   end,
@@ -403,6 +427,12 @@ assert(warnings[#warnings] == "nvim-browser: address was empty or could not be o
 
 vim.cmd("NBrowserFind missing")
 assert(warnings[#warnings] == "nvim-browser: text was not found or browser session is inactive", "NBrowserFind should warn when find fails")
+
+vim.cmd("NBrowserFindNext")
+assert(warnings[#warnings] == "nvim-browser: no previous browser find query", "NBrowserFindNext should warn when no query is available")
+
+vim.cmd("NBrowserFindPrevious")
+assert(warnings[#warnings] == "nvim-browser: no previous browser find query", "NBrowserFindPrevious should warn when no query is available")
 
 vim.cmd("NBrowserInput missing")
 assert(warnings[#warnings] == "nvim-browser: focused text input failed or browser session is inactive", "NBrowserInput should warn when focused text input fails")

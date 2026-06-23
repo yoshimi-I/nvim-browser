@@ -208,6 +208,8 @@ Then run:
 :NBrowserPageDown
 :NBrowserPageUp
 :NBrowserFind search text
+:NBrowserFindNext
+:NBrowserFindPrevious
 :NBrowserFocusSelector input[name="q"]
 :NBrowserInput hello
 :NBrowserInputMode
@@ -305,6 +307,9 @@ or pass a value directly with `require("nvim-browser").address("example.com")`.
 
 `:NBrowserFind {text}` finds text in the active browser page, scrolls to the
 match through the browser's native find behavior, and captures a fresh frame.
+`:NBrowserFindNext` and `:NBrowserFindPrevious` repeat the last browser find
+query forward or backward. In preview buffers, the default `n` and `N` mappings
+repeat the current page find like a normal editor search.
 
 `:NBrowserInput {text}` types text into the currently focused browser element.
 `:NBrowserInputMode` prompts once for text and sends it to the focused element.
@@ -354,10 +359,11 @@ untouched; choose another prefix or mapping key if one is already in use.
 Focused preview buffers also install buffer-local browser controls by default:
 `r` reload, `H` back, `L` forward, `j`/`k` scroll, `<PageDown>/<PageUp>` scroll
 by 90% of the browser viewport, `a` address, `/` find, `f` hint mode, `t` type
-into a hinted field, `s` type and submit, `i` type into the focused element with
-browser text mode, `p` paste the selected register into the focused element,
-`y` yank the browser selection into the selected register, `<CR>` Enter,
-`<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
+by 90% of the browser viewport, `a` address, `/` find, `n` repeat find forward,
+`N` repeat find backward, `f` hint mode, `t` type into a hinted field, `s` type
+and submit, `i` type into the focused element with browser text mode, `p` paste
+the selected register into the focused element, `y` yank the browser selection
+into the selected register, `<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
 Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` Meta-L
 focus location, arrow keys, `gc` click the browser viewport at the cursor, `gh`
 hover the browser viewport at the cursor, `<Esc>` stop a pending load, left

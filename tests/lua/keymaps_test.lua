@@ -26,8 +26,17 @@ local browser = {
   address = function()
     table.insert(calls, "address")
   end,
-  find_text = function(query)
-    table.insert(calls, "find:" .. query)
+  find_text = function(query, opts)
+    local direction = opts ~= nil and opts.backwards == true and "back" or "forward"
+    table.insert(calls, "find:" .. direction .. ":" .. query)
+    return true
+  end,
+  find_next = function()
+    table.insert(calls, "find_next")
+    return true
+  end,
+  find_previous = function()
+    table.insert(calls, "find_previous")
     return true
   end,
   hint_mode = function()
@@ -163,7 +172,7 @@ trigger("\\xs")
 
 assert(
   table.concat(calls, ",")
-    == "reload,back,forward,scroll:250:0,scroll:-250:0,address,find:needle,hints,type_hints:type:global text,type_hints:submit:global text",
+    == "reload,back,forward,scroll:250:0,scroll:-250:0,address,find:forward:needle,hints,type_hints:type:global text,type_hints:submit:global text",
   "keymaps should call browser APIs"
 )
 
@@ -231,6 +240,8 @@ assert_buffer_mapping(first_bufnr, "<PageDown>", "buffer-local controls should i
 assert_buffer_mapping(first_bufnr, "<PageUp>", "buffer-local controls should install page-up mapping")
 assert_buffer_mapping(first_bufnr, "a", "buffer-local controls should install address mapping")
 assert_buffer_mapping(first_bufnr, "/", "buffer-local controls should install find mapping")
+assert_buffer_mapping(first_bufnr, "n", "buffer-local controls should install find-next mapping")
+assert_buffer_mapping(first_bufnr, "N", "buffer-local controls should install find-previous mapping")
 assert_buffer_mapping(first_bufnr, "f", "buffer-local controls should install hint mapping")
 assert_buffer_mapping(first_bufnr, "t", "buffer-local controls should install hinted input mapping")
 assert_buffer_mapping(first_bufnr, "s", "buffer-local controls should install hinted submit mapping")
@@ -268,6 +279,8 @@ trigger_buffer(first_bufnr, "<PageDown>")
 trigger_buffer(first_bufnr, "<PageUp>")
 trigger_buffer(first_bufnr, "a")
 trigger_buffer(first_bufnr, "/")
+trigger_buffer(first_bufnr, "n")
+trigger_buffer(first_bufnr, "N")
 trigger_buffer(first_bufnr, "f")
 trigger_buffer(first_bufnr, "t")
 trigger_buffer(first_bufnr, "s")
@@ -301,7 +314,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,address,find:local,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,text_mode,paste:+,yank:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,hover_here,close,click_mouse,wheel:120:0,wheel:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,address,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,text_mode,paste:+,yank:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,hover_here,close,click_mouse,wheel:120:0,wheel:-120:0,stop",
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
 

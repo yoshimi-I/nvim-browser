@@ -25,6 +25,8 @@ assert(type(browser.start_text_mode) == "function", "interactive browser text mo
 assert(type(browser.address) == "function", "address API should exist")
 assert(type(browser.resolve_address_target) == "function", "address target resolver should exist")
 assert(type(browser.find_text) == "function", "find_text API should exist")
+assert(type(browser.find_next) == "function", "find_next API should exist")
+assert(type(browser.find_previous) == "function", "find_previous API should exist")
 assert(type(browser.last_find_found) == "function", "last_find_found API should exist")
 assert(type(browser.doctor) == "function", "doctor API should exist")
 assert(type(browser.page_metrics) == "function", "page_metrics API should exist")
@@ -67,6 +69,9 @@ local original_terminal_press_key = terminal.press_key
 local original_terminal_start_text_mode = terminal.start_text_mode
 local original_terminal_page_scroll = terminal.page_scroll
 local original_terminal_yank_selection = terminal.yank_selection
+local original_terminal_find_text = terminal.find_text
+local original_terminal_find_next = terminal.find_next
+local original_terminal_find_previous = terminal.find_previous
 
 browser.hints = function()
   return {}
@@ -242,6 +247,33 @@ assert(wheeled_point.x == 12.5, "wheel_point should pass x coordinate to termina
 assert(wheeled_point.y == 24.25, "wheel_point should pass y coordinate to terminal")
 assert(wheeled_point.delta_y == 120, "wheel_point should pass vertical wheel delta to terminal")
 assert(wheeled_point.delta_x == 0, "wheel_point should pass horizontal wheel delta to terminal")
+
+local found_point = nil
+terminal.find_text = function(query, opts)
+  found_point = { query = query, backwards = opts ~= nil and opts.backwards == true }
+  return true
+end
+assert(browser.find_text("needle") == true, "find_text should delegate to terminal find")
+assert(found_point.query == "needle", "find_text should pass query to terminal")
+assert(found_point.backwards == false, "find_text should default to forward search")
+assert(browser.find_text("needle", { backwards = true }) == true, "find_text should support backwards search")
+assert(found_point.backwards == true, "find_text should pass backwards option to terminal")
+
+local find_next_called = false
+terminal.find_next = function()
+  find_next_called = true
+  return "next"
+end
+assert(browser.find_next() == "next", "find_next should delegate to terminal")
+assert(find_next_called == true, "find_next should call terminal.find_next")
+
+local find_previous_called = false
+terminal.find_previous = function()
+  find_previous_called = true
+  return "previous"
+end
+assert(browser.find_previous() == "previous", "find_previous should delegate to terminal")
+assert(find_previous_called == true, "find_previous should call terminal.find_previous")
 
 local hovered_here = false
 terminal.hover_here = function()
@@ -441,6 +473,9 @@ terminal.press_key = original_terminal_press_key
 terminal.start_text_mode = original_terminal_start_text_mode
 terminal.page_scroll = original_terminal_page_scroll
 terminal.yank_selection = original_terminal_yank_selection
+terminal.find_text = original_terminal_find_text
+terminal.find_next = original_terminal_find_next
+terminal.find_previous = original_terminal_find_previous
 
 local original_open = browser.open
 local original_navigate = browser.navigate
