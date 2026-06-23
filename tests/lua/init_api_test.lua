@@ -125,6 +125,42 @@ assert(browser.address(function()
   return ""
 end, { is_active = true }) == false, "address should return false for empty input")
 
+opened = nil
+navigated = nil
+assert(browser.address("example.org", { is_active = false }) == true, "address should accept direct string input")
+assert(opened == "https://example.org", "direct address input should open normalized host input")
+assert(navigated == nil, "direct inactive address input should not navigate")
+
+opened = nil
+navigated = nil
+assert(browser.address("search terms", { is_active = true }) == true, "direct active address input should navigate")
+assert(
+  navigated == "https://www.google.com/search?q=search%20terms",
+  "direct address input should use configured search URL"
+)
+
+local prompt_seen = nil
+local default_seen = nil
+browser.current_url = function()
+  return "https://current.example/path"
+end
+assert(browser.address(function(prompt, default)
+  prompt_seen = prompt
+  default_seen = default
+  return ""
+end, { is_active = true }) == false, "empty prompted address should still be a no-op")
+assert(prompt_seen == "nvim-browser address: ", "address prompt should keep the same label")
+assert(default_seen == "https://current.example/path", "address prompt should default to the current URL")
+
+browser.current_url = function()
+  return nil
+end
+assert(browser.address(function(_, default)
+  default_seen = default
+  return ""
+end, { is_active = true }) == false, "empty prompted address should be a no-op with last target default")
+assert(default_seen == "https://www.google.com/search?q=search%20terms", "address prompt should fall back to last target")
+
 local original_terminal_reader_follow = terminal.reader_follow
 terminal.reader_follow = function()
   return "https://example.com/from-reader"

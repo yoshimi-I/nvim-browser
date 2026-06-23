@@ -6,6 +6,7 @@ local commands = require("nvim-browser.commands")
 local clicked = nil
 local followed = nil
 local prompted = nil
+local prompt_default = nil
 local warnings = {}
 local addressed = nil
 local found = nil
@@ -30,7 +31,11 @@ local browser = {
     return true
   end,
   address = function(input)
-    addressed = input("nvim-browser address: ")
+    if type(input) == "string" then
+      addressed = input
+    else
+      addressed = input("nvim-browser address: ")
+    end
     return true
   end,
   find_text = function(query)
@@ -101,8 +106,9 @@ vim.api.nvim_echo = function(chunks)
 end
 
 commands.register(browser, {
-  input = function(prompt)
+  input = function(prompt, default)
     prompted = prompt
+    prompt_default = default
     return "s"
   end,
 })
@@ -131,6 +137,14 @@ assert(reader_follow_called == true, "NBrowserReaderFollow should call browser.r
 
 vim.cmd("NBrowserAddress")
 assert(addressed == "s", "NBrowserAddress should pass the injected input function to browser.address")
+assert(prompt_default == "https://example.com/long", "NBrowserAddress should prefill the current URL when prompting")
+
+prompted = nil
+prompt_default = nil
+addressed = nil
+vim.cmd("NBrowserAddress hello world")
+assert(addressed == "hello world", "NBrowserAddress should accept address text as command arguments")
+assert(prompted == nil, "NBrowserAddress with arguments should not prompt")
 
 vim.cmd("NBrowserFind needle")
 assert(found == "needle", "NBrowserFind should pass an argument to browser.find_text")
@@ -226,5 +240,28 @@ commands.register(empty_browser, {
 })
 vim.cmd("NBrowserHintMode")
 assert(warnings[#warnings] == "nvim-browser: no browser hints available", "NBrowserHintMode should warn when no hints exist")
+
+local no_default_prompt = nil
+local no_default_browser = {
+  address = function()
+    error("address should not be called for empty first-use prompt input")
+  end,
+  current_url = function()
+    return nil
+  end,
+  last_target = function()
+    return nil
+  end,
+}
+commands.register(no_default_browser, {
+  input = function(_, default)
+    no_default_prompt = default
+    return ""
+  end,
+})
+local no_default_warning_count = #warnings
+vim.cmd("NBrowserAddress")
+assert(no_default_prompt == "", "NBrowserAddress should use an empty prompt default when no URL or target exists")
+assert(#warnings == no_default_warning_count, "NBrowserAddress should silently cancel empty first-use prompt input")
 
 vim.api.nvim_echo = original_echo

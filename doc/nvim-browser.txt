@@ -70,9 +70,11 @@ COMMANDS                                           *nvim-browser-commands*
 	Navigate the active browser session to a URL and capture a fresh frame.
 
 							*:NBrowserAddress*
-:NBrowserAddress
-	Prompt for a URL or search query. If a browser session is active, navigate
-	it; otherwise open a new browser preview.
+:NBrowserAddress [url-or-search]
+	Open a URL or search query. With no argument, prompt for a value and
+	prefill the prompt with the current URL when available, falling back to the
+	last target. If a browser session is active, navigate it; otherwise open a
+	new browser preview.
 
 							*:NBrowserBack*
 :NBrowserBack

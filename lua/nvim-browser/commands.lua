@@ -121,17 +121,31 @@ function M.register(browser, opts)
     nargs = 1,
   })
 
-  vim.api.nvim_create_user_command("NBrowserAddress", function()
-    local value = input("nvim-browser address: ")
+  vim.api.nvim_create_user_command("NBrowserAddress", function(opts)
+    local value = opts.args ~= "" and opts.args or nil
+    local function address_input(prompt, fallback)
+      local default = fallback
+      if browser.current_url ~= nil then
+        default = browser.current_url() or default
+      end
+      if default == nil and browser.last_target ~= nil then
+        default = browser.last_target()
+      end
+      default = default or ""
+      return input(prompt, default)
+    end
+    if value == nil then
+      value = address_input("nvim-browser address: ")
+    end
     if value == nil or value == "" then
       return
     end
-    if not browser.address(function()
-      return value
-    end) then
+    if not browser.address(value) then
       warn_address_unavailable()
     end
-  end, {})
+  end, {
+    nargs = "*",
+  })
 
   vim.api.nvim_create_user_command("NBrowserBack", function()
     browser.back()

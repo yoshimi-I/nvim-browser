@@ -96,8 +96,12 @@ end
 
 function M.address(input, opts)
   opts = opts or {}
-  input = input or vim.fn.input
-  local target = M.resolve_address_target(input("nvim-browser address: "))
+  local value = input
+  if type(input) ~= "string" then
+    input = input or vim.fn.input
+    value = input("nvim-browser address: ", M.current_url() or M.last_target() or "")
+  end
+  local target = M.resolve_address_target(value)
   if target == nil then
     return false
   end
@@ -106,10 +110,15 @@ function M.address(input, opts)
     is_active = has_active_browser_session()
   end
   if is_active then
-    return M.navigate(target)
+    local ok = M.navigate(target)
+    if ok then
+      state.last_target = target
+    end
+    return ok
   end
-  M.open(target)
-  return true
+  local ok = M.open(target)
+  state.last_target = target
+  return ok ~= false
 end
 
 function M.back()

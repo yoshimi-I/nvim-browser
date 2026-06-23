@@ -198,9 +198,11 @@ into it. `:NBrowserSubmitHint {id-or-label} {text}` also presses Enter after the
 text is queued.
 
 Lua mappings can call `require("nvim-browser").hint_mode()` for the same prompt.
-`:NBrowserAddress` prompts for a URL or search query; host-like input opens as a
-URL, and plain words use the configured search URL. Lua mappings can call
-`require("nvim-browser").address()`.
+`:NBrowserAddress [url-or-search]` works like a small omnibox; host-like input
+opens as a URL, and plain words use the configured search URL. With no
+argument, the prompt is prefilled with the current URL when available, falling
+back to the last target. Lua mappings can call `require("nvim-browser").address()`
+or pass a value directly with `require("nvim-browser").address("example.com")`.
 
 `:NBrowserFind {text}` finds text in the active browser page, scrolls to the
 match through the browser's native find behavior, and captures a fresh frame.
