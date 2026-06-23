@@ -99,6 +99,18 @@ function M.follow_hint(id)
   return terminal.click_hint(id)
 end
 
+function M.hint_mode(input)
+  input = input or vim.fn.input
+  if #M.hints() == 0 then
+    return false
+  end
+  local label = input("nvim-browser hint: ")
+  if label == nil or label == "" then
+    return false
+  end
+  return M.follow_hint(label)
+end
+
 function M.toggle()
   return terminal.toggle()
 end

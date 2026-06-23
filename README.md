@@ -108,6 +108,7 @@ Then run:
 :NBrowserHints
 :NBrowserClickHint 1
 :NBrowserFollowHint a
+:NBrowserHintMode
 :NBrowserCurrentUrl
 :NBrowserCurrentTitle
 :NBrowserStatus
@@ -120,7 +121,10 @@ available for ANSI and Kitty Unicode browser previews.
 `:NBrowserHints` echoes the latest keyboard labels and numbered browser
 elements. On ANSI and Kitty Unicode browser previews, the same labels are also
 overlaid on the preview. `:NBrowserClickHint {id-or-label}` and
-`:NBrowserFollowHint {label}` click the matching element.
+`:NBrowserFollowHint {label}` click the matching element. `:NBrowserHintMode`
+prompts for a label and follows it.
+
+Lua mappings can call `require("nvim-browser").hint_mode()` for the same prompt.
 
 ## License
 

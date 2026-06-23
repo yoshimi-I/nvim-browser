@@ -1,6 +1,24 @@
 local M = {}
 
-function M.register(browser)
+function M.register(browser, opts)
+  opts = opts or {}
+  local input = opts.input or vim.fn.input
+
+  local function warn_hint_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: hint not found, stale, or browser session is inactive", "WarningMsg" } }, false, {})
+  end
+
+  local function warn_no_hints()
+    vim.api.nvim_echo({ { "nvim-browser: no browser hints available", "WarningMsg" } }, false, {})
+  end
+
+  local function follow_hint(label)
+    if browser.follow_hint ~= nil then
+      return browser.follow_hint(label)
+    end
+    return browser.click_hint(label)
+  end
+
   vim.api.nvim_create_user_command("NBrowserOpen", function(opts)
     browser.open(opts.args ~= "" and opts.args or nil)
   end, {
@@ -95,7 +113,7 @@ function M.register(browser)
   vim.api.nvim_create_user_command("NBrowserHints", function()
     local hints = browser.hints()
     if #hints == 0 then
-      vim.api.nvim_echo({ { "nvim-browser: no browser hints available" } }, false, {})
+      warn_no_hints()
       return
     end
     local lines = {}
@@ -115,19 +133,34 @@ function M.register(browser)
 
   vim.api.nvim_create_user_command("NBrowserClickHint", function(opts)
     if not browser.click_hint(opts.args) then
-      vim.api.nvim_echo({ { "nvim-browser: hint not found, stale, or browser session is inactive", "WarningMsg" } }, false, {})
+      warn_hint_unavailable()
     end
   end, {
     nargs = 1,
   })
 
   vim.api.nvim_create_user_command("NBrowserFollowHint", function(opts)
-    if not browser.click_hint(opts.args) then
-      vim.api.nvim_echo({ { "nvim-browser: hint not found, stale, or browser session is inactive", "WarningMsg" } }, false, {})
+    if not follow_hint(opts.args) then
+      warn_hint_unavailable()
     end
   end, {
     nargs = 1,
   })
+
+  vim.api.nvim_create_user_command("NBrowserHintMode", function()
+    local hints = browser.hints()
+    if #hints == 0 then
+      warn_no_hints()
+      return
+    end
+    local label = input("nvim-browser hint: ")
+    if label == nil or label == "" then
+      return
+    end
+    if not follow_hint(label) then
+      warn_hint_unavailable()
+    end
+  end, {})
 
   vim.api.nvim_create_user_command("NBrowserCurrentUrl", function()
     vim.api.nvim_echo({ { browser.current_url() or "" } }, false, {})
