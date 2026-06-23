@@ -33,6 +33,8 @@ M.options = {
       address = "a",
       find = "/",
       hints = "f",
+      type_hint_mode = "t",
+      submit_hint_mode = "s",
     },
   },
   preview_keymaps = {
@@ -47,6 +49,8 @@ M.options = {
       address = "a",
       find = "/",
       hints = "f",
+      type_hint_mode = "t",
+      submit_hint_mode = "s",
       close = "q",
     },
   },

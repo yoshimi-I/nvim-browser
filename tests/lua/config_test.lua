@@ -35,6 +35,22 @@ assert(
 )
 assert(configured.preview_keymaps.enabled == true, "preview-local keymaps should be enabled by default")
 assert(configured.preview_keymaps.mappings.close == "q", "preview-local keymaps should include a close mapping")
+assert(
+  configured.keymaps.mappings.type_hint_mode == "t",
+  "global keymaps should include a hinted input mapping"
+)
+assert(
+  configured.keymaps.mappings.submit_hint_mode == "s",
+  "global keymaps should include a hinted submit mapping"
+)
+assert(
+  configured.preview_keymaps.mappings.type_hint_mode == "t",
+  "preview-local keymaps should include a hinted input mapping"
+)
+assert(
+  configured.preview_keymaps.mappings.submit_hint_mode == "s",
+  "preview-local keymaps should include a hinted submit mapping"
+)
 local remapped = config.setup({
   preview_keymaps = {
     mappings = {
@@ -44,4 +60,8 @@ local remapped = config.setup({
 })
 assert(remapped.preview_keymaps.mappings.scroll_down == "<C-d>", "preview-local keymaps should allow partial remaps")
 assert(remapped.preview_keymaps.mappings.close == "q", "preview-local partial remaps should retain defaults")
+assert(
+  remapped.preview_keymaps.mappings.type_hint_mode == "t",
+  "preview-local partial remaps should retain hinted input mapping"
+)
 config.options = original_options

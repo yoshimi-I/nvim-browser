@@ -231,12 +231,14 @@ require("nvim-browser").setup({
 
 The default mappings are `<leader>br` reload, `<leader>bh` back, `<leader>bl`
 forward, `<leader>bj` scroll down, `<leader>bk` scroll up, `<leader>ba`
-address, `<leader>b/` find, and `<leader>bf` hint mode. Existing mappings are
-left untouched; choose another prefix or mapping key if one is already in use.
+address, `<leader>b/` find, `<leader>bf` hint mode, `<leader>bt` type into a
+hinted field, and `<leader>bs` type and submit. Existing mappings are left
+untouched; choose another prefix or mapping key if one is already in use.
 
 Focused preview buffers also install buffer-local browser controls by default:
 `r` reload, `H` back, `L` forward, `j`/`k` scroll, `a` address, `/` find, `f`
-hint mode, and `q` close. Disable or remap them with
+hint mode, `t` type into a hinted field, `s` type and submit, and `q` close.
+Disable or remap them with
 `preview_keymaps = { enabled = false }` or `preview_keymaps.mappings`.
 
 Configure search with `require("nvim-browser").setup({ search_url = "https://www.google.com/search?q=%s" })`.
