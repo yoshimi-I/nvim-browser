@@ -49,6 +49,8 @@ assert(
 )
 assert(configured.live_refresh.enabled == true, "live refresh should be enabled by default")
 assert(configured.live_refresh.interval_ms == 1500, "live refresh should default to a conservative interval")
+assert(configured.viewport.cell_width_px == 10, "viewport cell width should default to the existing 10px geometry")
+assert(configured.viewport.cell_height_px == 20, "viewport cell height should default to the existing 20px geometry")
 assert(configured.preview_keymaps.mappings.stop == "<Esc>", "preview-local keymaps should include a stop mapping")
 assert(configured.preview_keymaps.mappings.input_text_mode == "i", "preview-local keymaps should include focused input mode")
 assert(configured.preview_keymaps.mappings.key_enter == "<CR>", "preview-local keymaps should include Enter forwarding")
@@ -91,6 +93,8 @@ local remapped = config.setup({
 })
 assert(remapped.live_refresh.enabled == false, "live refresh should allow disabling automatic capture")
 assert(remapped.live_refresh.interval_ms == 1500, "live refresh partial config should retain the default interval")
+assert(remapped.viewport.cell_width_px == 10, "partial config should retain default viewport cell width")
+assert(remapped.viewport.cell_height_px == 20, "partial config should retain default viewport cell height")
 assert(remapped.preview_keymaps.mappings.scroll_down == "<C-d>", "preview-local keymaps should allow partial remaps")
 assert(remapped.preview_keymaps.mappings.close == "q", "preview-local partial remaps should retain defaults")
 assert(
@@ -113,4 +117,12 @@ assert(
   remapped.preview_keymaps.mappings.key_enter == "<CR>",
   "preview-local partial remaps should retain browser key mappings"
 )
+
+local resized_viewport = config.setup({
+  viewport = {
+    cell_width_px = 9,
+  },
+})
+assert(resized_viewport.viewport.cell_width_px == 9, "viewport cell width should be configurable")
+assert(resized_viewport.viewport.cell_height_px == 20, "partial viewport config should retain default cell height")
 config.options = original_options

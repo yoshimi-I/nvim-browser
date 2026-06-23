@@ -19,6 +19,10 @@ M.options = {
   binary = default_binary(),
   graphics = "auto",
   image_fit = "original",
+  viewport = {
+    cell_width_px = 10,
+    cell_height_px = 20,
+  },
   search_url = "https://www.google.com/search?q=%s",
   live_refresh = {
     enabled = true,

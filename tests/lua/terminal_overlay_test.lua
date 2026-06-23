@@ -287,12 +287,23 @@ vim.api.nvim_win_set_width(image_win, 52)
 vim.api.nvim_win_set_height(image_win, 14)
 terminal._test.set_test_window(image_win)
 local image_command = terminal._test.command_for_window({ "nvbrowser", "show-image", "/tmp/image.png", "--fit", "contain" })
+local function command_option(command, option)
+  for index, value in ipairs(command) do
+    if value == option then
+      return command[index + 1]
+    end
+  end
+  return nil
+end
+
 assert(vim.tbl_contains(image_command, "--columns"), "show-image should receive preview columns")
 assert(vim.tbl_contains(image_command, "--rows"), "show-image should receive preview rows")
 assert(vim.tbl_contains(image_command, "--width"), "show-image should receive preview pixel width")
 assert(vim.tbl_contains(image_command, "--height"), "show-image should receive preview pixel height")
 assert(vim.tbl_contains(image_command, "50"), "show-image columns should come from preview width minus borders")
 assert(vim.tbl_contains(image_command, "12"), "show-image rows should come from preview height minus borders")
+assert(command_option(image_command, "--width") == "500", "show-image width should default to 10px cells")
+assert(command_option(image_command, "--height") == "240", "show-image height should default to 20px cells")
 
 terminal._test.set_mode("serve")
 local serve_command = terminal._test.command_for_window({ "nvbrowser", "serve", "--output", "kitty-unicode", "--url", "https://example.com" })
@@ -303,6 +314,21 @@ assert(vim.tbl_contains(ansi_serve_command, "--rows"), "ansi serve should receiv
 assert(vim.tbl_contains(ansi_serve_command, "--width"), "ansi serve should receive startup preview pixel width")
 assert(vim.tbl_contains(ansi_serve_command, "--height"), "ansi serve should receive startup preview pixel height")
 assert(vim.tbl_contains(ansi_serve_command, "11"), "ansi serve rows should reserve the footer before the first frame")
+assert(command_option(ansi_serve_command, "--width") == "500", "serve width should default to 10px cells")
+assert(command_option(ansi_serve_command, "--height") == "220", "serve height should reserve footer rows before applying 20px cells")
+
+terminal.configure({
+  viewport = {
+    cell_width_px = 9,
+    cell_height_px = 15,
+  },
+})
+local custom_image_command = terminal._test.command_for_window({ "nvbrowser", "show-image", "/tmp/image.png", "--fit", "contain" })
+assert(command_option(custom_image_command, "--width") == "450", "show-image width should use configured cell width")
+assert(command_option(custom_image_command, "--height") == "180", "show-image height should use configured cell height")
+local custom_serve_command = terminal._test.command_for_window({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
+assert(command_option(custom_serve_command, "--width") == "450", "serve width should use configured cell width")
+assert(command_option(custom_serve_command, "--height") == "165", "serve height should use configured cell height after footer reservation")
 
 terminal._test.apply_serve_response({
   id = 101,
@@ -370,7 +396,7 @@ vim.fn.chansend = function(job_id, payload)
   return 1
 end
 
-local expected_mouse_point = terminal.viewport_point_for_cell(6, 25, { columns = 50, rows = 11, width = 500, height = 220 })
+local expected_mouse_point = terminal.viewport_point_for_cell(6, 25, { columns = 50, rows = 11, width = 450, height = 165 })
 assert(terminal.click_mouse({ winid = image_win, line = 6, column = 25 }) == true, "mouse click should send a browser click")
 local mouse_click_seen = false
 for _, request in ipairs(footer_click_requests) do
@@ -732,6 +758,22 @@ for _, request in ipairs(sent_requests) do
   end
 end
 assert(win_resize_seen, "active serve sessions should resize when the preview window changes size")
+
+sent_requests = {}
+terminal.configure({
+  viewport = {
+    cell_width_px = 8,
+    cell_height_px = 16,
+  },
+})
+local configure_resize_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "resize" and decoded.width == decoded.columns * 8 and decoded.height == decoded.rows * 16 then
+    configure_resize_seen = true
+  end
+end
+assert(configure_resize_seen, "active serve sessions should resize immediately when viewport cell pixels change")
 
 sent_requests = {}
 assert(terminal.input_text("focused text") == true, "focused text input should reach the active serve backend")

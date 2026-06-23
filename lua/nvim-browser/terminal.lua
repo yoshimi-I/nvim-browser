@@ -41,6 +41,10 @@ local options = {
     enabled = true,
     interval_ms = 1500,
   },
+  viewport = {
+    cell_width_px = 10,
+    cell_height_px = 20,
+  },
 }
 
 local timer_factory = function()
@@ -206,13 +210,22 @@ local function preview_cells(opts)
   }
 end
 
+local function viewport_cell_pixels()
+  local viewport = options.viewport or {}
+  return {
+    width = math.max(1, tonumber(viewport.cell_width_px) or 10),
+    height = math.max(1, tonumber(viewport.cell_height_px) or 20),
+  }
+end
+
 local function current_preview_geometry()
   local cells = preview_cells({ reserve_footer = state.mode == "serve" })
+  local cell = viewport_cell_pixels()
   return {
     columns = cells.columns,
     rows = cells.rows,
-    width = cells.columns * 10,
-    height = cells.rows * 20,
+    width = cells.columns * cell.width,
+    height = cells.rows * cell.height,
   }
 end
 
@@ -247,10 +260,11 @@ local function command_for_window(command)
 
   if command_uses_show_image(command) then
     local cells = preview_cells()
+    local cell = viewport_cell_pixels()
     add_option(adjusted, "--columns", cells.columns)
     add_option(adjusted, "--rows", cells.rows)
-    add_option(adjusted, "--width", cells.columns * 10)
-    add_option(adjusted, "--height", cells.rows * 20)
+    add_option(adjusted, "--width", cells.columns * cell.width)
+    add_option(adjusted, "--height", cells.rows * cell.height)
     return adjusted
   end
 
@@ -262,10 +276,11 @@ local function command_for_window(command)
   end
 
   local cells = preview_cells({ reserve_footer = reserve_footer })
+  local cell = viewport_cell_pixels()
   add_option(adjusted, "--columns", cells.columns)
   add_option(adjusted, "--rows", cells.rows)
-  add_option(adjusted, "--width", cells.columns * 10)
-  add_option(adjusted, "--height", cells.rows * 20)
+  add_option(adjusted, "--width", cells.columns * cell.width)
+  add_option(adjusted, "--height", cells.rows * cell.height)
   return adjusted
 end
 
@@ -1680,8 +1695,12 @@ function M.configure(opts)
   opts = opts or {}
   options = vim.tbl_deep_extend("force", options, {
     live_refresh = opts.live_refresh or {},
+    viewport = opts.viewport or {},
   })
   if state.mode == "serve" and state.job_id ~= nil and is_valid_buffer() then
+    if opts.viewport ~= nil then
+      request_resize()
+    end
     start_live_refresh_timer(state.generation)
   else
     stop_live_refresh()

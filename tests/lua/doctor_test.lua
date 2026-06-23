@@ -32,8 +32,24 @@ local outside_zellij = doctor.run({
   binary = "nvim",
   graphics = "auto",
   image_fit = "original",
+  viewport = {
+    cell_width_px = 9,
+    cell_height_px = 15,
+  },
 }, {})
 assert(contains_line(outside_zellij, "browser output: kitty-unicode"), "auto graphics outside Zellij should choose Kitty Unicode")
+assert(contains_line(outside_zellij, "viewport cell px: 9x15"), "doctor should report configured viewport cell pixel size")
+
+local normalized_viewport = doctor.run({
+  binary = "nvim",
+  graphics = "auto",
+  image_fit = "original",
+  viewport = {
+    cell_width_px = 0,
+    cell_height_px = "bad",
+  },
+}, {})
+assert(contains_line(normalized_viewport, "viewport cell px: 1x20"), "doctor should report effective normalized viewport cell pixel size")
 
 vim.env.ZELLIJ = "1"
 local explicit_kitty = doctor.run({

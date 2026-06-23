@@ -93,6 +93,18 @@ With `graphics = "auto"`, browser and raster image previews use Kitty graphics
 outside terminal multiplexers and fall back to ANSI output when `ZELLIJ` is
 detected.
 
+If your terminal font cell size makes browser previews look stretched or click
+targets feel offset, tune the viewport cell pixels:
+
+```lua
+require("nvim-browser").setup({
+  viewport = {
+    cell_width_px = 9,
+    cell_height_px = 18,
+  },
+})
+```
+
 To attach to an already-running Chrome DevTools Protocol browser instead of
 letting `nvbrowser` launch Chrome, pass the browser WebSocket URL:
 

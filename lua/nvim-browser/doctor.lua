@@ -55,9 +55,18 @@ local function runtime_line(state)
     .. viewport
 end
 
+local function viewport_cell_pixels(config)
+  local viewport = (config and config.viewport) or {}
+  return {
+    width = math.max(1, tonumber(viewport.cell_width_px) or 10),
+    height = math.max(1, tonumber(viewport.cell_height_px) or 20),
+  }
+end
+
 function M.run(config, terminal_state)
   config = config or {}
   terminal_state = terminal_state or {}
+  local cell = viewport_cell_pixels(config)
 
   local browser_output = command_output(backend.command_for(config.binary or "nvbrowser", "open", "https://example.com", config))
   local image_output = command_output(backend.command_for(config.binary or "nvbrowser", "open", "/tmp/nvim-browser-doctor.png", config))
@@ -67,6 +76,7 @@ function M.run(config, terminal_state)
       "nvim-browser doctor",
       "binary: " .. tostring(config.binary or "nvbrowser"),
       "graphics config: " .. tostring(config.graphics or "auto"),
+      "viewport cell px: " .. tostring(cell.width) .. "x" .. tostring(cell.height),
       "browser output: " .. browser_output,
       "image output: " .. image_output,
       "environment: ZELLIJ=" .. tostring(vim.env.ZELLIJ or "") .. " TERM=" .. tostring(vim.env.TERM or ""),
