@@ -416,6 +416,10 @@ j  scroll down
 k  scroll up
 <PageDown>  page down
 <PageUp>    page up
+gg  scroll to top
+G   scroll to bottom
+<C-d>  half page down
+<C-u>  half page up
 a  address prompt
 /  find prompt
 n  repeat find forward
@@ -456,8 +460,12 @@ require("nvim-browser").setup({
     mappings = {
       click_here = "gc",
       left_click = false,
-      scroll_down = "<C-d>",
-      scroll_up = "<C-u>",
+      scroll_down = "j",
+      scroll_up = "k",
+      scroll_top = "gg",
+      scroll_bottom = "G",
+      half_page_down = "<C-d>",
+      half_page_up = "<C-u>",
       page_down = "<PageDown>",
       page_up = "<PageUp>",
       find_next = "n",

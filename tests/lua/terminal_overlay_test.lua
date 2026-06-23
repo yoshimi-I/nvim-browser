@@ -969,13 +969,67 @@ assert(page_down_request.delta_y == 540, "page_scroll should use 90 percent of p
 assert(page_down_request.delta_x == 0, "page_scroll should not scroll horizontally by default")
 
 sent_requests = {}
+assert(terminal.page_scroll(1, { fraction = 0.5 }) == true, "page_scroll should support custom viewport fractions")
+local half_page_down_request = last_request_of_type("scroll")
+assert(half_page_down_request.delta_y == 300, "half-page down should use 50 percent of page viewport height")
+
+sent_requests = {}
+assert(terminal.page_scroll(-1, { fraction = 0.5 }) == true, "page_scroll should support backward half-page scrolling")
+local half_page_up_request = last_request_of_type("scroll")
+assert(half_page_up_request.delta_y == -300, "half-page up should negate 50 percent of page viewport height")
+
+terminal._test.apply_serve_response({
+  id = live_capture_id + 1,
+  status = "ok",
+  page = {
+    scroll_y = 250,
+    viewport_height = 600,
+    document_height = 1600,
+  },
+  runtime = {
+    viewport = { width = 800, height = 640, device_scale_factor = 1 },
+  },
+})
+sent_requests = {}
+assert(terminal.scroll_top() == true, "scroll_top should send a scroll request")
+local top_request = last_request_of_type("scroll")
+assert(top_request.delta_y == -250, "scroll_top should scroll back by current page scroll position")
+
+sent_requests = {}
+assert(terminal.scroll_bottom() == true, "scroll_bottom should send a scroll request")
+local bottom_request = last_request_of_type("scroll")
+assert(bottom_request.delta_y == 750, "scroll_bottom should scroll to remaining document bottom")
+
+terminal._test.apply_serve_response({
+  id = live_capture_id + 2,
+  status = "ok",
+  page = {
+    scroll_y = 250.5,
+    viewport_height = 600.25,
+    document_height = 1600.5,
+  },
+  runtime = {
+    viewport = { width = 800, height = 640, device_scale_factor = 1 },
+  },
+})
+sent_requests = {}
+assert(terminal.scroll_top() == true, "scroll_top should handle fractional page metrics")
+local fractional_top_request = last_request_of_type("scroll")
+assert(fractional_top_request.delta_y == -251, "scroll_top should round fractional deltas to integer JSONL")
+
+sent_requests = {}
+assert(terminal.scroll_bottom() == true, "scroll_bottom should handle fractional page metrics")
+local fractional_bottom_request = last_request_of_type("scroll")
+assert(fractional_bottom_request.delta_y == 750, "scroll_bottom should round fractional deltas to integer JSONL")
+
+sent_requests = {}
 assert(terminal.page_scroll(-1) == true, "page_scroll should support backward scrolling")
 local page_up_request = last_request_of_type("scroll")
 assert(page_up_request ~= nil, "backward page_scroll should send a scroll request")
 assert(page_up_request.delta_y == -540, "backward page_scroll should negate the viewport-based delta")
 
 terminal._test.apply_serve_response({
-  id = live_capture_id + 1,
+  id = live_capture_id + 3,
   status = "ok",
   page = {
     viewport_height = 0,
@@ -989,11 +1043,26 @@ assert(terminal.page_scroll(1) == true, "page_scroll should fall back to runtime
 local runtime_page_request = last_request_of_type("scroll")
 assert(runtime_page_request.delta_y == 450, "runtime viewport fallback should handle invalid page metrics")
 
-terminal._test.apply_serve_response({ id = live_capture_id + 2, status = "ok", runtime = {} })
+sent_requests = {}
+assert(terminal.page_scroll(1, { fraction = 0.5 }) == true, "half page scroll should fall back to runtime viewport metadata")
+local runtime_half_page_request = last_request_of_type("scroll")
+assert(runtime_half_page_request.delta_y == 250, "runtime viewport fallback should honor half-page fraction")
+
+terminal._test.apply_serve_response({ id = live_capture_id + 4, status = "ok", runtime = {} })
 sent_requests = {}
 assert(terminal.page_scroll(1) == true, "page_scroll should fall back when no metadata exists")
 local fallback_page_request = last_request_of_type("scroll")
 assert(fallback_page_request.delta_y == 400, "page_scroll should preserve the existing 400px fallback")
+
+sent_requests = {}
+assert(terminal.scroll_top() == true, "scroll_top should fall back without page metrics")
+local fallback_top_request = last_request_of_type("scroll")
+assert(fallback_top_request.delta_y == -40000, "scroll_top fallback should send a large upward scroll")
+
+sent_requests = {}
+assert(terminal.scroll_bottom() == true, "scroll_bottom should fall back without page metrics")
+local fallback_bottom_request = last_request_of_type("scroll")
+assert(fallback_bottom_request.delta_y == 40000, "scroll_bottom fallback should send a large downward scroll")
 
 sent_requests = {}
 assert(terminal.navigate("https://example.com/new") == true, "navigation should be allowed while a live capture is in flight")

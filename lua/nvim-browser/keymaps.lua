@@ -200,6 +200,22 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.page_up()
   end, "nvim-browser: page up", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "scroll_top", "gg"), function()
+    browser.scroll_top()
+  end, "nvim-browser: scroll top", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "scroll_bottom", "G"), function()
+    browser.scroll_bottom()
+  end, "nvim-browser: scroll bottom", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "half_page_down", "<C-d>"), function()
+    browser.half_page_down()
+  end, "nvim-browser: half page down", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "half_page_up", "<C-u>"), function()
+    browser.half_page_up()
+  end, "nvim-browser: half page up", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "address", "a"), function()
     browser.address()
   end, "nvim-browser: address", buffer_opts)

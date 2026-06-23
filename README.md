@@ -380,9 +380,10 @@ untouched; choose another prefix or mapping key if one is already in use.
 
 Focused preview buffers also install buffer-local browser controls by default:
 `r` reload, `H` back, `L` forward, `j`/`k` scroll, `<PageDown>/<PageUp>` scroll
-by 90% of the browser viewport, `a` address, `/` find, `n` repeat find forward,
-`N` repeat find backward, `f` hint mode, `t` type into a hinted field, `s` type
-and submit, `o` select a hinted option, `c` toggle a hinted checkbox/radio, `i`
+by 90% of the browser viewport, `gg` top, `G` bottom, `<C-d>/<C-u>` scroll by
+half the browser viewport, `a` address, `/` find, `n` repeat find forward, `N`
+repeat find backward, `f` hint mode, `t` type into a hinted field, `s` type and
+submit, `o` select a hinted option, `c` toggle a hinted checkbox/radio, `i`
 type into the focused element with browser text mode, `p` paste the selected
 register into the focused element, `y` yank the browser selection into the
 selected register, `<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`

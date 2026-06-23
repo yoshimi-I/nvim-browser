@@ -775,6 +775,114 @@ fn opt_in_e2e_serve_loop_focuses_hint_for_text_entry() {
 }
 
 #[test]
+fn opt_in_e2e_serve_loop_reports_metrics_for_top_bottom_scroll() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let fixture_path = directory.path().join("scroll-metrics.html");
+    std::fs::write(
+        &fixture_path,
+        r##"<!doctype html>
+<html>
+  <head>
+    <title>NBrowser Scroll Metrics E2E Fixture</title>
+    <style>body { margin: 0; } main { min-height: 2400px; padding-top: 1px; }</style>
+  </head>
+  <body><main><p>top</p><p style="margin-top: 2200px">bottom</p></main></body>
+</html>"##,
+    )
+    .expect("scroll fixture should be written");
+    let fixture_url = format!("file://{}", fixture_path.display());
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--url",
+            &fixture_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok", "initial navigation should succeed");
+    let page = initial["page"]
+        .as_object()
+        .expect("initial response should include page metrics");
+    let scroll_y = page["scroll_y"]
+        .as_f64()
+        .expect("scroll_y should be numeric");
+    let viewport_height = page["viewport_height"]
+        .as_f64()
+        .expect("viewport_height should be numeric");
+    let document_height = page["document_height"]
+        .as_f64()
+        .expect("document_height should be numeric");
+    assert_eq!(scroll_y, 0.0, "initial page should start at the top");
+    assert!(
+        document_height > viewport_height,
+        "fixture should be taller than the viewport"
+    );
+
+    let bottom_delta = (document_height - viewport_height - scroll_y).floor() as i32;
+    let bottom = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "scroll",
+        "delta_y": bottom_delta,
+        "delta_x": 0
+    }));
+    assert_eq!(
+        bottom["status"], "ok",
+        "bottom scroll should succeed; response={bottom:?}"
+    );
+    let bottom_scroll_y = bottom["page"]["scroll_y"]
+        .as_f64()
+        .expect("bottom response should include scroll_y");
+    assert!(
+        bottom_scroll_y >= f64::from(bottom_delta) - 4.0,
+        "bottom scroll should reach near the document bottom; response={bottom:?}"
+    );
+
+    let top = serve.request(serde_json::json!({
+        "id": 2,
+        "type": "scroll",
+        "delta_y": -(bottom_scroll_y.floor() as i32),
+        "delta_x": 0
+    }));
+    assert_eq!(top["status"], "ok", "top scroll should succeed");
+    let top_scroll_y = top["page"]["scroll_y"]
+        .as_f64()
+        .expect("top response should include scroll_y");
+    assert!(
+        top_scroll_y <= 4.0,
+        "top scroll should return near the document top; response={top:?}"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 3, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
+#[test]
 fn opt_in_e2e_serve_loop_selects_real_chromium_hint() {
     if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
         return;

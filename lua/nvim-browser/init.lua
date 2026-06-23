@@ -150,6 +150,22 @@ function M.page_up()
   return terminal.page_scroll(-1)
 end
 
+function M.scroll_top()
+  return terminal.scroll_top()
+end
+
+function M.scroll_bottom()
+  return terminal.scroll_bottom()
+end
+
+function M.half_page_down()
+  return terminal.page_scroll(1, { fraction = 0.5 })
+end
+
+function M.half_page_up()
+  return terminal.page_scroll(-1, { fraction = 0.5 })
+end
+
 function M.input_text(text)
   return terminal.input_text(text)
 end

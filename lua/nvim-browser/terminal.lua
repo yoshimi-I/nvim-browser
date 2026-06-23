@@ -1725,16 +1725,27 @@ function M.stop()
   return true
 end
 
+local function normalize_scroll_delta(value)
+  value = tonumber(value) or 0
+  if value > 0 then
+    return math.ceil(value)
+  end
+  if value < 0 then
+    return math.floor(value)
+  end
+  return 0
+end
+
 function M.scroll(delta_y, delta_x)
   request_resize()
   return send_serve_request({
     type = "scroll",
-    delta_x = delta_x or 0,
-    delta_y = delta_y or 0,
+    delta_x = normalize_scroll_delta(delta_x),
+    delta_y = normalize_scroll_delta(delta_y),
   })
 end
 
-local function page_scroll_delta()
+local function viewport_scroll_height()
   local metrics_height = state.page_metrics and tonumber(state.page_metrics.viewport_height) or nil
   local runtime_height = state.runtime_metadata
     and state.runtime_metadata.viewport
@@ -1742,19 +1753,66 @@ local function page_scroll_delta()
     or nil
   local height = metrics_height ~= nil and metrics_height > 0 and metrics_height or runtime_height
   if height ~= nil and height > 0 then
-    return math.max(1, math.floor(height * 0.9))
+    return height
   end
-  return 400
+  return nil
 end
 
-function M.page_scroll(direction)
+local function page_scroll_delta(fraction)
+  fraction = tonumber(fraction) or 0.9
+  if fraction <= 0 then
+    fraction = 0.9
+  end
+  local height = viewport_scroll_height()
+  if height == nil then
+    return 400
+  end
+  return math.max(1, math.floor(height * fraction))
+end
+
+function M.page_scroll(direction, opts)
+  opts = opts or {}
   local sign = tonumber(direction) or 1
   if sign < 0 then
     sign = -1
   else
     sign = 1
   end
-  return M.scroll(page_scroll_delta() * sign, 0)
+  return M.scroll(page_scroll_delta(opts.fraction) * sign, 0)
+end
+
+local function metrics_scroll_delta_to_top()
+  if type(state.page_metrics) ~= "table" then
+    return nil
+  end
+  local scroll_y = tonumber(state.page_metrics.scroll_y)
+  if scroll_y == nil then
+    return nil
+  end
+  return -math.max(0, scroll_y)
+end
+
+local function metrics_scroll_delta_to_bottom()
+  if type(state.page_metrics) ~= "table" then
+    return nil
+  end
+  local scroll_y = tonumber(state.page_metrics.scroll_y)
+  local viewport_height = tonumber(state.page_metrics.viewport_height)
+  local document_height = tonumber(state.page_metrics.document_height)
+  if scroll_y == nil or viewport_height == nil or document_height == nil then
+    return nil
+  end
+  return math.max(0, document_height - viewport_height - scroll_y)
+end
+
+function M.scroll_top()
+  local delta = metrics_scroll_delta_to_top() or -((viewport_scroll_height() or 400) * 100)
+  return M.scroll(delta, 0)
+end
+
+function M.scroll_bottom()
+  local delta = metrics_scroll_delta_to_bottom() or ((viewport_scroll_height() or 400) * 100)
+  return M.scroll(delta, 0)
 end
 
 function M.input_text(text, opts)

@@ -39,6 +39,10 @@ assert(type(browser.page_metrics) == "function", "page_metrics API should exist"
 assert(type(browser.page_scroll) == "function", "page_scroll API should exist")
 assert(type(browser.page_down) == "function", "page_down API should exist")
 assert(type(browser.page_up) == "function", "page_up API should exist")
+assert(type(browser.scroll_top) == "function", "scroll_top API should exist")
+assert(type(browser.scroll_bottom) == "function", "scroll_bottom API should exist")
+assert(type(browser.half_page_down) == "function", "half_page_down API should exist")
+assert(type(browser.half_page_up) == "function", "half_page_up API should exist")
 assert(type(browser.hint_error) == "function", "hint_error API should exist")
 assert(type(browser.reader) == "function", "reader API should exist")
 assert(type(browser.reader_follow) == "function", "reader_follow API should exist")
@@ -415,8 +419,10 @@ assert(pressed_key.key == "Tab", "press_key should pass the key to terminal")
 assert(pressed_key.modifiers[1] == "shift", "press_key should pass modifiers to terminal")
 
 local page_scroll_direction = nil
-terminal.page_scroll = function(direction)
+local page_scroll_fraction = nil
+terminal.page_scroll = function(direction, opts)
   page_scroll_direction = direction
+  page_scroll_fraction = opts and opts.fraction or nil
   return true
 end
 assert(browser.page_scroll(1) == true, "page_scroll should delegate to terminal")
@@ -425,6 +431,28 @@ assert(browser.page_down() == true, "page_down should delegate to terminal page 
 assert(page_scroll_direction == 1, "page_down should request forward page scroll")
 assert(browser.page_up() == true, "page_up should delegate to terminal page scroll")
 assert(page_scroll_direction == -1, "page_up should request backward page scroll")
+assert(browser.half_page_down() == true, "half_page_down should delegate to terminal page scroll")
+assert(page_scroll_direction == 1, "half_page_down should request forward scroll")
+assert(page_scroll_fraction == 0.5, "half_page_down should request half viewport")
+assert(browser.half_page_up() == true, "half_page_up should delegate to terminal page scroll")
+assert(page_scroll_direction == -1, "half_page_up should request backward scroll")
+assert(page_scroll_fraction == 0.5, "half_page_up should request half viewport")
+
+local scroll_top_called = false
+terminal.scroll_top = function()
+  scroll_top_called = true
+  return "top"
+end
+assert(browser.scroll_top() == "top", "scroll_top should delegate to terminal")
+assert(scroll_top_called == true, "scroll_top should call terminal.scroll_top")
+
+local scroll_bottom_called = false
+terminal.scroll_bottom = function()
+  scroll_bottom_called = true
+  return "bottom"
+end
+assert(browser.scroll_bottom() == "bottom", "scroll_bottom should delegate to terminal")
+assert(scroll_bottom_called == true, "scroll_bottom should call terminal.scroll_bottom")
 
 local stop_called = false
 terminal.stop = function()
