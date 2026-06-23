@@ -33,6 +33,7 @@ local original_click_hint = browser.click_hint
 local original_follow_hint = browser.follow_hint
 local original_input_text = browser.input_text
 local original_press_key = browser.press_key
+local original_terminal_follow_hint = terminal.follow_hint
 local original_terminal_type_hint = terminal.type_hint
 
 browser.hints = function()
@@ -69,6 +70,14 @@ end) == false, "hint_mode should propagate failed follow_hint")
 
 browser.hints = original_hints
 browser.follow_hint = original_follow_hint
+
+local followed_terminal_hint = nil
+terminal.follow_hint = function(label)
+  followed_terminal_hint = label
+  return "followed"
+end
+assert(browser.follow_hint("a") == "followed", "follow_hint should delegate to terminal follow semantics")
+assert(followed_terminal_hint == "a", "follow_hint should pass the hint label to terminal")
 
 local typed_hint = nil
 terminal.type_hint = function(label, text, opts)
@@ -144,6 +153,7 @@ browser.click_hint = original_click_hint
 browser.follow_hint = original_follow_hint
 browser.input_text = original_input_text
 browser.press_key = original_press_key
+terminal.follow_hint = original_terminal_follow_hint
 terminal.type_hint = original_terminal_type_hint
 
 local original_open = browser.open

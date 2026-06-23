@@ -200,8 +200,10 @@ the command line.
 elements, including link destinations when available. On ANSI and Kitty Unicode
 browser previews, the same labels are also overlaid on the preview.
 `:NBrowserClickHint {id-or-label}` and
-`:NBrowserFollowHint {label}` click the matching element. `:NBrowserHintMode`
-prompts for a label and follows it.
+`:NBrowserFollowHint {label}` act on the matching element. Follow uses a link
+hint's `href` directly when available, which avoids coordinate-click drift and
+keeps the active browser session on the navigated URL; non-link hints fall back
+to a coordinate click. `:NBrowserHintMode` prompts for a label and follows it.
 `:NBrowserTypeHint {id-or-label} {text}` clicks a hinted element and types text
 into it. `:NBrowserSubmitHint {id-or-label} {text}` also presses Enter after the
 text is queued.

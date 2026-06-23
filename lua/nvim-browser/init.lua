@@ -175,7 +175,7 @@ function M.click_hint(id)
 end
 
 function M.follow_hint(id)
-  return terminal.click_hint(id)
+  return terminal.follow_hint(id)
 end
 
 function M.type_hint(id, text, opts)

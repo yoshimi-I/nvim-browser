@@ -1363,6 +1363,23 @@ function M.click_hint(id)
   return false
 end
 
+function M.follow_hint(id)
+  if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
+    return false
+  end
+  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+    return false
+  end
+  local hint = find_hint(state.element_hints, id)
+  if hint == nil then
+    return false
+  end
+  if hint.kind == "link" and hint.href ~= nil and hint.href ~= "" then
+    return M.navigate(hint.href)
+  end
+  return M.click_point(hint.x, hint.y)
+end
+
 function M.type_hint(id, text, opts)
   opts = opts or {}
   if text == nil or text == "" then

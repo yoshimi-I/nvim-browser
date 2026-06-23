@@ -378,8 +378,10 @@ local jobstart_calls = {}
 local sent_requests = {}
 local jobstop_calls = {}
 local termopen_calls = {}
-vim.fn.jobstart = function(command)
+local serve_stdout = nil
+vim.fn.jobstart = function(command, opts)
   table.insert(jobstart_calls, command)
+  serve_stdout = opts and opts.on_stdout or nil
   return 1234
 end
 vim.fn.chansend = function(job_id, payload)
@@ -426,6 +428,80 @@ terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--markdown", "/tmp/RE
 local markdown_state = terminal.state()
 assert(#jobstart_calls == 1, "opening Markdown should start a replacement serve job so the backend can render HTML")
 assert(markdown_state.bufnr ~= served_bufnr, "Markdown serve replacement should use a fresh preview buffer")
+
+sent_requests = {}
+terminal.close()
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
+local hints_response = vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "frame",
+  url = "https://example.com",
+  hints = {
+    {
+      id = 1,
+      hint_label = "a",
+      kind = "link",
+      label = "Docs",
+      href = "https://example.com/docs",
+      x = 120,
+      y = 240,
+      width = 80,
+      height = 20,
+      clickable = true,
+      focusable = false,
+    },
+    {
+      id = 2,
+      hint_label = "s",
+      kind = "button",
+      label = "Search",
+      x = 30,
+      y = 40,
+      width = 60,
+      height = 20,
+      clickable = true,
+      focusable = true,
+    },
+  },
+})
+serve_stdout(nil, { hints_response, "" })
+assert(vim.wait(1000, function()
+  return #terminal.state().element_hints == 2
+end), "serve hint response should populate element hints")
+
+sent_requests = {}
+assert(terminal.follow_hint("a") == true, "follow_hint should navigate link hints by href")
+local link_navigate_seen = false
+local link_click_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "navigate" and decoded.url == "https://example.com/docs" then
+    link_navigate_seen = true
+  end
+  if ok and decoded.type == "click_point" then
+    link_click_seen = true
+  end
+end
+assert(link_navigate_seen, "link follow should send a navigate request")
+assert(not link_click_seen, "link follow should not click coordinates when href is available")
+assert(terminal.state().last_target == "https://example.com/docs", "link follow should update the remembered target")
+assert(#terminal.state().element_hints == 0, "link follow should clear stale hints before the next frame")
+
+serve_stdout(nil, { hints_response, "" })
+assert(vim.wait(1000, function()
+  return #terminal.state().element_hints == 2
+end), "serve hint response should repopulate element hints after navigation clears them")
+sent_requests = {}
+assert(terminal.follow_hint("s") == true, "follow_hint should fall back to click for non-link hints")
+local fallback_click_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "click_point" and decoded.x == 30 and decoded.y == 40 then
+    fallback_click_seen = true
+  end
+end
+assert(fallback_click_seen, "non-link follow fallback should send a coordinate click")
 
 sent_requests = {}
 vim.cmd("doautocmd VimResized")
