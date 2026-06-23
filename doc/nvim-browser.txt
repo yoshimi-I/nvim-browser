@@ -101,6 +101,16 @@ COMMANDS                                           *nvim-browser-commands*
 	Click the center point of a keyboard-labeled browser hint and capture a
 	fresh frame.
 
+							*:NBrowserTypeHint*
+:NBrowserTypeHint {id-or-label} {text}
+	Click a browser hint, type text into the focused element, and capture fresh
+	frames through the active browser session.
+
+							*:NBrowserSubmitHint*
+:NBrowserSubmitHint {id-or-label} {text}
+	Click a browser hint, type text, press Enter, and capture fresh frames
+	through the active browser session.
+
 							*:NBrowserHintMode*
 :NBrowserHintMode
 	Prompt for a browser hint label, click the matching element, and capture a

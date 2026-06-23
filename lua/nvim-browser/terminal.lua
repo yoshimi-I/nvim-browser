@@ -891,6 +891,31 @@ function M.click_hint(id)
   return false
 end
 
+function M.type_hint(id, text, opts)
+  opts = opts or {}
+  if text == nil or text == "" then
+    return false
+  end
+  if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
+    return false
+  end
+  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+    return false
+  end
+  local hint = find_hint(state.element_hints, id)
+  if hint == nil then
+    return false
+  end
+  request_resize()
+  return send_serve_request({
+    type = "type_point",
+    x = hint.x,
+    y = hint.y,
+    text = text,
+    submit = opts.submit == true,
+  })
+end
+
 function M.toggle()
   if is_valid_window() then
     pcall(send_terminal_escape, kitty_delete_escape())

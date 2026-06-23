@@ -202,6 +202,13 @@ enum ServeRequest {
         x: f64,
         y: f64,
     },
+    TypePoint {
+        id: u64,
+        x: f64,
+        y: f64,
+        text: String,
+        submit: bool,
+    },
     FindText {
         id: u64,
         query: String,
@@ -410,6 +417,32 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload().map(Some)
             }
+            ServeRequest::TypePoint {
+                x, y, text, submit, ..
+            } => {
+                self.renderer.click_point(ClickPointRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    x,
+                    y,
+                ))?;
+                self.settle_after_interaction()?;
+                self.renderer.input_text(TextInputRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    text,
+                ))?;
+                self.settle_after_interaction()?;
+                if submit {
+                    self.renderer.press_key(KeyPressRequest::new(
+                        self.session.id(),
+                        self.session.active_page_id(),
+                        "Enter",
+                    ))?;
+                    self.settle_after_interaction()?;
+                }
+                self.capture_payload().map(Some)
+            }
             ServeRequest::FindText { query, .. } => {
                 let result = self.renderer.find_text(FindTextRequest::new(
                     self.session.id(),
@@ -481,6 +514,7 @@ impl ServeRequest {
             | ServeRequest::KeyPress { id, .. }
             | ServeRequest::FocusSelector { id, .. }
             | ServeRequest::ClickPoint { id, .. }
+            | ServeRequest::TypePoint { id, .. }
             | ServeRequest::FindText { id, .. }
             | ServeRequest::Resize { id, .. }
             | ServeRequest::Quit { id } => *id,
@@ -656,6 +690,7 @@ mod tests {
         focused_selectors: Vec<String>,
         clicked_points: Vec<(f64, f64)>,
         find_queries: Vec<String>,
+        fail_click: bool,
         operations: Vec<&'static str>,
         history: Vec<String>,
         history_index: Option<usize>,
@@ -679,6 +714,7 @@ mod tests {
                 focused_selectors: Vec::new(),
                 clicked_points: Vec::new(),
                 find_queries: Vec::new(),
+                fail_click: false,
                 operations: Vec::new(),
                 history: Vec::new(),
                 history_index: None,
@@ -849,6 +885,12 @@ mod tests {
             request: ClickPointRequest,
         ) -> Result<InputResult, RendererError> {
             self.operations.push("click_point");
+            if self.fail_click {
+                return Err(RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "click failed",
+                ));
+            }
             self.clicked_points.push((request.x, request.y));
             Ok(InputResult {
                 session_id: request.session_id,
@@ -1018,6 +1060,23 @@ mod tests {
                 id: 6,
                 x: 120.5,
                 y: 240.25,
+            }
+        );
+    }
+
+    #[test]
+    fn serve_request_parses_type_point_jsonl() {
+        assert_eq!(
+            parse_serve_request(
+                r##"{"type":"type_point","id":7,"x":120.5,"y":240.25,"text":"hello \"world\"","submit":true}"##
+            )
+            .expect("type point request should parse"),
+            ServeRequest::TypePoint {
+                id: 7,
+                x: 120.5,
+                y: 240.25,
+                text: "hello \"world\"".to_string(),
+                submit: true,
             }
         );
     }
@@ -1588,6 +1647,91 @@ mod tests {
         assert_eq!(
             runtime.renderer.operations,
             vec!["capture", "hints", "find_text", "capture", "hints"]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_types_at_point_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::TypePoint {
+            id: 2,
+            x: 120.5,
+            y: 240.25,
+            text: "hello".to_string(),
+            submit: true,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(runtime.renderer.clicked_points, vec![(120.5, 240.25)]);
+        assert_eq!(runtime.renderer.text_inputs, vec!["hello"]);
+        assert_eq!(runtime.renderer.key_presses, vec!["Enter"]);
+        assert_eq!(runtime.renderer.captures, 2);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "click_point",
+                "settle",
+                "text_input",
+                "settle",
+                "key_press",
+                "settle",
+                "capture",
+                "hints"
+            ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_does_not_type_at_point_when_click_fails() {
+        let mut renderer = FakeRenderer::new();
+        renderer.fail_click = true;
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::TypePoint {
+            id: 2,
+            x: 120.5,
+            y: 240.25,
+            text: "hello".to_string(),
+            submit: true,
+        });
+
+        assert_eq!(response.status, ServeStatus::Error);
+        assert!(response.payload.is_none());
+        assert!(runtime.renderer.text_inputs.is_empty());
+        assert!(runtime.renderer.key_presses.is_empty());
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["capture", "hints", "click_point"]
         );
     }
 

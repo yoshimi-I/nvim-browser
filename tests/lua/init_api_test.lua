@@ -2,10 +2,12 @@ local root = vim.fn.getcwd()
 package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.path
 
 local browser = require("nvim-browser")
+local terminal = require("nvim-browser.terminal")
 
 assert(type(browser.click_hint) == "function", "click_hint API should exist")
 assert(type(browser.follow_hint) == "function", "follow_hint API should exist")
 assert(type(browser.hint_mode) == "function", "hint_mode API should exist")
+assert(type(browser.type_hint) == "function", "type_hint API should exist")
 assert(type(browser.address) == "function", "address API should exist")
 assert(type(browser.resolve_address_target) == "function", "address target resolver should exist")
 assert(type(browser.find_text) == "function", "find_text API should exist")
@@ -21,7 +23,11 @@ assert(browser.resolve_address_target("  docs  ") == "https://www.google.com/sea
 assert(browser.resolve_address_target("") == nil, "address resolver should reject empty input")
 
 local original_hints = browser.hints
+local original_click_hint = browser.click_hint
 local original_follow_hint = browser.follow_hint
+local original_input_text = browser.input_text
+local original_press_key = browser.press_key
+local original_terminal_type_hint = terminal.type_hint
 
 browser.hints = function()
   return {}
@@ -57,6 +63,31 @@ end) == false, "hint_mode should propagate failed follow_hint")
 
 browser.hints = original_hints
 browser.follow_hint = original_follow_hint
+
+local typed_hint = nil
+terminal.type_hint = function(label, text, opts)
+  typed_hint = {
+    label = label,
+    text = text,
+    submit = opts ~= nil and opts.submit == true,
+  }
+  return true
+end
+assert(browser.type_hint("s", "hello world", { submit = true }) == true, "type_hint should delegate to terminal")
+assert(typed_hint.label == "s", "type_hint should pass hint label to terminal")
+assert(typed_hint.text == "hello world", "type_hint should pass text to terminal")
+assert(typed_hint.submit == true, "type_hint should pass submit option to terminal")
+
+terminal.type_hint = function()
+  return false
+end
+assert(browser.type_hint("s", "hello") == false, "type_hint should propagate terminal failure")
+
+browser.click_hint = original_click_hint
+browser.follow_hint = original_follow_hint
+browser.input_text = original_input_text
+browser.press_key = original_press_key
+terminal.type_hint = original_terminal_type_hint
 
 local original_open = browser.open
 local original_navigate = browser.navigate

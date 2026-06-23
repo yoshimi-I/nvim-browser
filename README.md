@@ -110,6 +110,8 @@ Then run:
 :NBrowserHints
 :NBrowserClickHint 1
 :NBrowserFollowHint a
+:NBrowserTypeHint s hello world
+:NBrowserSubmitHint s hello world
 :NBrowserHintMode
 :NBrowserCurrentUrl
 :NBrowserCurrentTitle
@@ -125,6 +127,9 @@ elements. On ANSI and Kitty Unicode browser previews, the same labels are also
 overlaid on the preview. `:NBrowserClickHint {id-or-label}` and
 `:NBrowserFollowHint {label}` click the matching element. `:NBrowserHintMode`
 prompts for a label and follows it.
+`:NBrowserTypeHint {id-or-label} {text}` clicks a hinted element and types text
+into it. `:NBrowserSubmitHint {id-or-label} {text}` also presses Enter after the
+text is queued.
 
 Lua mappings can call `require("nvim-browser").hint_mode()` for the same prompt.
 `:NBrowserAddress` prompts for a URL or search query; host-like input opens as a

@@ -8,6 +8,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: hint not found, stale, or browser session is inactive", "WarningMsg" } }, false, {})
   end
 
+  local function warn_hint_input_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: hint input failed, stale, or browser session is inactive", "WarningMsg" } }, false, {})
+  end
+
   local function warn_no_hints()
     vim.api.nvim_echo({ { "nvim-browser: no browser hints available", "WarningMsg" } }, false, {})
   end
@@ -21,6 +25,11 @@ function M.register(browser, opts)
       return browser.follow_hint(label)
     end
     return browser.click_hint(label)
+  end
+
+  local function parse_hint_text(args)
+    local label, text = (args or ""):match("^(%S+)%s+(.+)$")
+    return label, text
   end
 
   vim.api.nvim_create_user_command("NBrowserOpen", function(opts)
@@ -176,6 +185,24 @@ function M.register(browser, opts)
     end
   end, {
     nargs = 1,
+  })
+
+  vim.api.nvim_create_user_command("NBrowserTypeHint", function(opts)
+    local label, text = parse_hint_text(opts.args)
+    if label == nil or text == nil or not browser.type_hint(label, text) then
+      warn_hint_input_unavailable()
+    end
+  end, {
+    nargs = "+",
+  })
+
+  vim.api.nvim_create_user_command("NBrowserSubmitHint", function(opts)
+    local label, text = parse_hint_text(opts.args)
+    if label == nil or text == nil or not browser.type_hint(label, text, { submit = true }) then
+      warn_hint_input_unavailable()
+    end
+  end, {
+    nargs = "+",
   })
 
   vim.api.nvim_create_user_command("NBrowserHintMode", function()

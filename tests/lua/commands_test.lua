@@ -9,6 +9,8 @@ local prompted = nil
 local warnings = {}
 local addressed = nil
 local found = nil
+local typed_hint = nil
+local submitted_hint = nil
 local browser = {
   hints = function()
     return {
@@ -30,6 +32,14 @@ local browser = {
   end,
   find_text = function(query)
     found = query
+    return true
+  end,
+  type_hint = function(label, text, opts)
+    if opts ~= nil and opts.submit then
+      submitted_hint = label .. ":" .. text
+    else
+      typed_hint = label .. ":" .. text
+    end
     return true
   end,
 }
@@ -65,6 +75,12 @@ vim.cmd("NBrowserFind")
 assert(prompted == "nvim-browser find: ", "NBrowserFind should prompt without an argument")
 assert(found == "s", "NBrowserFind should find the entered text")
 
+vim.cmd("NBrowserTypeHint s hello world")
+assert(typed_hint == "s:hello world", "NBrowserTypeHint should pass the label and text to browser.type_hint")
+
+vim.cmd("NBrowserSubmitHint s hello world")
+assert(submitted_hint == "s:hello world", "NBrowserSubmitHint should request submit mode")
+
 vim.cmd("NBrowserFollowHint a")
 assert(followed == "a", "NBrowserFollowHint should pass the label to follow_hint")
 assert(clicked == nil, "NBrowserFollowHint should not call click_hint when follow_hint exists")
@@ -94,6 +110,9 @@ local failed_browser = {
   find_text = function()
     return false
   end,
+  type_hint = function()
+    return false
+  end,
 }
 commands.register(failed_browser, {
   input = function()
@@ -111,6 +130,9 @@ assert(warnings[#warnings] == "nvim-browser: address was empty or could not be o
 
 vim.cmd("NBrowserFind missing")
 assert(warnings[#warnings] == "nvim-browser: text was not found or browser session is inactive", "NBrowserFind should warn when find fails")
+
+vim.cmd("NBrowserTypeHint s missing")
+assert(warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive", "NBrowserTypeHint should warn when type_hint fails")
 
 local warning_count = #warnings
 commands.register(failed_browser, {

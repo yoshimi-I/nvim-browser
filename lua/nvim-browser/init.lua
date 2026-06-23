@@ -133,6 +133,10 @@ function M.follow_hint(id)
   return terminal.click_hint(id)
 end
 
+function M.type_hint(id, text, opts)
+  return terminal.type_hint(id, text, opts)
+end
+
 function M.hint_mode(input)
   input = input or vim.fn.input
   if #M.hints() == 0 then
