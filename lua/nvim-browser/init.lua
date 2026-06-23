@@ -138,6 +138,18 @@ function M.scroll(delta_y, delta_x)
   return terminal.scroll(delta_y, delta_x)
 end
 
+function M.page_scroll(direction)
+  return terminal.page_scroll(direction)
+end
+
+function M.page_down()
+  return terminal.page_scroll(1)
+end
+
+function M.page_up()
+  return terminal.page_scroll(-1)
+end
+
 function M.input_text(text)
   return terminal.input_text(text)
 end

@@ -181,6 +181,14 @@ function M.register(browser, opts)
     nargs = "?",
   })
 
+  vim.api.nvim_create_user_command("NBrowserPageDown", function()
+    browser.page_down()
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserPageUp", function()
+    browser.page_up()
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserInput", function(opts)
     if not browser.input_text(opts.args) then
       warn_focused_input_unavailable()

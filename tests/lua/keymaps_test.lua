@@ -17,6 +17,12 @@ local browser = {
   scroll = function(delta_y, delta_x)
     table.insert(calls, "scroll:" .. tostring(delta_y) .. ":" .. tostring(delta_x))
   end,
+  page_down = function()
+    table.insert(calls, "page_down")
+  end,
+  page_up = function()
+    table.insert(calls, "page_up")
+  end,
   address = function()
     table.insert(calls, "address")
   end,
@@ -206,6 +212,8 @@ assert_buffer_mapping(first_bufnr, "H", "buffer-local controls should install ba
 assert_buffer_mapping(first_bufnr, "L", "buffer-local controls should install forward mapping")
 assert_buffer_mapping(first_bufnr, "j", "buffer-local controls should install scroll-down mapping")
 assert_buffer_mapping(first_bufnr, "k", "buffer-local controls should install scroll-up mapping")
+assert_buffer_mapping(first_bufnr, "<PageDown>", "buffer-local controls should install page-down mapping")
+assert_buffer_mapping(first_bufnr, "<PageUp>", "buffer-local controls should install page-up mapping")
 assert_buffer_mapping(first_bufnr, "a", "buffer-local controls should install address mapping")
 assert_buffer_mapping(first_bufnr, "/", "buffer-local controls should install find mapping")
 assert_buffer_mapping(first_bufnr, "f", "buffer-local controls should install hint mapping")
@@ -238,6 +246,8 @@ trigger_buffer(first_bufnr, "H")
 trigger_buffer(first_bufnr, "L")
 trigger_buffer(first_bufnr, "j")
 trigger_buffer(first_bufnr, "k")
+trigger_buffer(first_bufnr, "<PageDown>")
+trigger_buffer(first_bufnr, "<PageUp>")
 trigger_buffer(first_bufnr, "a")
 trigger_buffer(first_bufnr, "/")
 trigger_buffer(first_bufnr, "f")
@@ -269,7 +279,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,address,find:local,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,text_mode,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,hover_here,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,address,find:local,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,text_mode,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,hover_here,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
 
@@ -283,6 +293,8 @@ keymaps.setup_buffer(browser, first_bufnr, {
     forward = false,
     type_hint_mode = "i",
     submit_hint_mode = false,
+    page_down = "<C-f>",
+    page_up = false,
     input_text_mode = "I",
     key_enter = false,
   },
@@ -292,6 +304,8 @@ assert(calls[#calls] == "buffer-existing", "buffer-local controls should not ove
 assert_no_buffer_mapping(first_bufnr, "L", "false buffer-local mappings should disable defaults after reinstall")
 assert_buffer_mapping(first_bufnr, "i", "custom buffer-local hinted input mapping should be installed")
 assert_no_buffer_mapping(first_bufnr, "s", "false buffer-local hinted submit mapping should disable default")
+assert_buffer_mapping(first_bufnr, "<C-f>", "custom buffer-local page-down mapping should be installed")
+assert_no_buffer_mapping(first_bufnr, "<PageUp>", "false buffer-local page-up mapping should disable default")
 assert_buffer_mapping(first_bufnr, "I", "custom buffer-local focused input mapping should be installed")
 assert_no_buffer_mapping(first_bufnr, "<CR>", "false buffer-local browser key mappings should disable defaults")
 assert_buffer_mapping(first_bufnr, "<LeftMouse>", "mouse mappings should remain enabled by default after reinstall")

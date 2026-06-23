@@ -22,6 +22,9 @@ assert(type(browser.find_text) == "function", "find_text API should exist")
 assert(type(browser.last_find_found) == "function", "last_find_found API should exist")
 assert(type(browser.doctor) == "function", "doctor API should exist")
 assert(type(browser.page_metrics) == "function", "page_metrics API should exist")
+assert(type(browser.page_scroll) == "function", "page_scroll API should exist")
+assert(type(browser.page_down) == "function", "page_down API should exist")
+assert(type(browser.page_up) == "function", "page_up API should exist")
 assert(type(browser.reader) == "function", "reader API should exist")
 assert(type(browser.reader_follow) == "function", "reader_follow API should exist")
 assert(type(browser.click_mouse) == "function", "click_mouse API should exist")
@@ -51,6 +54,7 @@ local original_terminal_stop = terminal.stop
 local original_terminal_input_text = terminal.input_text
 local original_terminal_press_key = terminal.press_key
 local original_terminal_start_text_mode = terminal.start_text_mode
+local original_terminal_page_scroll = terminal.page_scroll
 
 browser.hints = function()
   return {}
@@ -253,6 +257,18 @@ assert(browser.press_key("Tab", { modifiers = { "shift" } }) == true, "press_key
 assert(pressed_key.key == "Tab", "press_key should pass the key to terminal")
 assert(pressed_key.modifiers[1] == "shift", "press_key should pass modifiers to terminal")
 
+local page_scroll_direction = nil
+terminal.page_scroll = function(direction)
+  page_scroll_direction = direction
+  return true
+end
+assert(browser.page_scroll(1) == true, "page_scroll should delegate to terminal")
+assert(page_scroll_direction == 1, "page_scroll should pass an explicit direction")
+assert(browser.page_down() == true, "page_down should delegate to terminal page scroll")
+assert(page_scroll_direction == 1, "page_down should request forward page scroll")
+assert(browser.page_up() == true, "page_up should delegate to terminal page scroll")
+assert(page_scroll_direction == -1, "page_up should request backward page scroll")
+
 local stop_called = false
 terminal.stop = function()
   stop_called = true
@@ -331,6 +347,7 @@ terminal.stop = original_terminal_stop
 terminal.input_text = original_terminal_input_text
 terminal.press_key = original_terminal_press_key
 terminal.start_text_mode = original_terminal_start_text_mode
+terminal.page_scroll = original_terminal_page_scroll
 
 local original_open = browser.open
 local original_navigate = browser.navigate

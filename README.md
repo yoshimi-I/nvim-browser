@@ -189,6 +189,8 @@ Then run:
 :NBrowserBack
 :NBrowserForward
 :NBrowserScrollDown 400
+:NBrowserPageDown
+:NBrowserPageUp
 :NBrowserFind search text
 :NBrowserFocusSelector input[name="q"]
 :NBrowserInput hello
@@ -319,13 +321,13 @@ hinted field, and `<leader>bs` type and submit. Existing mappings are left
 untouched; choose another prefix or mapping key if one is already in use.
 
 Focused preview buffers also install buffer-local browser controls by default:
-`r` reload, `H` back, `L` forward, `j`/`k` scroll, `a` address, `/` find, `f`
-hint mode, `t` type into a hinted field, `s` type and submit, `i` type into the
-focused element with browser text mode, `<CR>` Enter, `<Tab>` Tab, `<S-Tab>`
-reverse Tab, `<BS>` Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A
-select-all, `gl` Meta-L focus location, arrow keys, `<Esc>` stop a pending
-load, left click to click the browser viewport, scroll wheel to scroll the
-page, and `q` close.
+`r` reload, `H` back, `L` forward, `j`/`k` scroll, `<PageDown>/<PageUp>` scroll
+by 90% of the browser viewport, `a` address, `/` find, `f` hint mode, `t` type
+into a hinted field, `s` type and submit, `i` type into the focused element with
+browser text mode, `<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
+Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` Meta-L
+focus location, arrow keys, `<Esc>` stop a pending load, left click to click the
+browser viewport, scroll wheel to scroll the page, and `q` close.
 Disable or remap them with
 `preview_keymaps = { enabled = false }` or `preview_keymaps.mappings`.
 

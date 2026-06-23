@@ -21,6 +21,7 @@ local reader_follow_called = false
 local stop_called = false
 local hovered_here = false
 local hovered_hint = nil
+local page_scroll_direction = nil
 local browser = {
   hints = function()
     return {
@@ -128,6 +129,14 @@ local browser = {
     stop_called = true
     return true
   end,
+  page_down = function()
+    page_scroll_direction = 1
+    return true
+  end,
+  page_up = function()
+    page_scroll_direction = -1
+    return true
+  end,
 }
 
 local echoed = nil
@@ -171,6 +180,12 @@ assert(reader_follow_called == true, "NBrowserReaderFollow should call browser.r
 
 vim.cmd("NBrowserStop")
 assert(stop_called == true, "NBrowserStop should call browser.stop")
+
+vim.cmd("NBrowserPageDown")
+assert(page_scroll_direction == 1, "NBrowserPageDown should request a forward page scroll")
+
+vim.cmd("NBrowserPageUp")
+assert(page_scroll_direction == -1, "NBrowserPageUp should request a backward page scroll")
 
 vim.cmd("NBrowserAddress")
 assert(addressed == "s", "NBrowserAddress should pass the injected input function to browser.address")

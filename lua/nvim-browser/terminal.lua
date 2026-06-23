@@ -1653,6 +1653,29 @@ function M.scroll(delta_y, delta_x)
   })
 end
 
+local function page_scroll_delta()
+  local metrics_height = state.page_metrics and tonumber(state.page_metrics.viewport_height) or nil
+  local runtime_height = state.runtime_metadata
+    and state.runtime_metadata.viewport
+    and tonumber(state.runtime_metadata.viewport.height)
+    or nil
+  local height = metrics_height ~= nil and metrics_height > 0 and metrics_height or runtime_height
+  if height ~= nil and height > 0 then
+    return math.max(1, math.floor(height * 0.9))
+  end
+  return 400
+end
+
+function M.page_scroll(direction)
+  local sign = tonumber(direction) or 1
+  if sign < 0 then
+    sign = -1
+  else
+    sign = 1
+  end
+  return M.scroll(page_scroll_delta() * sign, 0)
+end
+
 function M.input_text(text, opts)
   opts = opts or {}
   if text == nil or text == "" then

@@ -590,6 +590,16 @@ local sent_requests = {}
 local jobstop_calls = {}
 local termopen_calls = {}
 local serve_stdout = nil
+local function last_request_of_type(kind)
+  for index = #sent_requests, 1, -1 do
+    local ok, decoded = pcall(vim.json.decode, sent_requests[index].payload)
+    if ok and decoded.type == kind then
+      return decoded
+    end
+  end
+  return nil
+end
+
 vim.fn.jobstart = function(command, opts)
   table.insert(jobstart_calls, command)
   serve_stdout = opts and opts.on_stdout or nil
@@ -638,6 +648,52 @@ end), "live refresh timer should send capture requests for active serve sessions
 local live_capture_id = terminal.state().live_refresh_request_id
 assert(live_capture_id ~= nil, "live refresh should track an in-flight capture request")
 assert(terminal._test.response_handler_count() == 1, "live refresh should register one response handler")
+
+terminal._test.apply_serve_response({
+  id = live_capture_id,
+  status = "ok",
+  page = {
+    scroll_y = 0,
+    viewport_height = 600,
+    document_height = 2000,
+  },
+  runtime = {
+    viewport = { width = 800, height = 640, device_scale_factor = 1 },
+  },
+})
+sent_requests = {}
+assert(terminal.page_scroll(1) == true, "page_scroll should send a scroll request")
+local page_down_request = last_request_of_type("scroll")
+assert(page_down_request ~= nil, "page_scroll should reuse the scroll JSONL request type")
+assert(page_down_request.delta_y == 540, "page_scroll should use 90 percent of page viewport height")
+assert(page_down_request.delta_x == 0, "page_scroll should not scroll horizontally by default")
+
+sent_requests = {}
+assert(terminal.page_scroll(-1) == true, "page_scroll should support backward scrolling")
+local page_up_request = last_request_of_type("scroll")
+assert(page_up_request ~= nil, "backward page_scroll should send a scroll request")
+assert(page_up_request.delta_y == -540, "backward page_scroll should negate the viewport-based delta")
+
+terminal._test.apply_serve_response({
+  id = live_capture_id + 1,
+  status = "ok",
+  page = {
+    viewport_height = 0,
+  },
+  runtime = {
+    viewport = { width = 800, height = 500, device_scale_factor = 1 },
+  },
+})
+sent_requests = {}
+assert(terminal.page_scroll(1) == true, "page_scroll should fall back to runtime viewport metadata")
+local runtime_page_request = last_request_of_type("scroll")
+assert(runtime_page_request.delta_y == 450, "runtime viewport fallback should handle invalid page metrics")
+
+terminal._test.apply_serve_response({ id = live_capture_id + 2, status = "ok", runtime = {} })
+sent_requests = {}
+assert(terminal.page_scroll(1) == true, "page_scroll should fall back when no metadata exists")
+local fallback_page_request = last_request_of_type("scroll")
+assert(fallback_page_request.delta_y == 400, "page_scroll should preserve the existing 400px fallback")
 
 sent_requests = {}
 assert(terminal.navigate("https://example.com/new") == true, "navigation should be allowed while a live capture is in flight")

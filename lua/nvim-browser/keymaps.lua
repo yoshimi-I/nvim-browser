@@ -184,6 +184,14 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.scroll(-scroll_pixels, 0)
   end, "nvim-browser: scroll up", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "page_down", "<PageDown>"), function()
+    browser.page_down()
+  end, "nvim-browser: page down", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "page_up", "<PageUp>"), function()
+    browser.page_up()
+  end, "nvim-browser: page up", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "address", "a"), function()
     browser.address()
   end, "nvim-browser: address", buffer_opts)

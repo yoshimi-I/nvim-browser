@@ -132,6 +132,16 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserScrollUp [pixels]
 	Scroll the active browser page up and capture a fresh frame.
 
+							*:NBrowserPageDown*
+:NBrowserPageDown
+	Scroll the active browser page down by 90% of the current browser
+	viewport and capture a fresh frame.
+
+							*:NBrowserPageUp*
+:NBrowserPageUp
+	Scroll the active browser page up by 90% of the current browser
+	viewport and capture a fresh frame.
+
 							*:NBrowserFind*
 :NBrowserFind {text}
 	Find text in the active browser page, scroll to the match through the
@@ -329,6 +339,8 @@ H  back
 L  forward
 j  scroll down
 k  scroll up
+<PageDown>  page down
+<PageUp>    page up
 a  address prompt
 /  find prompt
 f  hint mode
@@ -363,6 +375,8 @@ require("nvim-browser").setup({
       left_click = false,
       scroll_down = "<C-d>",
       scroll_up = "<C-u>",
+      page_down = "<PageDown>",
+      page_up = "<PageUp>",
       wheel_down = "<ScrollWheelDown>",
       wheel_up = "<ScrollWheelUp>",
     },
