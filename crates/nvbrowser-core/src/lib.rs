@@ -10,9 +10,10 @@ pub use renderer::{
     ClickPointRequest, ElementHint, ElementHintKind, ElementHintsRequest, FindTextRequest,
     FindTextResult, FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest,
     HistoryNavigationResult, InputResult, InteractionSettleResult, KeyPressRequest,
-    NavigateRequest, NavigationResult, PageMetrics, PageMetricsRequest, ReloadRequest,
-    ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
-    ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
+    NavigateRequest, NavigationResult, PageMetrics, PageMetricsRequest, PageTextRequest,
+    PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer,
+    RendererError, RendererErrorKind, ScrollRequest, ScrollResult, ShutdownResult,
+    TextInputRequest,
 };
 pub use session::{
     BrowserSession, FrameId, FrameMetadata, LoadingState, PageId, PageState, SessionId, Viewport,

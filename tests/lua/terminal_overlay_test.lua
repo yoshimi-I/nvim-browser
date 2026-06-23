@@ -177,6 +177,55 @@ assert(terminal.state().page_metrics == nil, "closing a browser session should c
 terminal._test.apply_serve_response({ id = 100, status = "error", error = "navigation failed" })
 assert(terminal.state().page_metrics == nil, "responses without page metrics should clear stale page metrics")
 
+terminal._test.handle_reader_response({
+  status = "ok",
+  text = {
+    title = "Example",
+    url = "https://example.com",
+    text = "# Example\n\nBody text\n\n[Docs](https://example.com/docs)",
+    truncated = false,
+  },
+})
+local reader_bufnr = terminal.state().reader_bufnr
+assert(reader_bufnr ~= nil and vim.api.nvim_buf_is_valid(reader_bufnr), "reader response should create a scratch buffer")
+assert(vim.bo[reader_bufnr].filetype == "markdown", "reader buffer should use markdown filetype")
+local reader_lines = table.concat(vim.api.nvim_buf_get_lines(reader_bufnr, 0, -1, false), "\n")
+assert(reader_lines:match("# Example"), "reader buffer should include page title")
+assert(reader_lines:match("https://example%.com"), "reader buffer should include page URL")
+assert(reader_lines:match("Body text"), "reader buffer should include page text")
+
+terminal._test.handle_reader_response({
+  status = "ok",
+  text = {
+    title = "Example",
+    url = "https://example.com",
+    text = "# Example\n\nBody text\n\n[truncated]",
+    truncated = true,
+  },
+})
+local truncated_lines = table.concat(vim.api.nvim_buf_get_lines(terminal.state().reader_bufnr, 0, -1, false), "\n")
+local _, truncated_count = truncated_lines:gsub("%[truncated%]", "")
+assert(truncated_count == 1, "reader buffers should not duplicate truncation markers")
+
+local first_reader_bufnr = terminal.state().reader_bufnr
+terminal.close()
+assert(not vim.api.nvim_buf_is_valid(first_reader_bufnr), "closing a browser session should delete reader buffers")
+terminal._test.handle_reader_response({
+  status = "ok",
+  text = {
+    title = "Example",
+    url = "https://example.com",
+    text = "# Example\n\nFresh body",
+    truncated = false,
+  },
+})
+local second_reader_bufnr = terminal.state().reader_bufnr
+assert(second_reader_bufnr ~= nil and vim.api.nvim_buf_is_valid(second_reader_bufnr), "reader should recreate after close")
+assert(
+  vim.api.nvim_buf_get_name(second_reader_bufnr) == "nvim-browser-reader://Example",
+  "reader buffer names should be reusable after close"
+)
+
 vim.cmd("vsplit")
 local image_win = vim.api.nvim_get_current_win()
 vim.api.nvim_win_set_width(image_win, 52)

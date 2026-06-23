@@ -171,6 +171,7 @@ Then run:
 :NBrowserCurrentUrl
 :NBrowserCurrentTitle
 :NBrowserStatus
+:NBrowserReader
 :NBrowserDoctor
 :NBrowserToggle
 ```
@@ -202,6 +203,10 @@ URL, and plain words use the configured search URL. Lua mappings can call
 
 `:NBrowserFind {text}` finds text in the active browser page, scrolls to the
 match through the browser's native find behavior, and captures a fresh frame.
+
+`:NBrowserReader` captures the current browser page as Markdown-like text in a
+normal scratch buffer so page content can be selected, searched, and yanked
+without leaving Neovim.
 
 Opt-in browser keymaps can be enabled from setup:
 

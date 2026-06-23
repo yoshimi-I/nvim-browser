@@ -166,6 +166,11 @@ COMMANDS                                           *nvim-browser-commands*
 	current URL.
 	The preview buffer name is also kept in sync with the current title or URL.
 
+							*:NBrowserReader*
+:NBrowserReader
+	Capture the active browser page as Markdown-like text in a normal scratch
+	buffer for selection, search, and yank workflows.
+
 							*:NBrowserDoctor*
 :NBrowserDoctor
 	Echo a diagnostic report for backend binary resolution, selected graphics

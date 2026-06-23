@@ -19,9 +19,9 @@ use crate::{
         ClickPointRequest, ElementHint, ElementHintsRequest, FindTextRequest, FindTextResult,
         FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest, HistoryNavigationResult,
         InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
-        PageMetrics, PageMetricsRequest, ReloadRequest, ReloadResult, RenderFrameRequest,
-        RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest, ScrollResult,
-        ShutdownResult, TextInputRequest,
+        PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
+        ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
+        RendererErrorKind, ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -337,6 +337,27 @@ impl Renderer for ChromiumRenderer {
         Ok(self.read_page_metrics())
     }
 
+    fn page_text(&mut self, request: PageTextRequest) -> Result<PageTextSnapshot, RendererError> {
+        let value = self
+            .tab
+            .evaluate(PAGE_TEXT_SCRIPT, true)
+            .map_err(render_error)?
+            .value
+            .and_then(|value| value.as_str().map(str::to_string))
+            .ok_or_else(|| {
+                RendererError::new(RendererErrorKind::RenderFailed, "missing page text")
+            })?;
+        let extracted = parse_page_text_json(&value).map_err(render_error)?;
+        Ok(PageTextSnapshot {
+            session_id: request.session_id,
+            page_id: request.page_id,
+            url: extracted.url,
+            title: extracted.title,
+            text: extracted.text,
+            truncated: extracted.truncated,
+        })
+    }
+
     fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
         thread::sleep(Duration::from_millis(75));
         self.tab.wait_until_navigated().map_err(render_error)?;
@@ -593,6 +614,75 @@ const PAGE_METRICS_SCRIPT: &str = r#"
 })()
 "#;
 
+const PAGE_TEXT_SCRIPT: &str = r#"
+(() => {
+  const maxLength = 120000;
+  const root = document.querySelector('main, article') || document.body || document.documentElement;
+  const title = (document.title || '').trim() || null;
+  const parts = [];
+  let length = 0;
+  let truncated = false;
+  const append = (value) => {
+    if (!value || truncated) {
+      return;
+    }
+    const normalized = value.replace(/\r/g, '');
+    if (!normalized.trim()) {
+      return;
+    }
+    const remaining = maxLength - length;
+    if (normalized.length > remaining) {
+      parts.push(normalized.slice(0, Math.max(remaining, 0)));
+      truncated = true;
+      length = maxLength;
+      return;
+    }
+    parts.push(normalized);
+    length += normalized.length;
+  };
+  if (root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => {
+        const parent = node.parentElement;
+        if (!parent) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        const tag = parent.tagName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TEMPLATE') {
+          return NodeFilter.FILTER_REJECT;
+        }
+        const style = window.getComputedStyle(parent);
+        if (style && (style.display === 'none' || style.visibility === 'hidden')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    for (let node = walker.nextNode(); node && !truncated; node = walker.nextNode()) {
+      append(node.nodeValue || '');
+      if (!truncated) {
+        parts.push('\n');
+        length += 1;
+      }
+    }
+  }
+  let text = parts.join('');
+  text = text.replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim();
+  if (text.length > maxLength) {
+    text = text.slice(0, maxLength).trimEnd();
+    truncated = true;
+  }
+  const heading = title ? `# ${title}\n\n` : '';
+  const url = location.href;
+  return JSON.stringify({
+    url,
+    title,
+    text: `${heading}${text}`,
+    truncated
+  });
+})()
+"#;
+
 #[derive(Debug, Clone, Copy)]
 enum HistoryDirection {
     Back,
@@ -711,6 +801,18 @@ fn parse_page_metrics_json(metrics: &str) -> Result<PageMetrics, serde_json::Err
     serde_json::from_str(metrics)
 }
 
+#[derive(Debug, Deserialize)]
+struct ExtractedPageText {
+    url: String,
+    title: Option<String>,
+    text: String,
+    truncated: bool,
+}
+
+fn parse_page_text_json(text: &str) -> Result<ExtractedPageText, serde_json::Error> {
+    serde_json::from_str(text)
+}
+
 fn non_empty_string(value: String) -> Option<String> {
     let value = value.trim().to_string();
     if value.is_empty() {
@@ -826,5 +928,26 @@ mod tests {
         assert_eq!(metrics.viewport_height, 600.0);
         assert_eq!(metrics.document_width, 800.0);
         assert_eq!(metrics.document_height, 1600.0);
+    }
+
+    #[test]
+    fn parses_page_text_json_from_chromium_script() {
+        let snapshot = parse_page_text_json(
+            r##"{"url":"https://example.com","title":"Example","text":"# Example\n\nBody","truncated":false}"##,
+        )
+        .expect("page text should parse");
+
+        assert_eq!(snapshot.url, "https://example.com");
+        assert_eq!(snapshot.title.as_deref(), Some("Example"));
+        assert_eq!(snapshot.text, "# Example\n\nBody");
+        assert!(!snapshot.truncated);
+    }
+
+    #[test]
+    fn page_text_script_uses_bounded_text_node_walker() {
+        assert!(PAGE_TEXT_SCRIPT.contains("document.createTreeWalker"));
+        assert!(PAGE_TEXT_SCRIPT.contains("NodeFilter.SHOW_TEXT"));
+        assert!(!PAGE_TEXT_SCRIPT.contains("innerText"));
+        assert!(!PAGE_TEXT_SCRIPT.contains("+ '\\n\\n[truncated]'"));
     }
 }

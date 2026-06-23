@@ -144,6 +144,10 @@ function M.find_text(query)
   return terminal.find_text(query)
 end
 
+function M.reader()
+  return terminal.reader()
+end
+
 function M.click_here()
   return terminal.click_here()
 end

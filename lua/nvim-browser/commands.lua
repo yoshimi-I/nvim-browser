@@ -250,6 +250,12 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { browser.current_title() or "" } }, false, {})
   end, {})
 
+  vim.api.nvim_create_user_command("NBrowserReader", function()
+    if not browser.reader() then
+      vim.api.nvim_echo({ { "nvim-browser: reader requires an active browser session", "WarningMsg" } }, false, {})
+    end
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserStatus", function()
     local status = browser.status() or "unknown"
     local url = browser.current_url() or ""

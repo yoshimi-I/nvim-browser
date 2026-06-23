@@ -37,6 +37,13 @@ pub trait Renderer {
 
     fn find_text(&mut self, request: FindTextRequest) -> Result<FindTextResult, RendererError>;
 
+    fn page_text(&mut self, _request: PageTextRequest) -> Result<PageTextSnapshot, RendererError> {
+        Err(RendererError::new(
+            RendererErrorKind::InvalidState,
+            "page text snapshots are not supported by this renderer",
+        ))
+    }
+
     fn element_hints(
         &mut self,
         _request: ElementHintsRequest,
@@ -314,6 +321,31 @@ pub struct FindTextResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct PageTextRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+}
+
+impl PageTextRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId) -> Self {
+        Self {
+            session_id,
+            page_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PageTextSnapshot {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub url: String,
+    pub title: Option<String>,
+    pub text: String,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ElementHintsRequest {
     pub session_id: SessionId,
     pub page_id: PageId,
@@ -554,6 +586,20 @@ mod tests {
             })
         }
 
+        fn page_text(
+            &mut self,
+            request: PageTextRequest,
+        ) -> Result<PageTextSnapshot, RendererError> {
+            Ok(PageTextSnapshot {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                url: "https://example.com".to_string(),
+                title: Some("Example".to_string()),
+                text: "# Example\n\nExample body".to_string(),
+                truncated: false,
+            })
+        }
+
         fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
             self.settled = true;
             Ok(InteractionSettleResult::new(
@@ -690,6 +736,23 @@ mod tests {
         assert_eq!(find.page_id, page_id);
         assert_eq!(find.query, "needle");
         assert!(find.found);
+    }
+
+    #[test]
+    fn renderer_contract_supports_page_text_snapshot() {
+        let mut renderer = FakeRenderer::new();
+        let session_id = SessionId::new(7);
+        let page_id = PageId::new(10);
+
+        let snapshot = renderer
+            .page_text(PageTextRequest::new(session_id, page_id))
+            .expect("page text should succeed");
+
+        assert_eq!(snapshot.session_id, session_id);
+        assert_eq!(snapshot.page_id, page_id);
+        assert_eq!(snapshot.title.as_deref(), Some("Example"));
+        assert_eq!(snapshot.url, "https://example.com");
+        assert!(snapshot.text.contains("Example body"));
     }
 
     #[test]

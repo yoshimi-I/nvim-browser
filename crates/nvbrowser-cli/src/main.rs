@@ -14,8 +14,8 @@ use nvbrowser_core::{
     BrowserSession, ChromiumRenderer, ClickPointRequest, ElementHint, ElementHintsRequest,
     FindTextRequest, FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest,
     KeyPressRequest, KittyImageDelete, KittyImageTransfer, NavigateRequest, PageMetrics,
-    PageMetricsRequest, ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer, ScrollRequest,
-    SessionId, TextInputRequest, Viewport,
+    PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest, RenderFrameRequest,
+    RenderedFrame, Renderer, ScrollRequest, SessionId, TextInputRequest, Viewport,
 };
 use serde::{Deserialize, Serialize};
 
@@ -304,6 +304,9 @@ enum ServeRequest {
         id: u64,
         query: String,
     },
+    PageText {
+        id: u64,
+    },
     Resize {
         id: u64,
         columns: u32,
@@ -327,6 +330,8 @@ struct ServeResponse {
     title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     page: Option<PageMetrics>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<PageTextSnapshot>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     hints: Vec<ElementHint>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -502,8 +507,9 @@ struct ServeRuntime<R: Renderer> {
 }
 
 struct CapturePayload {
-    payload: String,
+    payload: Option<String>,
     page: Option<PageMetrics>,
+    text: Option<PageTextSnapshot>,
     hints: Vec<ElementHint>,
     found: Option<bool>,
 }
@@ -524,16 +530,17 @@ impl<R: Renderer> ServeRuntime<R> {
         let id = request.id();
         match self.try_handle(request) {
             Ok(capture) => {
-                let (payload, page, hints, found) = capture
+                let (payload, page, text, hints, found) = capture
                     .map(|capture| {
                         (
-                            Some(capture.payload),
+                            capture.payload,
                             capture.page,
+                            capture.text,
                             capture.hints,
                             capture.found,
                         )
                     })
-                    .unwrap_or((None, None, Vec::new(), None));
+                    .unwrap_or((None, None, None, Vec::new(), None));
                 ServeResponse {
                     id,
                     status: ServeStatus::Ok,
@@ -541,6 +548,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     url: self.session.active_page().url().map(str::to_string),
                     title: self.session.active_page().title().map(str::to_string),
                     page,
+                    text,
                     hints,
                     found,
                     error: None,
@@ -553,6 +561,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 url: self.session.active_page().url().map(str::to_string),
                 title: self.session.active_page().title().map(str::to_string),
                 page: None,
+                text: None,
                 hints: Vec::new(),
                 found: None,
                 error: Some(error.to_string()),
@@ -691,6 +700,19 @@ impl<R: Renderer> ServeRuntime<R> {
                 capture.found = Some(result.found);
                 Ok(Some(capture))
             }
+            ServeRequest::PageText { .. } => {
+                let snapshot = self.renderer.page_text(PageTextRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                ))?;
+                Ok(Some(CapturePayload {
+                    payload: None,
+                    page: None,
+                    text: Some(snapshot),
+                    hints: Vec::new(),
+                    found: None,
+                }))
+            }
             ServeRequest::Resize {
                 columns,
                 rows,
@@ -728,8 +750,9 @@ impl<R: Renderer> ServeRuntime<R> {
         ))?;
         let payload = frame_to_payload(frame, self.output, self.columns, Some(self.rows))?;
         Ok(CapturePayload {
-            payload,
+            payload: Some(payload),
             page,
+            text: None,
             hints,
             found: None,
         })
@@ -759,6 +782,7 @@ impl ServeRequest {
             | ServeRequest::ClickPoint { id, .. }
             | ServeRequest::TypePoint { id, .. }
             | ServeRequest::FindText { id, .. }
+            | ServeRequest::PageText { id }
             | ServeRequest::Resize { id, .. }
             | ServeRequest::Quit { id } => *id,
         }
@@ -864,6 +888,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         url: None,
                         title: None,
                         page: None,
+                        text: None,
                         hints: Vec::new(),
                         found: None,
                         error: Some(error.to_string()),
@@ -1158,7 +1183,8 @@ mod tests {
     use nvbrowser_core::{
         ElementHintKind, ElementHintsRequest, FrameId, FrameMetadata, HistoryNavigationResult,
         InputResult, InteractionSettleResult, NavigationResult, PageId, PageMetricsRequest,
-        ReloadResult, RendererError, RendererErrorKind, ScrollResult, ShutdownResult,
+        PageTextRequest, ReloadResult, RendererError, RendererErrorKind, ScrollResult,
+        ShutdownResult,
     };
 
     struct FakeRenderer {
@@ -1279,6 +1305,24 @@ mod tests {
                 document_width: 10.0,
                 document_height: 30.0,
             }))
+        }
+
+        fn page_text(
+            &mut self,
+            request: PageTextRequest,
+        ) -> Result<PageTextSnapshot, RendererError> {
+            self.operations.push("page_text");
+            Ok(PageTextSnapshot {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                url: self
+                    .url
+                    .clone()
+                    .unwrap_or_else(|| "https://example.com".to_string()),
+                title: Some("Example".to_string()),
+                text: "# Example\n\nExample body".to_string(),
+                truncated: false,
+            })
         }
 
         fn reload(&mut self, request: ReloadRequest) -> Result<ReloadResult, RendererError> {
@@ -1706,6 +1750,11 @@ mod tests {
                 query: "hello \"world\"".to_string(),
             }
         );
+        assert_eq!(
+            parse_serve_request(r#"{"type":"page_text","id":12}"#)
+                .expect("page text request should parse"),
+            ServeRequest::PageText { id: 12 }
+        );
     }
 
     #[test]
@@ -1717,6 +1766,7 @@ mod tests {
             url: None,
             title: None,
             page: None,
+            text: None,
             hints: Vec::new(),
             found: None,
             error: None,
@@ -1737,6 +1787,7 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example Domain".to_string()),
             page: None,
+            text: None,
             hints: vec![ElementHint {
                 id: 1,
                 kind: ElementHintKind::Link,
@@ -1768,6 +1819,7 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
+            text: None,
             hints: Vec::new(),
             found: Some(true),
             error: None,
@@ -1795,6 +1847,7 @@ mod tests {
                 document_width: 800.0,
                 document_height: 1600.0,
             }),
+            text: None,
             hints: Vec::new(),
             found: None,
             error: None,
@@ -1803,6 +1856,34 @@ mod tests {
         assert_eq!(
             encode_serve_response(&response),
             r#"{"id":13,"status":"ok","payload":"frame","url":"https://example.com","title":"Example","page":{"scroll_x":0.0,"scroll_y":250.0,"viewport_width":800.0,"viewport_height":600.0,"document_width":800.0,"document_height":1600.0}}"#
+        );
+    }
+
+    #[test]
+    fn serve_response_encodes_page_text_when_present() {
+        let response = ServeResponse {
+            id: 14,
+            status: ServeStatus::Ok,
+            payload: None,
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            page: None,
+            text: Some(PageTextSnapshot {
+                session_id: SessionId::new(1),
+                page_id: PageId::new(1),
+                url: "https://example.com".to_string(),
+                title: Some("Example".to_string()),
+                text: "# Example\n\nBody".to_string(),
+                truncated: false,
+            }),
+            hints: Vec::new(),
+            found: None,
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r##"{"id":14,"status":"ok","url":"https://example.com","title":"Example","text":{"session_id":1,"page_id":1,"url":"https://example.com","title":"Example","text":"# Example\n\nBody","truncated":false}}"##
         );
     }
 
@@ -2394,6 +2475,44 @@ mod tests {
             runtime.renderer.operations,
             vec!["capture", "hints", "find_text", "capture", "hints"]
         );
+    }
+
+    #[test]
+    fn serve_runtime_reads_page_text_without_capturing_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+            },
+        );
+        let navigate = runtime.handle(ServeRequest::Navigate {
+            id: 3,
+            url: "https://example.com".to_string(),
+        });
+        assert_eq!(navigate.status, ServeStatus::Ok);
+        runtime.renderer.operations.clear();
+        runtime.renderer.captures = 0;
+
+        let response = runtime.handle(ServeRequest::PageText { id: 12 });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_none());
+        assert!(response.hints.is_empty());
+        assert_eq!(
+            response
+                .text
+                .as_ref()
+                .map(|snapshot| snapshot.text.as_str()),
+            Some("# Example\n\nExample body")
+        );
+        assert_eq!(runtime.renderer.operations, vec!["page_text"]);
+        assert_eq!(runtime.renderer.captures, 0);
     }
 
     #[test]

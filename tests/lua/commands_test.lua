@@ -12,6 +12,7 @@ local found = nil
 local typed_hint = nil
 local submitted_hint = nil
 local doctor_called = false
+local reader_called = false
 local browser = {
   hints = function()
     return {
@@ -69,6 +70,10 @@ local browser = {
       document_height = 1600,
     }
   end,
+  reader = function()
+    reader_called = true
+    return true
+  end,
 }
 
 local echoed = nil
@@ -98,6 +103,9 @@ assert(echoed == "nvim-browser doctor\nbrowser output: kitty-unicode", "NBrowser
 
 vim.cmd("NBrowserStatus")
 assert(echoed:match("scroll 25%%"), "NBrowserStatus should include scroll progress when page metrics exist")
+
+vim.cmd("NBrowserReader")
+assert(reader_called == true, "NBrowserReader should call browser.reader")
 
 vim.cmd("NBrowserAddress")
 assert(addressed == "s", "NBrowserAddress should pass the injected input function to browser.address")

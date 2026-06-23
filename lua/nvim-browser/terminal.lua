@@ -26,6 +26,7 @@ local state = {
   element_hints = {},
   element_hints_geometry = nil,
   cursor_addressable_preview = false,
+  reader_bufnr = nil,
 }
 
 local kitty_placeholder = vim.fn.nr2char(0x10eeee)
@@ -331,6 +332,62 @@ local function handle_find_text_response(response)
   if response.found == false then
     vim.api.nvim_echo({ { "nvim-browser: text was not found", "WarningMsg" } }, false, {})
   end
+end
+
+local function reader_buffer_name(snapshot)
+  local title = snapshot and snapshot.title
+  if title == nil or title == "" or title == vim.NIL then
+    title = snapshot and snapshot.url or "page"
+  end
+  title = tostring(title):gsub("[/\\:]", "-")
+  if title == "" then
+    title = "page"
+  end
+  return "nvim-browser-reader://" .. title
+end
+
+local function delete_reader_buffer()
+  if state.reader_bufnr ~= nil and vim.api.nvim_buf_is_valid(state.reader_bufnr) then
+    vim.api.nvim_buf_delete(state.reader_bufnr, { force = true })
+  end
+  state.reader_bufnr = nil
+end
+
+local function apply_reader_snapshot(snapshot)
+  if state.reader_bufnr == nil or not vim.api.nvim_buf_is_valid(state.reader_bufnr) then
+    state.reader_bufnr = vim.api.nvim_create_buf(false, true)
+    vim.bo[state.reader_bufnr].buftype = "nofile"
+    vim.bo[state.reader_bufnr].bufhidden = "hide"
+    vim.bo[state.reader_bufnr].swapfile = false
+    vim.bo[state.reader_bufnr].filetype = "markdown"
+  end
+  pcall(vim.api.nvim_buf_set_name, state.reader_bufnr, reader_buffer_name(snapshot))
+  local lines = {}
+  if snapshot.url ~= nil and snapshot.url ~= "" then
+    table.insert(lines, "<" .. snapshot.url .. ">")
+    table.insert(lines, "")
+  end
+  vim.list_extend(lines, vim.split(snapshot.text or "", "\n", { plain = true }))
+  if snapshot.truncated == true then
+    local last_line = lines[#lines]
+    if last_line ~= "[truncated]" then
+      table.insert(lines, "")
+      table.insert(lines, "[truncated]")
+    end
+  end
+  vim.bo[state.reader_bufnr].modifiable = true
+  vim.api.nvim_buf_set_lines(state.reader_bufnr, 0, -1, false, lines)
+  vim.bo[state.reader_bufnr].modifiable = false
+  vim.cmd("botright split")
+  vim.api.nvim_win_set_buf(0, state.reader_bufnr)
+end
+
+local function handle_reader_response(response)
+  if response.status ~= "ok" or response.text == nil or response.text == vim.NIL then
+    vim.api.nvim_echo({ { "nvim-browser: reader snapshot failed", "WarningMsg" } }, false, {})
+    return
+  end
+  apply_reader_snapshot(response.text)
 end
 
 local function apply_serve_response_metadata(response)
@@ -650,6 +707,7 @@ function M.open(command)
   state.element_hints = {}
   state.element_hints_geometry = nil
   state.cursor_addressable_preview = false
+  delete_reader_buffer()
   pcall(send_terminal_escape, kitty_cleanup_escape())
 
   local previous_bufnr = state.bufnr
@@ -891,6 +949,7 @@ function M.close()
   if is_valid_buffer() then
     vim.api.nvim_buf_delete(state.bufnr, { force = true })
   end
+  delete_reader_buffer()
   state.bufnr = nil
   state.winid = nil
   state.job_id = nil
@@ -1018,6 +1077,10 @@ function M.find_text(query)
   }, handle_find_text_response)
 end
 
+function M.reader()
+  return send_serve_request({ type = "page_text" }, handle_reader_response)
+end
+
 function M.click_here()
   if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
     return false
@@ -1118,6 +1181,7 @@ function M.state()
     status_error = state.status_error,
     last_find_found = state.last_find_found,
     element_hints = state.element_hints,
+    reader_bufnr = state.reader_bufnr,
   }
 end
 
@@ -1132,6 +1196,7 @@ M._test = {
     return hints_overlay.namespace()
   end,
   handle_find_text_response = handle_find_text_response,
+  handle_reader_response = handle_reader_response,
   apply_serve_response = apply_serve_response_metadata,
   kitty_cleanup_escape = kitty_cleanup_escape,
   set_last_find_found = function(value)
