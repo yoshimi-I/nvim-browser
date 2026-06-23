@@ -44,6 +44,10 @@ require("nvim-browser").setup({
   binary = vim.fn.expand("~/.local/bin/nvbrowser"),
 })
 <
+With graphics="auto", browser and raster image previews use Kitty graphics
+outside terminal multiplexers and fall back to ANSI output when ZELLIJ is
+detected.
+
 Active browser previews recapture the page every 1500ms by default. This keeps
 async page updates visible in Neovim without manual refresh. Disable it or tune
 the interval with:

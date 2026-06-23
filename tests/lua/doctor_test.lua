@@ -23,6 +23,7 @@ local zellij_auto = doctor.run({
   image_fit = "original",
 }, {})
 assert(contains_line(zellij_auto, "browser output: ansi"), "auto graphics under Zellij should choose ANSI browser output")
+assert(contains_line(zellij_auto, "image output: ansi"), "auto graphics under Zellij should choose ANSI image output")
 assert(contains_line(zellij_auto, "warning: ZELLIJ detected"), "auto graphics under Zellij should explain ANSI fallback")
 assert(contains_line(zellij_auto, "warning: binary is not executable"), "missing binary should warn")
 

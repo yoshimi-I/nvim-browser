@@ -89,6 +89,10 @@ require("nvim-browser").setup({
 })
 ```
 
+With `graphics = "auto"`, browser and raster image previews use Kitty graphics
+outside terminal multiplexers and fall back to ANSI output when `ZELLIJ` is
+detected.
+
 To attach to an already-running Chrome DevTools Protocol browser instead of
 letting `nvbrowser` launch Chrome, pass the browser WebSocket URL:
 

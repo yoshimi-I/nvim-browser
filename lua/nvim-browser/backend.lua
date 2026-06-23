@@ -17,6 +17,12 @@ local function image_graphics_output(opts)
   if graphics == "kitty" or graphics == "ansi" then
     return graphics
   end
+  if graphics == "kitty-unicode" then
+    return "kitty"
+  end
+  if vim.env.ZELLIJ ~= nil then
+    return "ansi"
+  end
 
   return "kitty"
 end

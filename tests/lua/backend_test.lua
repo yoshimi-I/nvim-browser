@@ -157,3 +157,36 @@ assert(vim.deep_equal(image_command, {
   "--fit",
   "contain",
 }), "raster images should keep direct image routing")
+
+local original_zellij = vim.env.ZELLIJ
+vim.env.ZELLIJ = "1"
+local zellij_auto_image_command = backend.command_for("nvbrowser", "open", "/tmp/image.png", {
+  graphics = "auto",
+  image_fit = "contain",
+})
+vim.env.ZELLIJ = original_zellij
+assert(vim.deep_equal(zellij_auto_image_command, {
+  "nvbrowser",
+  "show-image",
+  "/tmp/image.png",
+  "--output",
+  "ansi",
+  "--fit",
+  "contain",
+}), "auto raster images under Zellij should use ANSI output")
+
+vim.env.ZELLIJ = "1"
+local zellij_explicit_kitty_unicode_image_command = backend.command_for("nvbrowser", "open", "/tmp/image.png", {
+  graphics = "kitty-unicode",
+  image_fit = "contain",
+})
+vim.env.ZELLIJ = original_zellij
+assert(vim.deep_equal(zellij_explicit_kitty_unicode_image_command, {
+  "nvbrowser",
+  "show-image",
+  "/tmp/image.png",
+  "--output",
+  "kitty",
+  "--fit",
+  "contain",
+}), "explicit kitty-unicode raster images under Zellij should preserve the existing Kitty image fallback")

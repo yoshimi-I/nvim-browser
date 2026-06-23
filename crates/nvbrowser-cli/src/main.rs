@@ -870,9 +870,17 @@ fn frame_to_payload(
         }
         ImageOutput::Ansi => {
             let image = image::load_from_memory_with_format(&png, ImageFormat::Png)?;
-            Ok(image_to_ansi_halfblocks(&image, columns, None))
+            Ok(image_to_ansi_halfblocks(
+                &image,
+                columns,
+                ansi_halfblock_target_height(rows),
+            ))
         }
     }
+}
+
+fn ansi_halfblock_target_height(rows: Option<u32>) -> Option<u32> {
+    rows.map(|rows| rows.saturating_mul(2).min(u32::MAX - 1))
 }
 
 fn should_tile_kitty_frame(png: &[u8], viewport: Viewport) -> bool {
@@ -1202,6 +1210,10 @@ fn image_to_ansi_halfblocks(
     columns: u32,
     target_height: Option<u32>,
 ) -> String {
+    if target_height == Some(0) {
+        return String::new();
+    }
+
     let columns = columns.max(1);
     let (width, height) = image.dimensions();
     let aspect = height as f32 / width.max(1) as f32;
@@ -2181,6 +2193,37 @@ mod tests {
         assert!(payload.contains("\x1b_Ga=d,d=i,i=257\x1b\\"));
         assert!(payload.contains("\x1b_Ga=T,i=1,p=1,c=80,r=24"));
         assert!(!payload.contains("C=1"));
+    }
+
+    #[test]
+    fn frame_to_payload_ansi_browser_frames_respect_rows() {
+        let frame = frame_with_png(320, 200);
+
+        let payload = frame_to_payload(frame, ImageOutput::Ansi, 20, Some(3)).expect("payload");
+
+        assert_eq!(payload.lines().count(), 3);
+        assert!(payload.contains("\x1b[38;2;"));
+        assert!(payload.contains("▀"));
+        assert!(!payload.contains("\x1b_G"));
+    }
+
+    #[test]
+    fn frame_to_payload_ansi_browser_frames_respect_zero_rows() {
+        let frame = frame_with_png(320, 200);
+
+        let payload = frame_to_payload(frame, ImageOutput::Ansi, 20, Some(0)).expect("payload");
+
+        assert!(payload.is_empty());
+    }
+
+    #[test]
+    fn ansi_halfblock_target_height_saturates_without_overflow() {
+        assert_eq!(ansi_halfblock_target_height(Some(0)), Some(0));
+        assert_eq!(ansi_halfblock_target_height(Some(3)), Some(6));
+        assert_eq!(
+            ansi_halfblock_target_height(Some(u32::MAX)),
+            Some(u32::MAX - 1)
+        );
     }
 
     #[test]
