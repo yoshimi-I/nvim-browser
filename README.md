@@ -63,7 +63,7 @@ With lazy.nvim:
 ```lua
 {
   "yoshimi-I/nvim-browser",
-  tag = "v0.1.2",
+  tag = "v0.1.3",
   build = "cargo build --release",
   config = function()
     require("nvim-browser").setup({
@@ -93,7 +93,7 @@ require("nvim-browser").setup({
 })
 ```
 
-Release tags use `vMAJOR.MINOR.PATCH`; replace `v0.1.2` with the latest release
+Release tags use `vMAJOR.MINOR.PATCH`; replace `v0.1.3` with the latest release
 tag when installing. Until `v1.0.0`, plugin and backend compatibility is
 guaranteed only within the same tag or commit; pin the Neovim plugin and
 `nvbrowser` binary together.
