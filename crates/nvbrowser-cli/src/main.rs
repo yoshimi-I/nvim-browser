@@ -12,8 +12,9 @@ use nvbrowser_core::{
     renderer::chromium::{render_url_png, ChromiumOptions},
     BrowserSession, ChromiumRenderer, ClickPointRequest, ElementHint, ElementHintsRequest,
     FindTextRequest, FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest,
-    KeyPressRequest, KittyImageTransfer, NavigateRequest, ReloadRequest, RenderFrameRequest,
-    RenderedFrame, Renderer, ScrollRequest, SessionId, TextInputRequest, Viewport,
+    KeyPressRequest, KittyImageDelete, KittyImageTransfer, NavigateRequest, ReloadRequest,
+    RenderFrameRequest, RenderedFrame, Renderer, ScrollRequest, SessionId, TextInputRequest,
+    Viewport,
 };
 use serde::{Deserialize, Serialize};
 
@@ -869,7 +870,11 @@ fn kitty_unicode_browse_escape(
     rows: Option<u32>,
 ) -> String {
     let transfer = KittyImageTransfer::new(1, viewport.width, viewport.height, encoded_png);
-    transfer.virtual_placement_escape(columns, rows.unwrap_or(1))
+    format!(
+        "{}{}",
+        KittyImageDelete::new(1).escape(),
+        transfer.virtual_placement_escape(columns, rows.unwrap_or(1))
+    )
 }
 
 fn kitty_placed_image_escape(
@@ -1335,6 +1340,7 @@ mod tests {
             Some(24),
         );
 
+        assert!(escape.starts_with("\x1b_Ga=d,d=i,i=1\x1b\\"));
         assert!(escape.contains("a=T"));
         assert!(escape.contains("q=2"));
         assert!(escape.contains("U=1"));

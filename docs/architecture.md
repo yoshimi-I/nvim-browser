@@ -29,6 +29,15 @@ as well as stable image IDs, placement IDs, placement dimensions, and deletion.
 Persistent preview code should use those primitives to replace frames instead
 of creating unrelated terminal output streams.
 
+Ghostty is the primary target terminal today. In normal panes it supports the
+Kitty graphics protocol, but multiplexers can block or degrade image transport.
+The Neovim browser path therefore prefers Kitty Unicode placeholders when
+available and falls back to ANSI rendering in known-problem environments. A
+browser frame replacement should be self-contained: clear the previous stable
+image ID or placement, then emit the new frame with the same placement geometry.
+That keeps redraw ordering inside a single backend response instead of relying
+on unrelated Lua-side cleanup.
+
 ## Neovim Boundaries
 
 - `config.lua`: user options and defaults.
