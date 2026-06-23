@@ -1628,6 +1628,32 @@ mod tests {
     }
 
     #[test]
+    fn serve_runtime_returns_self_contained_kitty_unicode_frame_payload() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::KittyUnicode,
+                columns: 12,
+                rows: 6,
+                viewport: Viewport::new(120, 60),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+            },
+        );
+
+        let response = runtime.handle(ServeRequest::Navigate {
+            id: 3,
+            url: "https://example.com".to_string(),
+        });
+        let payload = response.payload.expect("payload");
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(payload.starts_with("\x1b_Ga=d,d=i,i=1\x1b\\"));
+        assert!(payload.contains("a=T,q=2,U=1,i=1,c=12,r=6,f=100,s=120,v=60"));
+    }
+
+    #[test]
     fn serve_runtime_returns_hints_with_captured_frame() {
         let mut renderer = FakeRenderer::new();
         renderer.hints = vec![ElementHint {
