@@ -1,7 +1,8 @@
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use headless_chrome::{
@@ -238,6 +239,13 @@ impl Renderer for ChromiumRenderer {
             session_id: request.session_id,
             page_id: request.page_id,
         })
+    }
+
+    fn settle_after_interaction(&mut self) -> Result<(), RendererError> {
+        thread::sleep(Duration::from_millis(75));
+        self.tab.wait_until_navigated().map_err(render_error)?;
+        self.current_url = Some(self.tab.get_url());
+        Ok(())
     }
 
     fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {

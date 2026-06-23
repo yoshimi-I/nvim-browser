@@ -25,6 +25,8 @@ pub trait Renderer {
 
     fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError>;
 
+    fn settle_after_interaction(&mut self) -> Result<(), RendererError>;
+
     fn shutdown(&mut self) -> Result<ShutdownResult, RendererError>;
 }
 
@@ -254,6 +256,7 @@ mod tests {
 
     struct FakeRenderer {
         current_url: Option<String>,
+        settled: bool,
         shutdown: bool,
     }
 
@@ -261,6 +264,7 @@ mod tests {
         fn new() -> Self {
             Self {
                 current_url: None,
+                settled: false,
                 shutdown: false,
             }
         }
@@ -350,6 +354,11 @@ mod tests {
                 session_id: request.session_id,
                 page_id: request.page_id,
             })
+        }
+
+        fn settle_after_interaction(&mut self) -> Result<(), RendererError> {
+            self.settled = true;
+            Ok(())
         }
 
         fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
@@ -446,5 +455,16 @@ mod tests {
         assert_eq!(focus.page_id, page_id);
         assert_eq!(click.session_id, session_id);
         assert_eq!(click.page_id, page_id);
+    }
+
+    #[test]
+    fn renderer_contract_supports_interaction_settle() {
+        let mut renderer = FakeRenderer::new();
+
+        renderer
+            .settle_after_interaction()
+            .expect("interaction settle should succeed");
+
+        assert!(renderer.settled);
     }
 }

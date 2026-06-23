@@ -318,6 +318,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.active_page_id(),
                     text,
                 ))?;
+                self.renderer.settle_after_interaction()?;
                 self.capture_payload().map(Some)
             }
             ServeRequest::KeyPress { key, .. } => {
@@ -326,6 +327,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.active_page_id(),
                     key,
                 ))?;
+                self.renderer.settle_after_interaction()?;
                 self.capture_payload().map(Some)
             }
             ServeRequest::FocusSelector { selector, .. } => {
@@ -334,6 +336,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.active_page_id(),
                     selector,
                 ))?;
+                self.renderer.settle_after_interaction()?;
                 self.capture_payload().map(Some)
             }
             ServeRequest::ClickPoint { x, y, .. } => {
@@ -343,6 +346,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     x,
                     y,
                 ))?;
+                self.renderer.settle_after_interaction()?;
                 self.capture_payload().map(Some)
             }
             ServeRequest::Resize {
@@ -555,6 +559,7 @@ mod tests {
         key_presses: Vec<String>,
         focused_selectors: Vec<String>,
         clicked_points: Vec<(f64, f64)>,
+        operations: Vec<&'static str>,
         shutdown: bool,
     }
 
@@ -568,6 +573,7 @@ mod tests {
                 key_presses: Vec::new(),
                 focused_selectors: Vec::new(),
                 clicked_points: Vec::new(),
+                operations: Vec::new(),
                 shutdown: false,
             }
         }
@@ -593,6 +599,7 @@ mod tests {
             let url = self.url.clone().ok_or_else(|| {
                 RendererError::new(RendererErrorKind::InvalidState, "missing url")
             })?;
+            self.operations.push("capture");
             self.captures += 1;
             Ok(RenderedFrame {
                 metadata: FrameMetadata::new(
@@ -625,6 +632,7 @@ mod tests {
         }
 
         fn input_text(&mut self, request: TextInputRequest) -> Result<InputResult, RendererError> {
+            self.operations.push("text_input");
             self.text_inputs.push(request.text);
             Ok(InputResult {
                 session_id: request.session_id,
@@ -633,6 +641,7 @@ mod tests {
         }
 
         fn press_key(&mut self, request: KeyPressRequest) -> Result<InputResult, RendererError> {
+            self.operations.push("key_press");
             self.key_presses.push(request.key);
             Ok(InputResult {
                 session_id: request.session_id,
@@ -644,6 +653,7 @@ mod tests {
             &mut self,
             request: FocusSelectorRequest,
         ) -> Result<InputResult, RendererError> {
+            self.operations.push("focus_selector");
             self.focused_selectors.push(request.selector);
             Ok(InputResult {
                 session_id: request.session_id,
@@ -655,11 +665,17 @@ mod tests {
             &mut self,
             request: ClickPointRequest,
         ) -> Result<InputResult, RendererError> {
+            self.operations.push("click_point");
             self.clicked_points.push((request.x, request.y));
             Ok(InputResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
             })
+        }
+
+        fn settle_after_interaction(&mut self) -> Result<(), RendererError> {
+            self.operations.push("settle");
+            Ok(())
         }
 
         fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
@@ -876,6 +892,10 @@ mod tests {
         assert!(response.payload.is_some());
         assert_eq!(runtime.renderer.text_inputs, vec!["hello"]);
         assert_eq!(runtime.renderer.captures, 2);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["capture", "text_input", "settle", "capture"]
+        );
     }
 
     #[test]
@@ -904,6 +924,10 @@ mod tests {
         assert!(response.payload.is_some());
         assert_eq!(runtime.renderer.key_presses, vec!["Enter"]);
         assert_eq!(runtime.renderer.captures, 2);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["capture", "key_press", "settle", "capture"]
+        );
     }
 
     #[test]
@@ -935,6 +959,10 @@ mod tests {
             vec!["input[name=\"q\"]"]
         );
         assert_eq!(runtime.renderer.captures, 2);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["capture", "focus_selector", "settle", "capture"]
+        );
     }
 
     #[test]
@@ -964,6 +992,10 @@ mod tests {
         assert!(response.payload.is_some());
         assert_eq!(runtime.renderer.clicked_points, vec![(120.5, 240.25)]);
         assert_eq!(runtime.renderer.captures, 2);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["capture", "click_point", "settle", "capture"]
+        );
     }
 
     fn tiny_png() -> Vec<u8> {
