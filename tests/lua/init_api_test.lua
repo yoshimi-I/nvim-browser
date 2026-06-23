@@ -9,6 +9,7 @@ assert(type(browser.click_hint) == "function", "click_hint API should exist")
 assert(type(browser.follow_hint) == "function", "follow_hint API should exist")
 assert(type(browser.hint_mode) == "function", "hint_mode API should exist")
 assert(type(browser.type_hint) == "function", "type_hint API should exist")
+assert(type(browser.type_hint_mode) == "function", "type_hint_mode API should exist")
 assert(type(browser.address) == "function", "address API should exist")
 assert(type(browser.resolve_address_target) == "function", "address target resolver should exist")
 assert(type(browser.find_text) == "function", "find_text API should exist")
@@ -82,6 +83,57 @@ assert(browser.type_hint("s", "hello world", { submit = true }) == true, "type_h
 assert(typed_hint.label == "s", "type_hint should pass hint label to terminal")
 assert(typed_hint.text == "hello world", "type_hint should pass text to terminal")
 assert(typed_hint.submit == true, "type_hint should pass submit option to terminal")
+
+browser.hints = function()
+  return { { id = 2, hint_label = "s" } }
+end
+typed_hint = nil
+local prompts = {}
+local responses = { "s", "hello world" }
+terminal.type_hint = function(label, text, opts)
+  typed_hint = {
+    label = label,
+    text = text,
+    submit = opts ~= nil and opts.submit == true,
+  }
+  return true
+end
+assert(browser.type_hint_mode(function(prompt)
+  table.insert(prompts, prompt)
+  return table.remove(responses, 1)
+end) == true, "type_hint_mode should type into the prompted hint")
+assert(
+  table.concat(prompts, "|") == "nvim-browser hint: |nvim-browser text: ",
+  "type_hint_mode should prompt for hint then text"
+)
+assert(typed_hint.label == "s", "type_hint_mode should pass the prompted hint label")
+assert(typed_hint.text == "hello world", "type_hint_mode should pass the prompted text")
+assert(typed_hint.submit == false, "type_hint_mode should not submit by default")
+
+responses = { "s", "search" }
+assert(browser.type_hint_mode(function()
+  return table.remove(responses, 1)
+end, { submit = true }) == true, "type_hint_mode should support submit mode")
+assert(typed_hint.submit == true, "submit mode should reach terminal.type_hint")
+
+browser.hints = function()
+  return {}
+end
+assert(browser.type_hint_mode(function()
+  error("input should not be called without hints")
+end) == false, "type_hint_mode should return false without active hints")
+
+browser.hints = function()
+  return { { id = 2, hint_label = "s" } }
+end
+assert(browser.type_hint_mode(function()
+  return ""
+end) == false, "type_hint_mode should cancel on empty hint label")
+
+local empty_text_responses = { "s", "" }
+assert(browser.type_hint_mode(function()
+  return table.remove(empty_text_responses, 1)
+end) == false, "type_hint_mode should cancel on empty text")
 
 terminal.type_hint = function()
   return false

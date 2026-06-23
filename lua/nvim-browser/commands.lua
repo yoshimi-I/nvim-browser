@@ -272,6 +272,44 @@ function M.register(browser, opts)
     nargs = "+",
   })
 
+  vim.api.nvim_create_user_command("NBrowserTypeHintMode", function()
+    local hints = browser.hints()
+    if #hints == 0 then
+      warn_no_hints()
+      return
+    end
+    local label = input("nvim-browser hint: ")
+    if label == nil or label == "" then
+      return
+    end
+    local text = input("nvim-browser text: ")
+    if text == nil or text == "" then
+      return
+    end
+    if not browser.type_hint(label, text) then
+      warn_hint_input_unavailable()
+    end
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserSubmitHintMode", function()
+    local hints = browser.hints()
+    if #hints == 0 then
+      warn_no_hints()
+      return
+    end
+    local label = input("nvim-browser hint: ")
+    if label == nil or label == "" then
+      return
+    end
+    local text = input("nvim-browser text: ")
+    if text == nil or text == "" then
+      return
+    end
+    if not browser.type_hint(label, text, { submit = true }) then
+      warn_hint_input_unavailable()
+    end
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserHintMode", function()
     local hints = browser.hints()
     if #hints == 0 then

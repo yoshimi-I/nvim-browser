@@ -160,6 +160,40 @@ assert(typed_hint == "s:hello world", "NBrowserTypeHint should pass the label an
 vim.cmd("NBrowserSubmitHint s hello world")
 assert(submitted_hint == "s:hello world", "NBrowserSubmitHint should request submit mode")
 
+typed_hint = nil
+local hint_prompts = {}
+local hint_responses = { "s", "hello world" }
+commands.register(browser, {
+  input = function(prompt)
+    table.insert(hint_prompts, prompt)
+    return table.remove(hint_responses, 1)
+  end,
+})
+vim.cmd("NBrowserTypeHintMode")
+assert(typed_hint == "s:hello world", "NBrowserTypeHintMode should prompt and type into a hint")
+assert(
+  table.concat(hint_prompts, "|") == "nvim-browser hint: |nvim-browser text: ",
+  "NBrowserTypeHintMode should prompt for hint then text"
+)
+
+submitted_hint = nil
+hint_responses = { "s", "hello world" }
+commands.register(browser, {
+  input = function()
+    return table.remove(hint_responses, 1)
+  end,
+})
+vim.cmd("NBrowserSubmitHintMode")
+assert(submitted_hint == "s:hello world", "NBrowserSubmitHintMode should prompt and submit a hinted input")
+
+commands.register(browser, {
+  input = function(prompt, default)
+    prompted = prompt
+    prompt_default = default
+    return "s"
+  end,
+})
+
 vim.cmd("NBrowserFollowHint a")
 assert(followed == "a", "NBrowserFollowHint should pass the label to follow_hint")
 assert(clicked == nil, "NBrowserFollowHint should not call click_hint when follow_hint exists")
@@ -213,6 +247,12 @@ assert(warnings[#warnings] == "nvim-browser: text was not found or browser sessi
 vim.cmd("NBrowserTypeHint s missing")
 assert(warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive", "NBrowserTypeHint should warn when type_hint fails")
 
+vim.cmd("NBrowserTypeHintMode")
+assert(
+  warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive",
+  "NBrowserTypeHintMode should warn when hinted input mode fails"
+)
+
 local warning_count = #warnings
 commands.register(failed_browser, {
   input = function()
@@ -240,6 +280,17 @@ commands.register(empty_browser, {
 })
 vim.cmd("NBrowserHintMode")
 assert(warnings[#warnings] == "nvim-browser: no browser hints available", "NBrowserHintMode should warn when no hints exist")
+
+local no_hint_input_called = false
+commands.register(empty_browser, {
+  input = function()
+    no_hint_input_called = true
+    return "s"
+  end,
+})
+vim.cmd("NBrowserTypeHintMode")
+assert(warnings[#warnings] == "nvim-browser: no browser hints available", "NBrowserTypeHintMode should warn when no hints exist")
+assert(no_hint_input_called == false, "NBrowserTypeHintMode should not prompt when no hints exist")
 
 local no_default_prompt = nil
 local no_default_browser = {

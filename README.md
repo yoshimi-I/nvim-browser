@@ -167,6 +167,8 @@ Then run:
 :NBrowserFollowHint a
 :NBrowserTypeHint s hello world
 :NBrowserSubmitHint s hello world
+:NBrowserTypeHintMode
+:NBrowserSubmitHintMode
 :NBrowserHintMode
 :NBrowserCurrentUrl
 :NBrowserCurrentTitle
@@ -197,7 +199,10 @@ prompts for a label and follows it.
 into it. `:NBrowserSubmitHint {id-or-label} {text}` also presses Enter after the
 text is queued.
 
-Lua mappings can call `require("nvim-browser").hint_mode()` for the same prompt.
+`:NBrowserTypeHintMode` prompts for a hint label and text, then types into the
+hinted element. `:NBrowserSubmitHintMode` does the same and presses Enter after
+the text is queued. Lua mappings can call `require("nvim-browser").hint_mode()`
+or `require("nvim-browser").type_hint_mode(nil, { submit = true })`.
 `:NBrowserAddress [url-or-search]` works like a small omnibox; host-like input
 opens as a URL, and plain words use the configured search URL. With no
 argument, the prompt is prefilled with the current URL when available, falling
