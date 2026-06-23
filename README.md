@@ -219,6 +219,11 @@ forward, `<leader>bj` scroll down, `<leader>bk` scroll up, `<leader>ba`
 address, `<leader>b/` find, and `<leader>bf` hint mode. Existing mappings are
 left untouched; choose another prefix or mapping key if one is already in use.
 
+Focused preview buffers also install buffer-local browser controls by default:
+`r` reload, `H` back, `L` forward, `j`/`k` scroll, `a` address, `/` find, `f`
+hint mode, and `q` close. Disable or remap them with
+`preview_keymaps = { enabled = false }` or `preview_keymaps.mappings`.
+
 Configure search with `require("nvim-browser").setup({ search_url = "https://www.google.com/search?q=%s" })`.
 The `%s` placeholder receives the encoded query; write literal percent signs as
 `%%`.

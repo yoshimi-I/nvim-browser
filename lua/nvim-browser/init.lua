@@ -27,16 +27,35 @@ local function has_active_browser_session()
     and terminal_state.has_buffer
 end
 
+local function setup_preview_keymaps()
+  local terminal_state = terminal.state()
+  if terminal_state.bufnr ~= nil then
+    keymaps.setup_buffer(M, terminal_state.bufnr, M.config.preview_keymaps or {})
+  end
+end
+
 function M.inspect(target)
   target = resolve_target(target)
   state.last_target = target
+  local previous_bufnr = terminal.state().bufnr
   terminal.open(backend.command_for(M.config.binary, "inspect", target, M.config))
+  local current_bufnr = terminal.state().bufnr
+  if previous_bufnr ~= current_bufnr then
+    keymaps.clear_buffer(previous_bufnr)
+  end
+  setup_preview_keymaps()
 end
 
 function M.open(target)
   target = resolve_target(target)
   state.last_target = target
+  local previous_bufnr = terminal.state().bufnr
   terminal.open(backend.command_for(M.config.binary, "open", target, M.config))
+  local current_bufnr = terminal.state().bufnr
+  if previous_bufnr ~= current_bufnr then
+    keymaps.clear_buffer(previous_bufnr)
+  end
+  setup_preview_keymaps()
 end
 
 function M.preview()
@@ -48,6 +67,7 @@ function M.focus()
 end
 
 function M.close()
+  keymaps.clear_buffer(terminal.state().bufnr)
   terminal.close()
 end
 

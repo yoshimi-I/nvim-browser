@@ -27,10 +27,19 @@ local browser = {
   hint_mode = function()
     table.insert(calls, "hints")
   end,
+  close = function()
+    table.insert(calls, "close")
+  end,
 }
 
 local function mapping(lhs)
   return vim.fn.maparg(lhs, "n", false, true)
+end
+
+local function buffer_mapping(bufnr, lhs)
+  return vim.api.nvim_buf_call(bufnr, function()
+    return vim.fn.maparg(lhs, "n", false, true)
+  end)
 end
 
 local function assert_no_mapping(lhs, message)
@@ -41,9 +50,24 @@ local function assert_mapping(lhs, message)
   assert(mapping(lhs).lhs ~= nil, message)
 end
 
+local function assert_no_buffer_mapping(bufnr, lhs, message)
+  assert(buffer_mapping(bufnr, lhs).lhs == nil, message)
+end
+
+local function assert_buffer_mapping(bufnr, lhs, message)
+  local item = buffer_mapping(bufnr, lhs)
+  assert(item.lhs ~= nil and item.buffer == 1, message)
+end
+
 local function trigger(lhs)
   local callback = mapping(lhs).callback
   assert(type(callback) == "function", "mapping should install a Lua callback for " .. lhs)
+  callback()
+end
+
+local function trigger_buffer(bufnr, lhs)
+  local callback = buffer_mapping(bufnr, lhs).callback
+  assert(type(callback) == "function", "buffer mapping should install a Lua callback for " .. lhs)
   callback()
 end
 
@@ -119,3 +143,64 @@ keymaps.setup(browser, {
 })
 trigger("\\zR")
 assert(calls[#calls] == "replacement", "disabling keymaps should not delete mappings replaced by another owner")
+
+local first_bufnr = vim.api.nvim_create_buf(false, true)
+local second_bufnr = vim.api.nvim_create_buf(false, true)
+keymaps.setup_buffer(browser, first_bufnr, {
+  enabled = true,
+  scroll_pixels = 120,
+  input = function(prompt)
+    assert(prompt == "nvim-browser find: ", "buffer find mapping should prompt with the expected label")
+    return "local"
+  end,
+})
+
+assert_buffer_mapping(first_bufnr, "r", "buffer-local controls should install reload mapping")
+assert_buffer_mapping(first_bufnr, "H", "buffer-local controls should install back mapping")
+assert_buffer_mapping(first_bufnr, "L", "buffer-local controls should install forward mapping")
+assert_buffer_mapping(first_bufnr, "j", "buffer-local controls should install scroll-down mapping")
+assert_buffer_mapping(first_bufnr, "k", "buffer-local controls should install scroll-up mapping")
+assert_buffer_mapping(first_bufnr, "a", "buffer-local controls should install address mapping")
+assert_buffer_mapping(first_bufnr, "/", "buffer-local controls should install find mapping")
+assert_buffer_mapping(first_bufnr, "f", "buffer-local controls should install hint mapping")
+assert_buffer_mapping(first_bufnr, "q", "buffer-local controls should install close mapping")
+assert_no_buffer_mapping(second_bufnr, "r", "buffer-local controls should not leak to other buffers")
+
+local buffer_call_start = #calls
+trigger_buffer(first_bufnr, "r")
+trigger_buffer(first_bufnr, "H")
+trigger_buffer(first_bufnr, "L")
+trigger_buffer(first_bufnr, "j")
+trigger_buffer(first_bufnr, "k")
+trigger_buffer(first_bufnr, "a")
+trigger_buffer(first_bufnr, "/")
+trigger_buffer(first_bufnr, "f")
+trigger_buffer(first_bufnr, "q")
+
+local buffer_calls = {}
+for index = buffer_call_start + 1, #calls do
+  table.insert(buffer_calls, calls[index])
+end
+assert(
+  table.concat(buffer_calls, ",") == "reload,back,forward,scroll:120:0,scroll:-120:0,address,find:local,hints,close",
+  "buffer-local controls should call browser APIs"
+)
+
+vim.keymap.set("n", "x", function()
+  table.insert(calls, "buffer-existing")
+end, { buffer = first_bufnr })
+keymaps.setup_buffer(browser, first_bufnr, {
+  enabled = true,
+  mappings = {
+    reload = "x",
+    forward = false,
+  },
+})
+trigger_buffer(first_bufnr, "x")
+assert(calls[#calls] == "buffer-existing", "buffer-local controls should not overwrite existing buffer mappings")
+assert_no_buffer_mapping(first_bufnr, "L", "false buffer-local mappings should disable defaults after reinstall")
+
+keymaps.setup_buffer(browser, first_bufnr, {
+  enabled = false,
+})
+assert_no_buffer_mapping(first_bufnr, "r", "disabling buffer-local controls should delete owned buffer mappings")

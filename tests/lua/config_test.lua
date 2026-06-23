@@ -33,4 +33,15 @@ assert(
   configured.binary == "/opt/nvbrowser/bin/nvbrowser",
   "setup should preserve a custom backend binary path"
 )
+assert(configured.preview_keymaps.enabled == true, "preview-local keymaps should be enabled by default")
+assert(configured.preview_keymaps.mappings.close == "q", "preview-local keymaps should include a close mapping")
+local remapped = config.setup({
+  preview_keymaps = {
+    mappings = {
+      scroll_down = "<C-d>",
+    },
+  },
+})
+assert(remapped.preview_keymaps.mappings.scroll_down == "<C-d>", "preview-local keymaps should allow partial remaps")
+assert(remapped.preview_keymaps.mappings.close == "q", "preview-local partial remaps should retain defaults")
 config.options = original_options

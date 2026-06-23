@@ -2,6 +2,7 @@ local root = vim.fn.getcwd()
 package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.path
 
 local browser = require("nvim-browser")
+local keymaps = require("nvim-browser.keymaps")
 local terminal = require("nvim-browser.terminal")
 
 assert(type(browser.click_hint) == "function", "click_hint API should exist")
@@ -124,3 +125,59 @@ end, { is_active = true }) == false, "address should return false for empty inpu
 
 browser.open = original_open
 browser.navigate = original_navigate
+
+local original_jobstart = vim.fn.jobstart
+local original_jobstop = vim.fn.jobstop
+local original_chansend = vim.fn.chansend
+local original_nvim_chan_send = vim.api.nvim_chan_send
+vim.fn.jobstart = function()
+  return 2468
+end
+vim.fn.jobstop = function()
+  return 1
+end
+vim.fn.chansend = function()
+  return 1
+end
+vim.api.nvim_chan_send = function(channel, payload)
+  if channel == vim.v.stderr then
+    return 0
+  end
+  return original_nvim_chan_send(channel, payload)
+end
+
+browser.setup({
+  graphics = "ansi",
+  preview_keymaps = {
+    enabled = true,
+    scroll_pixels = 77,
+  },
+})
+browser.open("https://example.com")
+local preview_bufnr = terminal.state().bufnr
+local preview_reload_mapping = vim.api.nvim_buf_call(preview_bufnr, function()
+  return vim.fn.maparg("r", "n", false, true)
+end)
+assert(
+  preview_reload_mapping.lhs == "r" and preview_reload_mapping.buffer == 1,
+  "open should install preview-local browser controls on the preview buffer"
+)
+assert(keymaps._test.tracked_buffer_count() == 1, "open should track one preview-local mapping owner")
+browser.close()
+assert(keymaps._test.tracked_buffer_count() == 0, "close should clear preview-local mapping ownership")
+
+browser.inspect("https://example.com")
+local inspect_bufnr = terminal.state().bufnr
+local inspect_close_mapping = vim.api.nvim_buf_call(inspect_bufnr, function()
+  return vim.fn.maparg("q", "n", false, true)
+end)
+assert(
+  inspect_close_mapping.lhs == "q" and inspect_close_mapping.buffer == 1,
+  "inspect should install preview-local browser controls on the preview buffer"
+)
+browser.close()
+
+vim.fn.jobstart = original_jobstart
+vim.fn.jobstop = original_jobstop
+vim.fn.chansend = original_chansend
+vim.api.nvim_chan_send = original_nvim_chan_send

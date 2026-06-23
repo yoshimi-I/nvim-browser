@@ -35,6 +35,21 @@ M.options = {
       hints = "f",
     },
   },
+  preview_keymaps = {
+    enabled = true,
+    scroll_pixels = 400,
+    mappings = {
+      reload = "r",
+      back = "H",
+      forward = "L",
+      scroll_down = "j",
+      scroll_up = "k",
+      address = "a",
+      find = "/",
+      hints = "f",
+      close = "q",
+    },
+  },
 }
 
 function M.setup(opts)
