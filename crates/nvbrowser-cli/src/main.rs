@@ -54,6 +54,8 @@ enum Command {
         width: u32,
         #[arg(long, default_value_t = 768)]
         height: u32,
+        #[arg(long)]
+        cdp_ws_url: Option<String>,
         #[arg(long, value_enum, default_value_t = ImageOutput::Kitty)]
         output: ImageOutput,
         #[arg(long, default_value_t = 100)]
@@ -67,6 +69,8 @@ enum Command {
         width: u32,
         #[arg(long, default_value_t = 768)]
         height: u32,
+        #[arg(long)]
+        cdp_ws_url: Option<String>,
         #[arg(long, default_value = "-")]
         output: PathBuf,
         #[arg(long)]
@@ -87,6 +91,8 @@ enum Command {
         url: Option<String>,
         #[arg(long)]
         markdown: Option<PathBuf>,
+        #[arg(long)]
+        cdp_ws_url: Option<String>,
     },
 }
 
@@ -162,12 +168,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             url,
             width,
             height,
+            cdp_ws_url,
             output,
             columns,
             rows,
         } => {
             let viewport = Viewport::new(width, height);
-            let frame = render_url_png(&url, viewport, ChromiumOptions::detect())?;
+            let frame = render_url_png(&url, viewport, chromium_options(cdp_ws_url))?;
             let FrameArtifact::Png(png) = frame.artifact else {
                 return Err("Chromium renderer returned a non-PNG artifact".into());
             };
@@ -193,12 +200,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             url,
             width,
             height,
+            cdp_ws_url,
             output,
             metadata,
         } => {
             let viewport = Viewport::new(width, height);
             validate_capture_destinations(&output, metadata.as_deref())?;
-            let frame = render_url_png(&url, viewport, ChromiumOptions::detect())?;
+            let frame = render_url_png(&url, viewport, chromium_options(cdp_ws_url))?;
             let stdout = io::stdout();
             let mut writer = stdout.lock();
             write_capture_outputs(&frame, &output, metadata.as_deref(), &mut writer)?;
@@ -211,6 +219,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             height,
             url,
             markdown,
+            cdp_ws_url,
         } => {
             let (initial_url, markdown_preview) = match (url, markdown) {
                 (Some(_), Some(_)) => {
@@ -230,6 +239,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 viewport: Viewport::new(width, height),
                 initial_url,
                 markdown_preview,
+                cdp_ws_url,
             };
             serve_stdio(options)?;
         }
@@ -473,6 +483,7 @@ struct ServeOptions {
     viewport: Viewport,
     initial_url: Option<String>,
     markdown_preview: Option<MarkdownPreviewFile>,
+    cdp_ws_url: Option<String>,
 }
 
 struct ServeRuntime<R: Renderer> {
@@ -764,7 +775,10 @@ fn frame_to_payload(
 fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> {
     let initial_url = options.initial_url.clone();
     let mut runtime = ServeRuntime::new(
-        ChromiumRenderer::launch(options.viewport, ChromiumOptions::detect())?,
+        ChromiumRenderer::launch(
+            options.viewport,
+            chromium_options(options.cdp_ws_url.clone()),
+        )?,
         options,
     );
     let stdout = io::stdout();
@@ -815,6 +829,23 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
     }
 
     Ok(())
+}
+
+fn chromium_options(cdp_ws_url: Option<String>) -> ChromiumOptions {
+    let mut options = ChromiumOptions::detect();
+    if let Some(cdp_ws_url) = cdp_ws_url.and_then(non_empty_cli_string) {
+        options.cdp_ws_url = Some(cdp_ws_url);
+    }
+    options
+}
+
+fn non_empty_cli_string(value: String) -> Option<String> {
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 fn kitty_browse_escape(
@@ -1255,6 +1286,18 @@ mod tests {
     }
 
     #[test]
+    fn chromium_options_with_cli_cdp_ws_url_sets_attach_endpoint() {
+        let options = chromium_options(Some(
+            "ws://127.0.0.1:9222/devtools/browser/test".to_string(),
+        ));
+
+        assert_eq!(
+            options.cdp_ws_url.as_deref(),
+            Some("ws://127.0.0.1:9222/devtools/browser/test")
+        );
+    }
+
+    #[test]
     fn kitty_browse_escape_includes_placement_when_rows_are_provided() {
         let escape = kitty_browse_escape(
             "iVBORw0KGgo=".to_string(),
@@ -1561,6 +1604,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 
@@ -1601,6 +1645,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 
@@ -1626,6 +1671,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
         let navigate = runtime.handle(ServeRequest::Navigate {
@@ -1652,6 +1698,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
         let navigate = runtime.handle(ServeRequest::Navigate {
@@ -1681,6 +1728,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 
@@ -1710,6 +1758,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 
@@ -1750,6 +1799,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 
@@ -1799,6 +1849,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 
@@ -1839,6 +1890,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 
@@ -1868,6 +1920,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 
@@ -1908,6 +1961,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 
@@ -1948,6 +2002,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 
@@ -1991,6 +2046,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 
@@ -2032,6 +2088,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 
@@ -2066,6 +2123,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 
@@ -2117,6 +2175,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 
@@ -2155,6 +2214,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                cdp_ws_url: None,
             },
         );
 

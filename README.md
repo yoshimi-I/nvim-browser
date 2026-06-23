@@ -84,6 +84,15 @@ require("nvim-browser").setup({
 })
 ```
 
+To attach to an already-running Chrome DevTools Protocol browser instead of
+letting `nvbrowser` launch Chrome, pass the browser WebSocket URL:
+
+```lua
+require("nvim-browser").setup({
+  cdp_ws_url = "ws://127.0.0.1:9222/devtools/browser/<id>",
+})
+```
+
 Release tags use `vMAJOR.MINOR.PATCH`; replace `v0.1.2` with the latest release
 tag when installing. Until `v1.0.0`, plugin and backend compatibility is
 guaranteed only within the same tag or commit; pin the Neovim plugin and
@@ -116,6 +125,10 @@ cargo run -p nvbrowser -- browse https://example.com
 
 The `browse` and `capture` commands require Chrome or Chromium. Set
 `NVBROWSER_CHROME` when auto-detection cannot find the browser binary.
+Alternatively, set `NVBROWSER_CDP_WS_URL` or pass `--cdp-ws-url` to attach to an
+existing browser websocket endpoint. Chrome exposes that URL from
+`http://127.0.0.1:9222/json/version` when started with
+`--remote-debugging-port=9222`.
 The `capture` command writes raw Chromium viewport PNG frames independently
 from terminal rendering. Use `--output -` for PNG bytes on stdout, and
 `--metadata -` for JSON metadata on stdout when `--output` is a file.

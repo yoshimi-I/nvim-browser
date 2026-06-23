@@ -160,6 +160,17 @@ fn capture_rejects_conflicting_stdout_outputs_before_chrome_launch() {
         ));
 }
 
+#[test]
+fn serve_help_documents_cdp_ws_url_flag() {
+    let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+    command
+        .args(["serve", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--cdp-ws-url"));
+}
+
 fn tiny_png() -> Vec<u8> {
     const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, PNG)

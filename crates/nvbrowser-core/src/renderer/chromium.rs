@@ -27,17 +27,47 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChromiumOptions {
+    pub cdp_ws_url: Option<String>,
     pub binary: Option<PathBuf>,
 }
 
 impl ChromiumOptions {
     pub fn detect() -> Self {
-        Self {
-            binary: std::env::var_os("NVBROWSER_CHROME")
+        Self::from_env_values(
+            std::env::var("NVBROWSER_CDP_WS_URL")
+                .ok()
+                .and_then(non_empty_string),
+            std::env::var_os("NVBROWSER_CHROME")
                 .map(PathBuf::from)
                 .or_else(default_chrome_binary),
-        }
+        )
     }
+
+    fn from_env_values(cdp_ws_url: Option<String>, binary: Option<PathBuf>) -> Self {
+        Self { cdp_ws_url, binary }
+    }
+
+    fn browser_source(&self) -> Result<BrowserSource, RendererError> {
+        if let Some(cdp_ws_url) = self.cdp_ws_url.clone() {
+            return Ok(BrowserSource::Connect(cdp_ws_url));
+        }
+
+        self.binary
+            .clone()
+            .map(BrowserSource::Launch)
+            .ok_or_else(|| {
+                RendererError::new(
+                    RendererErrorKind::BackendUnavailable,
+                    "Chrome/CDP backend was not found; set NVBROWSER_CDP_WS_URL or NVBROWSER_CHROME",
+                )
+            })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BrowserSource {
+    Connect(String),
+    Launch(PathBuf),
 }
 
 pub fn default_chrome_binary() -> Option<PathBuf> {
@@ -60,15 +90,9 @@ pub fn render_url_png(
     viewport: Viewport,
     options: ChromiumOptions,
 ) -> Result<RenderedFrame, RendererError> {
-    let binary = options.binary.ok_or_else(|| {
-        RendererError::new(
-            RendererErrorKind::BackendUnavailable,
-            "Chrome/Chromium binary was not found; set NVBROWSER_CHROME",
-        )
-    })?;
-
-    let browser = launch_browser(&binary, viewport)?;
+    let browser = open_browser(&options, viewport)?;
     let tab = browser.new_tab().map_err(render_error)?;
+    resize_tab(&tab, viewport)?;
     let png = tab
         .navigate_to(url)
         .and_then(|tab| tab.wait_until_navigated())
@@ -107,14 +131,7 @@ pub struct ChromiumRenderer {
 
 impl ChromiumRenderer {
     pub fn launch(viewport: Viewport, options: ChromiumOptions) -> Result<Self, RendererError> {
-        let binary = options.binary.ok_or_else(|| {
-            RendererError::new(
-                RendererErrorKind::BackendUnavailable,
-                "Chrome/Chromium binary was not found; set NVBROWSER_CHROME",
-            )
-        })?;
-
-        let browser = launch_browser(&binary, viewport)?;
+        let browser = open_browser(&options, viewport)?;
         let tab = browser.new_tab().map_err(render_error)?;
         resize_tab(&tab, viewport)?;
 
@@ -591,6 +608,24 @@ fn launch_browser(binary: &Path, viewport: Viewport) -> Result<Browser, Renderer
     })
 }
 
+fn open_browser(options: &ChromiumOptions, viewport: Viewport) -> Result<Browser, RendererError> {
+    match options.browser_source()? {
+        BrowserSource::Connect(cdp_ws_url) => connect_browser(&cdp_ws_url),
+        BrowserSource::Launch(binary) => launch_browser(&binary, viewport),
+    }
+}
+
+fn connect_browser(cdp_ws_url: &str) -> Result<Browser, RendererError> {
+    Browser::connect_with_timeout(cdp_ws_url.to_string(), Duration::from_secs(300)).map_err(
+        |error| {
+            RendererError::new(
+                RendererErrorKind::BackendUnavailable,
+                format!("failed to connect to Chrome CDP websocket: {error}"),
+            )
+        },
+    )
+}
+
 fn resize_tab(tab: &Tab, viewport: Viewport) -> Result<(), RendererError> {
     tab.set_bounds(Bounds::Normal {
         left: None,
@@ -623,6 +658,15 @@ fn render_error(error: impl std::fmt::Display) -> RendererError {
     RendererError::new(RendererErrorKind::RenderFailed, error.to_string())
 }
 
+fn non_empty_string(value: String) -> Option<String> {
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -637,6 +681,67 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|path| path == Path::new("/usr/bin/chromium")));
+    }
+
+    #[test]
+    fn chromium_options_from_env_values_captures_cdp_ws_url() {
+        let options = ChromiumOptions::from_env_values(
+            Some("ws://127.0.0.1:9222/devtools/browser/test".to_string()),
+            None,
+        );
+
+        assert_eq!(
+            options.cdp_ws_url.as_deref(),
+            Some("ws://127.0.0.1:9222/devtools/browser/test")
+        );
+        assert_eq!(options.binary, None);
+    }
+
+    #[test]
+    fn browser_source_prefers_cdp_ws_url_over_binary() {
+        let options = ChromiumOptions {
+            cdp_ws_url: Some("ws://127.0.0.1:9222/devtools/browser/test".to_string()),
+            binary: Some(PathBuf::from("/custom/chrome")),
+        };
+
+        assert_eq!(
+            options
+                .browser_source()
+                .expect("source should be available"),
+            BrowserSource::Connect("ws://127.0.0.1:9222/devtools/browser/test".to_string())
+        );
+    }
+
+    #[test]
+    fn browser_source_uses_binary_when_cdp_ws_url_is_absent() {
+        let options = ChromiumOptions {
+            cdp_ws_url: None,
+            binary: Some(PathBuf::from("/custom/chrome")),
+        };
+
+        assert_eq!(
+            options
+                .browser_source()
+                .expect("source should be available"),
+            BrowserSource::Launch(PathBuf::from("/custom/chrome"))
+        );
+    }
+
+    #[test]
+    fn browser_source_reports_missing_backend_when_no_connection_options_exist() {
+        let options = ChromiumOptions {
+            cdp_ws_url: None,
+            binary: None,
+        };
+
+        let error = options
+            .browser_source()
+            .expect_err("source should require CDP URL or Chrome binary");
+
+        assert_eq!(error.kind(), RendererErrorKind::BackendUnavailable);
+        assert!(error
+            .message()
+            .contains("set NVBROWSER_CDP_WS_URL or NVBROWSER_CHROME"));
     }
 
     #[test]

@@ -29,18 +29,34 @@ local function browser_graphics_output(opts)
   return "kitty-unicode"
 end
 
+local function add_cdp_ws_url(command, opts)
+  if opts ~= nil and opts.cdp_ws_url ~= nil and opts.cdp_ws_url ~= "" then
+    table.insert(command, "--cdp-ws-url")
+    table.insert(command, opts.cdp_ws_url)
+  end
+  return command
+end
+
 function M.command_for(binary, action, target, opts)
   if action == "inspect" then
     return { binary, "inspect", target }
   end
 
   if target:match("^https?://") then
-    return { binary, "serve", "--output", browser_graphics_output(opts), "--url", target }
+    local command = { binary, "serve", "--output", browser_graphics_output(opts) }
+    add_cdp_ws_url(command, opts)
+    table.insert(command, "--url")
+    table.insert(command, target)
+    return command
   end
 
   local extension = extension_for(target)
   if extension == "md" or extension == "markdown" then
-    return { binary, "serve", "--output", browser_graphics_output(opts), "--markdown", target }
+    local command = { binary, "serve", "--output", browser_graphics_output(opts) }
+    add_cdp_ws_url(command, opts)
+    table.insert(command, "--markdown")
+    table.insert(command, target)
+    return command
   end
 
   if is_image_extension(extension) then
