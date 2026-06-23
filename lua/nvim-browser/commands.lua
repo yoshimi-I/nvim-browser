@@ -69,6 +69,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: address was empty or could not be opened", "WarningMsg" } }, false, {})
   end
 
+  local function warn_focused_input_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: focused text input failed or browser session is inactive", "WarningMsg" } }, false, {})
+  end
+
   local function follow_hint(label)
     if browser.follow_hint ~= nil then
       return browser.follow_hint(label)
@@ -174,10 +178,30 @@ function M.register(browser, opts)
   })
 
   vim.api.nvim_create_user_command("NBrowserInput", function(opts)
-    browser.input_text(opts.args)
+    if not browser.input_text(opts.args) then
+      warn_focused_input_unavailable()
+    end
   end, {
     nargs = "+",
   })
+
+  vim.api.nvim_create_user_command("NBrowserInputMode", function()
+    local text = input("nvim-browser text: ")
+    if text == nil or text == "" then
+      return
+    end
+    if browser.input_text_mode ~= nil then
+      if not browser.input_text_mode(function()
+        return text
+      end) then
+        warn_focused_input_unavailable()
+      end
+      return
+    end
+    if not browser.input_text(text) then
+      warn_focused_input_unavailable()
+    end
+  end, {})
 
   vim.api.nvim_create_user_command("NBrowserKey", function(opts)
     browser.press_key(opts.args)

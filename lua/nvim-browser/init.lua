@@ -141,8 +141,17 @@ function M.input_text(text)
   return terminal.input_text(text)
 end
 
-function M.press_key(key)
-  return terminal.press_key(key)
+function M.input_text_mode(input)
+  input = input or vim.fn.input
+  local text = input("nvim-browser text: ")
+  if text == nil or text == "" then
+    return false
+  end
+  return M.input_text(text)
+end
+
+function M.press_key(key, opts)
+  return terminal.press_key(key, opts)
 end
 
 function M.focus_selector(selector)

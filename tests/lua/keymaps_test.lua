@@ -32,6 +32,13 @@ local browser = {
     local suffix = opts ~= nil and opts.submit == true and ":submit" or ":type"
     table.insert(calls, "type_hints" .. suffix .. ":" .. value)
   end,
+  input_text_mode = function(input)
+    table.insert(calls, "input_mode:" .. input("nvim-browser text: "))
+  end,
+  press_key = function(key, opts)
+    local modifiers = opts ~= nil and opts.modifiers ~= nil and table.concat(opts.modifiers, "+") or ""
+    table.insert(calls, "key:" .. key .. ":" .. modifiers)
+  end,
   click_mouse = function()
     table.insert(calls, "click_mouse")
   end,
@@ -194,6 +201,15 @@ assert_buffer_mapping(first_bufnr, "/", "buffer-local controls should install fi
 assert_buffer_mapping(first_bufnr, "f", "buffer-local controls should install hint mapping")
 assert_buffer_mapping(first_bufnr, "t", "buffer-local controls should install hinted input mapping")
 assert_buffer_mapping(first_bufnr, "s", "buffer-local controls should install hinted submit mapping")
+assert_buffer_mapping(first_bufnr, "i", "buffer-local controls should install focused input mode")
+assert_buffer_mapping(first_bufnr, "<CR>", "buffer-local controls should install Enter forwarding")
+assert_buffer_mapping(first_bufnr, "<Tab>", "buffer-local controls should install Tab forwarding")
+assert_buffer_mapping(first_bufnr, "<S-Tab>", "buffer-local controls should install Shift-Tab forwarding")
+assert_buffer_mapping(first_bufnr, "<BS>", "buffer-local controls should install Backspace forwarding")
+assert_buffer_mapping(first_bufnr, "<Up>", "buffer-local controls should install ArrowUp forwarding")
+assert_buffer_mapping(first_bufnr, "<Down>", "buffer-local controls should install ArrowDown forwarding")
+assert_buffer_mapping(first_bufnr, "<Left>", "buffer-local controls should install ArrowLeft forwarding")
+assert_buffer_mapping(first_bufnr, "<Right>", "buffer-local controls should install ArrowRight forwarding")
 assert_buffer_mapping(first_bufnr, "q", "buffer-local controls should install close mapping")
 assert_buffer_mapping(first_bufnr, "<LeftMouse>", "buffer-local controls should install left-click mouse mapping")
 assert_buffer_mapping(first_bufnr, "<ScrollWheelDown>", "buffer-local controls should install wheel-down mapping")
@@ -212,6 +228,15 @@ trigger_buffer(first_bufnr, "/")
 trigger_buffer(first_bufnr, "f")
 trigger_buffer(first_bufnr, "t")
 trigger_buffer(first_bufnr, "s")
+trigger_buffer(first_bufnr, "i")
+trigger_buffer(first_bufnr, "<CR>")
+trigger_buffer(first_bufnr, "<Tab>")
+trigger_buffer(first_bufnr, "<S-Tab>")
+trigger_buffer(first_bufnr, "<BS>")
+trigger_buffer(first_bufnr, "<Up>")
+trigger_buffer(first_bufnr, "<Down>")
+trigger_buffer(first_bufnr, "<Left>")
+trigger_buffer(first_bufnr, "<Right>")
 trigger_buffer(first_bufnr, "q")
 trigger_buffer(first_bufnr, "<LeftMouse>")
 trigger_buffer(first_bufnr, "<ScrollWheelDown>")
@@ -224,7 +249,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,address,find:local,hints,type_hints:type:buffer text,type_hints:submit:buffer text,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,address,find:local,hints,type_hints:type:buffer text,type_hints:submit:buffer text,input_mode:buffer text,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
   "buffer-local controls should call browser APIs"
 )
 
@@ -238,6 +263,8 @@ keymaps.setup_buffer(browser, first_bufnr, {
     forward = false,
     type_hint_mode = "i",
     submit_hint_mode = false,
+    input_text_mode = "I",
+    key_enter = false,
   },
 })
 trigger_buffer(first_bufnr, "x")
@@ -245,6 +272,8 @@ assert(calls[#calls] == "buffer-existing", "buffer-local controls should not ove
 assert_no_buffer_mapping(first_bufnr, "L", "false buffer-local mappings should disable defaults after reinstall")
 assert_buffer_mapping(first_bufnr, "i", "custom buffer-local hinted input mapping should be installed")
 assert_no_buffer_mapping(first_bufnr, "s", "false buffer-local hinted submit mapping should disable default")
+assert_buffer_mapping(first_bufnr, "I", "custom buffer-local focused input mapping should be installed")
+assert_no_buffer_mapping(first_bufnr, "<CR>", "false buffer-local browser key mappings should disable defaults")
 assert_buffer_mapping(first_bufnr, "<LeftMouse>", "mouse mappings should remain enabled by default after reinstall")
 assert_buffer_mapping(first_bufnr, "<Esc>", "stop mapping should remain enabled by default after reinstall")
 

@@ -112,6 +112,12 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserInput {text}
 	Type text into the focused browser element and capture a fresh frame.
 
+							*:NBrowserInputMode*
+:NBrowserInputMode
+	Prompt once for text, type it into the focused browser element, and capture
+	a fresh frame. This is useful after focusing an element with hints, clicking
+	a field, or using Tab in the focused preview buffer.
+
 							*:NBrowserKey*
 :NBrowserKey {key}
 	Press a Puppeteer-style key name such as Enter, Tab, Backspace, or
@@ -274,6 +280,16 @@ a  address prompt
 f  hint mode
 t  type into hinted field
 s  type into hinted field and submit
+i  type into focused element
+<CR>     press Enter
+<Tab>    press Tab
+<S-Tab>  press Shift-Tab
+<BS>     press Backspace
+<Up>     press ArrowUp
+<Down>   press ArrowDown
+<Left>   press ArrowLeft
+<Right>  press ArrowRight
+<Esc> stop pending load
 <LeftMouse>        click browser viewport
 <ScrollWheelDown> scroll down
 <ScrollWheelUp>   scroll up

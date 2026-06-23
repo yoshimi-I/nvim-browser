@@ -6,7 +6,7 @@ use std::{
 };
 
 use headless_chrome::{
-    browser::tab::{point::Point, Tab},
+    browser::tab::{point::Point, ModifierKey, Tab},
     protocol::cdp::types::Method,
     protocol::cdp::Page::{CaptureScreenshotFormatOption, Viewport as CdpViewport},
     types::Bounds,
@@ -270,7 +270,14 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn press_key(&mut self, request: KeyPressRequest) -> Result<InputResult, RendererError> {
-        self.tab.press_key(&request.key).map_err(render_error)?;
+        let (key, modifiers) = chromium_key_with_modifiers(&request.key);
+        if modifiers.is_empty() {
+            self.tab.press_key(key).map_err(render_error)?;
+        } else {
+            self.tab
+                .press_key_with_modifiers(key, Some(&modifiers))
+                .map_err(render_error)?;
+        }
         Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
@@ -901,6 +908,27 @@ fn render_error(error: impl std::fmt::Display) -> RendererError {
     RendererError::new(RendererErrorKind::RenderFailed, error.to_string())
 }
 
+fn chromium_key_with_modifiers(key: &str) -> (&str, Vec<ModifierKey>) {
+    let Some((modifiers, base_key)) = key.rsplit_once('+') else {
+        return (key, Vec::new());
+    };
+    let mut parsed = Vec::new();
+    for modifier in modifiers.split('+') {
+        match modifier.to_ascii_lowercase().as_str() {
+            "alt" => parsed.push(ModifierKey::Alt),
+            "ctrl" | "control" => parsed.push(ModifierKey::Ctrl),
+            "meta" | "cmd" | "command" => parsed.push(ModifierKey::Meta),
+            "shift" => parsed.push(ModifierKey::Shift),
+            _ => return (key, Vec::new()),
+        }
+    }
+    if parsed.is_empty() {
+        (key, Vec::new())
+    } else {
+        (base_key, parsed)
+    }
+}
+
 fn parse_page_metrics_json(metrics: &str) -> Result<PageMetrics, serde_json::Error> {
     serde_json::from_str(metrics)
 }
@@ -1111,6 +1139,22 @@ mod tests {
         assert!(PAGE_TEXT_SCRIPT.contains("markdownLink"));
         assert!(!PAGE_TEXT_SCRIPT.contains("innerText"));
         assert!(!PAGE_TEXT_SCRIPT.contains("+ '\\n\\n[truncated]'"));
+    }
+
+    #[test]
+    fn chromium_key_with_modifiers_parses_multiple_modifiers() {
+        let (key, modifiers) = chromium_key_with_modifiers("Ctrl+Shift+Tab");
+
+        assert_eq!(key, "Tab");
+        assert_eq!(format!("{modifiers:?}"), "[Ctrl, Shift]");
+    }
+
+    #[test]
+    fn chromium_key_with_modifiers_ignores_unknown_prefixes() {
+        let (key, modifiers) = chromium_key_with_modifiers("Hyper+Tab");
+
+        assert_eq!(key, "Hyper+Tab");
+        assert!(modifiers.is_empty());
     }
 
     #[test]

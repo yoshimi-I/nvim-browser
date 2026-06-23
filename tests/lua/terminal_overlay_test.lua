@@ -574,6 +574,23 @@ for _, request in ipairs(sent_requests) do
 end
 assert(win_resize_seen, "active serve sessions should resize when the preview window changes size")
 
+sent_requests = {}
+assert(terminal.input_text("focused text") == true, "focused text input should reach the active serve backend")
+assert(terminal.press_key("Tab", { modifiers = { "shift" } }) == true, "modified key presses should reach the active serve backend")
+local text_input_seen = false
+local shifted_tab_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "text_input" and decoded.text == "focused text" then
+    text_input_seen = true
+  end
+  if ok and decoded.type == "key_press" and decoded.key == "Tab" and decoded.modifiers[1] == "shift" then
+    shifted_tab_seen = true
+  end
+end
+assert(text_input_seen, "focused text input should emit a text_input JSONL request")
+assert(shifted_tab_seen, "modified key presses should emit modifiers in the key_press JSONL request")
+
 local reused_bufnr = second_state.bufnr
 terminal.open({ "nvbrowser", "show-image", "/tmp/image.png", "--output", "ansi" })
 local replacement_state = terminal.state()

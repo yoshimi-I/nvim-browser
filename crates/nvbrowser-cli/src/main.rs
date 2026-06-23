@@ -284,6 +284,8 @@ enum ServeRequest {
     KeyPress {
         id: u64,
         key: String,
+        #[serde(default)]
+        modifiers: Vec<String>,
     },
     FocusSelector {
         id: u64,
@@ -683,7 +685,8 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload().map(Some)
             }
-            ServeRequest::KeyPress { key, .. } => {
+            ServeRequest::KeyPress { key, modifiers, .. } => {
+                let key = key_with_modifiers(key, modifiers);
                 self.renderer.press_key(KeyPressRequest::new(
                     self.session.id(),
                     self.session.active_page_id(),
@@ -972,6 +975,24 @@ fn non_empty_cli_string(value: String) -> Option<String> {
         None
     } else {
         Some(value)
+    }
+}
+
+fn key_with_modifiers(key: String, modifiers: Vec<String>) -> String {
+    let mut prefixes = Vec::new();
+    for modifier in modifiers {
+        match modifier.to_ascii_lowercase().as_str() {
+            "alt" => prefixes.push("Alt"),
+            "ctrl" | "control" => prefixes.push("Ctrl"),
+            "meta" | "cmd" | "command" => prefixes.push("Meta"),
+            "shift" => prefixes.push("Shift"),
+            _ => {}
+        }
+    }
+    if prefixes.is_empty() {
+        key
+    } else {
+        format!("{}+{key}", prefixes.join("+"))
     }
 }
 
@@ -1743,6 +1764,16 @@ mod tests {
             ServeRequest::KeyPress {
                 id: 4,
                 key: "Enter".to_string(),
+                modifiers: Vec::new(),
+            }
+        );
+        assert_eq!(
+            parse_serve_request(r#"{"type":"key_press","id":4,"key":"Tab","modifiers":["shift"]}"#)
+                .expect("modified key press request should parse"),
+            ServeRequest::KeyPress {
+                id: 4,
+                key: "Tab".to_string(),
+                modifiers: vec!["shift".to_string()],
             }
         );
     }
@@ -2503,6 +2534,7 @@ mod tests {
         let response = runtime.handle(ServeRequest::KeyPress {
             id: 2,
             key: "Enter".to_string(),
+            modifiers: Vec::new(),
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
@@ -2520,6 +2552,64 @@ mod tests {
                 "hints"
             ]
         );
+    }
+
+    #[test]
+    fn serve_runtime_passes_key_modifiers_to_renderer() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::KeyPress {
+            id: 2,
+            key: "Tab".to_string(),
+            modifiers: vec!["shift".to_string()],
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert_eq!(runtime.renderer.key_presses, vec!["Shift+Tab"]);
+    }
+
+    #[test]
+    fn serve_runtime_passes_multiple_key_modifiers_to_renderer() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::KeyPress {
+            id: 2,
+            key: "Tab".to_string(),
+            modifiers: vec!["ctrl".to_string(), "shift".to_string()],
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert_eq!(runtime.renderer.key_presses, vec!["Ctrl+Shift+Tab"]);
     }
 
     #[test]
@@ -2794,6 +2884,7 @@ mod tests {
         let response = runtime.handle(ServeRequest::KeyPress {
             id: 2,
             key: "Enter".to_string(),
+            modifiers: Vec::new(),
         });
 
         assert_eq!(response.status, ServeStatus::Ok);

@@ -48,6 +48,15 @@ assert(
   "preview-local keymaps should include a wheel-up mouse mapping"
 )
 assert(configured.preview_keymaps.mappings.stop == "<Esc>", "preview-local keymaps should include a stop mapping")
+assert(configured.preview_keymaps.mappings.input_text_mode == "i", "preview-local keymaps should include focused input mode")
+assert(configured.preview_keymaps.mappings.key_enter == "<CR>", "preview-local keymaps should include Enter forwarding")
+assert(configured.preview_keymaps.mappings.key_tab == "<Tab>", "preview-local keymaps should include Tab forwarding")
+assert(configured.preview_keymaps.mappings.key_shift_tab == "<S-Tab>", "preview-local keymaps should include Shift-Tab forwarding")
+assert(configured.preview_keymaps.mappings.key_backspace == "<BS>", "preview-local keymaps should include Backspace forwarding")
+assert(configured.preview_keymaps.mappings.key_up == "<Up>", "preview-local keymaps should include ArrowUp forwarding")
+assert(configured.preview_keymaps.mappings.key_down == "<Down>", "preview-local keymaps should include ArrowDown forwarding")
+assert(configured.preview_keymaps.mappings.key_left == "<Left>", "preview-local keymaps should include ArrowLeft forwarding")
+assert(configured.preview_keymaps.mappings.key_right == "<Right>", "preview-local keymaps should include ArrowRight forwarding")
 assert(
   configured.keymaps.mappings.type_hint_mode == "t",
   "global keymaps should include a hinted input mapping"
@@ -84,5 +93,13 @@ assert(
 assert(
   remapped.preview_keymaps.mappings.stop == "<Esc>",
   "preview-local partial remaps should retain the stop mapping"
+)
+assert(
+  remapped.preview_keymaps.mappings.input_text_mode == "i",
+  "preview-local partial remaps should retain focused input mode"
+)
+assert(
+  remapped.preview_keymaps.mappings.key_enter == "<CR>",
+  "preview-local partial remaps should retain browser key mappings"
 )
 config.options = original_options

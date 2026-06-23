@@ -208,6 +208,42 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.type_hint_mode(input, { submit = true })
   end, "nvim-browser: submit hinted input", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "input_text_mode", "i"), function()
+    browser.input_text_mode(input)
+  end, "nvim-browser: type into focused element", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "key_enter", "<CR>"), function()
+    browser.press_key("Enter")
+  end, "nvim-browser: press Enter", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "key_tab", "<Tab>"), function()
+    browser.press_key("Tab")
+  end, "nvim-browser: press Tab", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "key_shift_tab", "<S-Tab>"), function()
+    browser.press_key("Tab", { modifiers = { "shift" } })
+  end, "nvim-browser: press Shift-Tab", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "key_backspace", "<BS>"), function()
+    browser.press_key("Backspace")
+  end, "nvim-browser: press Backspace", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "key_up", "<Up>"), function()
+    browser.press_key("ArrowUp")
+  end, "nvim-browser: press ArrowUp", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "key_down", "<Down>"), function()
+    browser.press_key("ArrowDown")
+  end, "nvim-browser: press ArrowDown", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "key_left", "<Left>"), function()
+    browser.press_key("ArrowLeft")
+  end, "nvim-browser: press ArrowLeft", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "key_right", "<Right>"), function()
+    browser.press_key("ArrowRight")
+  end, "nvim-browser: press ArrowRight", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "stop", "<Esc>"), function()
     browser.stop()
   end, "nvim-browser: stop loading", buffer_opts)

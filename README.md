@@ -160,6 +160,7 @@ Then run:
 :NBrowserFind search text
 :NBrowserFocusSelector input[name="q"]
 :NBrowserInput hello
+:NBrowserInputMode
 :NBrowserKey Enter
 :NBrowserClick 120 240
 :NBrowserClickHere
@@ -227,6 +228,12 @@ or pass a value directly with `require("nvim-browser").address("example.com")`.
 `:NBrowserFind {text}` finds text in the active browser page, scrolls to the
 match through the browser's native find behavior, and captures a fresh frame.
 
+`:NBrowserInput {text}` types text into the currently focused browser element.
+`:NBrowserInputMode` prompts once for text and sends it to the focused element,
+which is useful after clicking a field or focusing one with hints. Focused
+preview buffers also forward common browser keys: `<CR>`, `<Tab>`, `<S-Tab>`,
+`<BS>`, and arrow keys.
+
 `:NBrowserReader` captures the current browser page as Markdown-like text in a
 normal scratch buffer so page content can be selected, searched, and yanked
 without leaving Neovim. Links are preserved as Markdown links where possible;
@@ -252,9 +259,10 @@ untouched; choose another prefix or mapping key if one is already in use.
 
 Focused preview buffers also install buffer-local browser controls by default:
 `r` reload, `H` back, `L` forward, `j`/`k` scroll, `a` address, `/` find, `f`
-hint mode, `t` type into a hinted field, `s` type and submit, `<Esc>` stop a
-pending load, left click to click the browser viewport, scroll wheel to scroll
-the page, and `q` close.
+hint mode, `t` type into a hinted field, `s` type and submit, `i` type into the
+focused element, `<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
+Backspace, arrow keys, `<Esc>` stop a pending load, left click to click the
+browser viewport, scroll wheel to scroll the page, and `q` close.
 Disable or remap them with
 `preview_keymaps = { enabled = false }` or `preview_keymaps.mappings`.
 

@@ -10,6 +10,7 @@ assert(type(browser.follow_hint) == "function", "follow_hint API should exist")
 assert(type(browser.hint_mode) == "function", "hint_mode API should exist")
 assert(type(browser.type_hint) == "function", "type_hint API should exist")
 assert(type(browser.type_hint_mode) == "function", "type_hint_mode API should exist")
+assert(type(browser.input_text_mode) == "function", "focused input text mode API should exist")
 assert(type(browser.address) == "function", "address API should exist")
 assert(type(browser.resolve_address_target) == "function", "address target resolver should exist")
 assert(type(browser.find_text) == "function", "find_text API should exist")
@@ -39,6 +40,8 @@ local original_terminal_follow_hint = terminal.follow_hint
 local original_terminal_click_mouse = terminal.click_mouse
 local original_terminal_type_hint = terminal.type_hint
 local original_terminal_stop = terminal.stop
+local original_terminal_input_text = terminal.input_text
+local original_terminal_press_key = terminal.press_key
 
 browser.hints = function()
   return {}
@@ -105,6 +108,29 @@ assert(browser.type_hint("s", "hello world", { submit = true }) == true, "type_h
 assert(typed_hint.label == "s", "type_hint should pass hint label to terminal")
 assert(typed_hint.text == "hello world", "type_hint should pass text to terminal")
 assert(typed_hint.submit == true, "type_hint should pass submit option to terminal")
+
+local focused_input = nil
+terminal.input_text = function(text)
+  focused_input = text
+  return true
+end
+assert(browser.input_text_mode(function(prompt)
+  assert(prompt == "nvim-browser text: ", "input_text_mode should use the expected prompt")
+  return "focused text"
+end) == true, "input_text_mode should type prompted text into the focused element")
+assert(focused_input == "focused text", "input_text_mode should pass prompted text to terminal")
+assert(browser.input_text_mode(function()
+  return ""
+end) == false, "input_text_mode should cancel on empty text")
+
+local pressed_key = nil
+terminal.press_key = function(key, opts)
+  pressed_key = { key = key, modifiers = opts and opts.modifiers or {} }
+  return true
+end
+assert(browser.press_key("Tab", { modifiers = { "shift" } }) == true, "press_key should pass modifier options")
+assert(pressed_key.key == "Tab", "press_key should pass the key to terminal")
+assert(pressed_key.modifiers[1] == "shift", "press_key should pass modifiers to terminal")
 
 local stop_called = false
 terminal.stop = function()
@@ -178,6 +204,8 @@ terminal.follow_hint = original_terminal_follow_hint
 terminal.click_mouse = original_terminal_click_mouse
 terminal.type_hint = original_terminal_type_hint
 terminal.stop = original_terminal_stop
+terminal.input_text = original_terminal_input_text
+terminal.press_key = original_terminal_press_key
 
 local original_open = browser.open
 local original_navigate = browser.navigate

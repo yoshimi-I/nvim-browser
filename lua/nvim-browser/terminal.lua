@@ -1362,7 +1362,8 @@ function M.input_text(text)
   })
 end
 
-function M.press_key(key)
+function M.press_key(key, opts)
+  opts = opts or {}
   if key == nil or key == "" then
     return false
   end
@@ -1370,6 +1371,7 @@ function M.press_key(key)
   return send_serve_request({
     type = "key_press",
     key = key,
+    modifiers = opts.modifiers or {},
   })
 end
 
