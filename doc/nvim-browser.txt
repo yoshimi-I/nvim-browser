@@ -174,6 +174,11 @@ COMMANDS                                           *nvim-browser-commands*
 	Type the contents of a Neovim register into the focused browser element and
 	capture a fresh frame. Defaults to the unnamed register.
 
+							*:NBrowserYankSelection*
+:NBrowserYankSelection [register]
+	Read the browser's current selected text and write it into a Neovim
+	register. Defaults to the unnamed register.
+
 							*:NBrowserKey*
 :NBrowserKey {key} [modifier ...]
 	Press a Puppeteer-style key name such as Enter, Tab, Backspace, or
@@ -376,6 +381,7 @@ t  type into hinted field
 s  type into hinted field and submit
 i  type into focused element
 p  paste register into focused element
+y  yank browser selection into register
 <CR>     press Enter
 <Tab>    press Tab
 <S-Tab>  press Shift-Tab

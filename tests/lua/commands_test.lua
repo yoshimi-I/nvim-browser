@@ -16,6 +16,7 @@ local typed_here = nil
 local submitted_here = nil
 local input_text = nil
 local pasted_register = nil
+local yanked_register = nil
 local pressed_key = nil
 local text_mode_called = false
 local doctor_called = false
@@ -69,6 +70,13 @@ local browser = {
       return false
     end
     pasted_register = register or '"'
+    return true
+  end,
+  yank_selection = function(register)
+    if register == "ab" then
+      return false
+    end
+    yanked_register = register or '"'
     return true
   end,
   press_key = function(key, opts)
@@ -242,6 +250,18 @@ vim.cmd("NBrowserPaste ab")
 assert(warnings[#warnings] == "nvim-browser: focused text input failed or browser session is inactive", "NBrowserPaste should warn on invalid register names")
 assert(pasted_register == nil, "NBrowserPaste should not paste invalid register names")
 
+vim.cmd("NBrowserYankSelection")
+assert(yanked_register == '"', "NBrowserYankSelection should default to the unnamed register")
+
+yanked_register = nil
+vim.cmd("NBrowserYankSelection +")
+assert(yanked_register == "+", "NBrowserYankSelection should pass an explicit register")
+
+yanked_register = nil
+vim.cmd("NBrowserYankSelection ab")
+assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no browser selection is active", "NBrowserYankSelection should warn on invalid register names")
+assert(yanked_register == nil, "NBrowserYankSelection should not yank invalid register names")
+
 vim.cmd("NBrowserKey Enter")
 assert(pressed_key.key == "Enter", "NBrowserKey should pass a key to browser.press_key")
 assert(#pressed_key.modifiers == 0, "NBrowserKey without modifiers should pass an empty modifier list")
@@ -348,6 +368,9 @@ local failed_browser = {
   paste_register = function()
     return false
   end,
+  yank_selection = function()
+    return false
+  end,
   input_text_mode = function()
     return false
   end,
@@ -386,6 +409,9 @@ assert(warnings[#warnings] == "nvim-browser: focused text input failed or browse
 
 vim.cmd("NBrowserPaste")
 assert(warnings[#warnings] == "nvim-browser: focused text input failed or browser session is inactive", "NBrowserPaste should warn when register paste fails")
+
+vim.cmd("NBrowserYankSelection")
+assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no browser selection is active", "NBrowserYankSelection should warn when selection yank fails")
 
 vim.cmd("NBrowserInputMode")
 assert(warnings[#warnings] == "nvim-browser: focused text input failed or browser session is inactive", "NBrowserInputMode should warn when focused text input fails")

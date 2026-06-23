@@ -214,7 +214,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
       <p>blank target adopted text</p>
       <button onclick="alert('adopted alert'); document.getElementById('adopted-out').textContent='adopted alert handled'">Adopted Alert</button>
       <p id="adopted-out">adopted empty</p>
-      <button onclick="setTimeout(() => window.open('{opened_url}', '_blank'), 150)">Open Window Target</button>
+      <button onclick="window.open('{opened_url}', '_blank')">Open Window Target</button>
     </main>
   </body>
 </html>"##

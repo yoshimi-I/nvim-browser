@@ -166,6 +166,10 @@ function M.paste_register(register)
   return M.input_text(text)
 end
 
+function M.yank_selection(register)
+  return terminal.yank_selection(register or '"')
+end
+
 function M.input_text_mode(input)
   input = input or vim.fn.input
   local text = input("nvim-browser text: ")

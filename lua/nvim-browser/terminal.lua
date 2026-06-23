@@ -642,6 +642,23 @@ local function handle_reader_response(response)
   apply_reader_snapshot(response.text)
 end
 
+local function warn_selection_yank_failed()
+  vim.api.nvim_echo({ { "nvim-browser: browser selection yank failed or no browser selection is active", "WarningMsg" } }, false, {})
+end
+
+local function handle_yank_selection_response(register)
+  return function(response)
+    if response.status ~= "ok" or response.selection == nil or response.selection == vim.NIL or response.selection == "" then
+      warn_selection_yank_failed()
+      return
+    end
+    local ok = pcall(vim.fn.setreg, register, response.selection, "v")
+    if not ok then
+      warn_selection_yank_failed()
+    end
+  end
+end
+
 local rendered_frame_geometry_from_runtime
 
 local function apply_serve_response_metadata(response)
@@ -1928,6 +1945,14 @@ end
 
 function M.reader()
   return send_serve_request({ type = "page_text" }, handle_reader_response)
+end
+
+function M.yank_selection(register)
+  register = register or '"'
+  if type(register) ~= "string" or #register ~= 1 then
+    return false
+  end
+  return send_serve_request({ type = "selection_text" }, handle_yank_selection_response(register))
 end
 
 function M.reader_follow()

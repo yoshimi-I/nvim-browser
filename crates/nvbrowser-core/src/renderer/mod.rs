@@ -52,6 +52,16 @@ pub trait Renderer {
         ))
     }
 
+    fn selection_text(
+        &mut self,
+        _request: SelectionTextRequest,
+    ) -> Result<SelectionTextResult, RendererError> {
+        Err(RendererError::new(
+            RendererErrorKind::InvalidState,
+            "selection text is not supported by this renderer",
+        ))
+    }
+
     fn element_hints(
         &mut self,
         _request: ElementHintsRequest,
@@ -413,6 +423,28 @@ pub struct PageTextSnapshot {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct SelectionTextRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+}
+
+impl SelectionTextRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId) -> Self {
+        Self {
+            session_id,
+            page_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SelectionTextResult {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ElementHintsRequest {
     pub session_id: SessionId,
     pub page_id: PageId,
@@ -709,6 +741,17 @@ mod tests {
             })
         }
 
+        fn selection_text(
+            &mut self,
+            request: SelectionTextRequest,
+        ) -> Result<SelectionTextResult, RendererError> {
+            Ok(SelectionTextResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                text: "selected text".to_string(),
+            })
+        }
+
         fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
             self.settled = true;
             Ok(InteractionSettleResult::new(
@@ -882,6 +925,21 @@ mod tests {
         assert_eq!(snapshot.title.as_deref(), Some("Example"));
         assert_eq!(snapshot.url, "https://example.com");
         assert!(snapshot.text.contains("Example body"));
+    }
+
+    #[test]
+    fn renderer_contract_supports_selection_text() {
+        let mut renderer = FakeRenderer::new();
+        let session_id = SessionId::new(7);
+        let page_id = PageId::new(10);
+
+        let selection = renderer
+            .selection_text(SelectionTextRequest::new(session_id, page_id))
+            .expect("selection text should succeed");
+
+        assert_eq!(selection.session_id, session_id);
+        assert_eq!(selection.page_id, page_id);
+        assert_eq!(selection.text, "selected text");
     }
 
     #[test]

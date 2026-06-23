@@ -24,7 +24,8 @@ use crate::{
         InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
         PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
         ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
-        RendererErrorKind, ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
+        RendererErrorKind, ScrollRequest, ScrollResult, SelectionTextRequest, SelectionTextResult,
+        ShutdownResult, TextInputRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -478,6 +479,24 @@ impl Renderer for ChromiumRenderer {
             title: extracted.title,
             text: extracted.text,
             truncated: extracted.truncated,
+        })
+    }
+
+    fn selection_text(
+        &mut self,
+        request: SelectionTextRequest,
+    ) -> Result<SelectionTextResult, RendererError> {
+        let text = self
+            .tab
+            .evaluate(SELECTION_TEXT_SCRIPT, true)
+            .map_err(render_error)?
+            .value
+            .and_then(|value| value.as_str().map(str::to_string))
+            .unwrap_or_default();
+        Ok(SelectionTextResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+            text,
         })
     }
 
@@ -1254,6 +1273,29 @@ fn render_error(error: impl std::fmt::Display) -> RendererError {
     RendererError::new(RendererErrorKind::RenderFailed, error.to_string())
 }
 
+const SELECTION_TEXT_SCRIPT: &str = r#"
+(() => {
+  const active = document.activeElement;
+  const isTextArea = active && active.tagName === 'TEXTAREA';
+  const isTextInput =
+    active &&
+    active.tagName === 'INPUT' &&
+    typeof active.selectionStart === 'number' &&
+    typeof active.selectionEnd === 'number';
+
+  if (isTextArea || isTextInput) {
+    const start = active.selectionStart;
+    const end = active.selectionEnd;
+    if (typeof start === 'number' && typeof end === 'number' && end > start) {
+      return active.value.slice(start, end);
+    }
+  }
+
+  const selection = window.getSelection && window.getSelection();
+  return selection ? selection.toString() : '';
+})()
+"#;
+
 fn chromium_key_with_modifiers(key: &str) -> (&str, Vec<ModifierKey>) {
     let Some((modifiers, base_key)) = key.rsplit_once('+') else {
         return (key, Vec::new());
@@ -1634,6 +1676,13 @@ mod tests {
         assert!(PAGE_TEXT_SCRIPT.contains("markdownLink"));
         assert!(!PAGE_TEXT_SCRIPT.contains("innerText"));
         assert!(!PAGE_TEXT_SCRIPT.contains("+ '\\n\\n[truncated]'"));
+    }
+
+    #[test]
+    fn selection_text_script_prefers_text_controls_and_falls_back_to_dom_selection() {
+        assert!(SELECTION_TEXT_SCRIPT.contains("selectionStart"));
+        assert!(SELECTION_TEXT_SCRIPT.contains("selectionEnd"));
+        assert!(SELECTION_TEXT_SCRIPT.contains("window.getSelection"));
     }
 
     #[test]

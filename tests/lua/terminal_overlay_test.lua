@@ -183,7 +183,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   url = "https://example.com/long",
   runtime = {
-    protocol_version = 4,
+    protocol_version = 5,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -205,7 +205,7 @@ assert(page_metrics.scroll_y == 250, "stored page metrics should preserve scroll
 assert(page_metrics.document_height == 1600, "stored page metrics should preserve document size")
 local runtime_info = terminal.state().runtime_metadata
 assert(runtime_info ~= nil, "serve responses should store runtime metadata")
-assert(runtime_info.protocol_version == 4, "runtime metadata should preserve protocol version")
+assert(runtime_info.protocol_version == 5, "runtime metadata should preserve protocol version")
 assert(runtime_info.output == "kitty-unicode", "runtime metadata should preserve output mode")
 assert(runtime_info.cells.columns == 80, "runtime metadata should preserve preview columns")
 assert(runtime_info.viewport.width == 800, "runtime metadata should preserve viewport width")
@@ -214,7 +214,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "runtime frame",
   runtime = {
-    protocol_version = 4,
+    protocol_version = 5,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -548,7 +548,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "interactive frame",
   runtime = {
-    protocol_version = 4,
+    protocol_version = 5,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -565,7 +565,7 @@ end
 
 local function interactive_runtime(width, height)
   return {
-    protocol_version = 4,
+    protocol_version = 5,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -700,7 +700,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "refreshed interactive frame",
   runtime = {
-    protocol_version = 4,
+    protocol_version = 5,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -716,7 +716,7 @@ terminal._test.apply_serve_response({
   status = "ok",
   payload = "column guard frame",
   runtime = {
-    protocol_version = 4,
+    protocol_version = 5,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "kitty-unicode",
@@ -833,6 +833,56 @@ assert(
 assert(#fake_timers == 1, "serve sessions should start a live refresh timer by default")
 assert(fake_timers[1].starts[1].timeout == 1500, "live refresh should use the default interval as its initial delay")
 assert(fake_timers[1].starts[1].repeat_ms == 1500, "live refresh should repeat at the configured interval")
+
+sent_requests = {}
+assert(terminal.yank_selection("ab") == false, "selection yank should reject invalid register names")
+assert(#sent_requests == 0, "invalid selection yank registers should not send a serve request")
+
+local old_a_register = vim.fn.getreg("a")
+vim.fn.setreg("a", "old register")
+assert(terminal.yank_selection("a") == true, "selection yank should send a selection_text request")
+local selection_request = last_request_of_type("selection_text")
+assert(selection_request ~= nil, "selection yank should use the selection_text serve request")
+serve_stdout(nil, { vim.json.encode({
+  id = selection_request.id,
+  status = "ok",
+  selection = "selected from browser",
+}), "" })
+assert(vim.wait(1000, function()
+  return vim.fn.getreg("a") == "selected from browser"
+end), "selection yank responses should write the requested register")
+
+warnings = {}
+sent_requests = {}
+assert(terminal.yank_selection("a") == true, "empty selection yank should still send a selection_text request")
+selection_request = last_request_of_type("selection_text")
+serve_stdout(nil, { vim.json.encode({
+  id = selection_request.id,
+  status = "ok",
+  selection = "",
+}), "" })
+assert(vim.wait(1000, function()
+  return #warnings > 0
+end), "empty selection yank responses should warn")
+assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no browser selection is active", "empty selection yank should use the expected warning")
+assert(vim.fn.getreg("a") == "selected from browser", "empty selection yank should not overwrite the register")
+vim.fn.setreg("a", old_a_register)
+
+warnings = {}
+sent_requests = {}
+assert(terminal.yank_selection(":") == true, "one-character invalid registers should be handled by the response path")
+selection_request = last_request_of_type("selection_text")
+local invalid_register_ok, invalid_register_error = pcall(serve_stdout, nil, { vim.json.encode({
+  id = selection_request.id,
+  status = "ok",
+  selection = "cannot write here",
+}), "" })
+assert(invalid_register_ok, "invalid writable registers should not throw from the async response handler: " .. tostring(invalid_register_error))
+assert(vim.wait(1000, function()
+  return #warnings > 0
+end), "invalid writable registers should warn after the response")
+assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no browser selection is active", "invalid writable register should use the expected warning")
+
 sent_requests = {}
 fake_timers[1].callback()
 assert(vim.wait(1000, function()

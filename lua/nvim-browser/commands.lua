@@ -89,6 +89,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: focused text input failed or browser session is inactive", "WarningMsg" } }, false, {})
   end
 
+  local function warn_selection_yank_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: browser selection yank failed or no browser selection is active", "WarningMsg" } }, false, {})
+  end
+
   local function warn_text_mode_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: text mode requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
   end
@@ -221,6 +225,15 @@ function M.register(browser, opts)
     local register = opts.args ~= "" and opts.args or nil
     if not browser.paste_register(register) then
       warn_focused_input_unavailable()
+    end
+  end, {
+    nargs = "?",
+  })
+
+  vim.api.nvim_create_user_command("NBrowserYankSelection", function(opts)
+    local register = opts.args ~= "" and opts.args or nil
+    if not browser.yank_selection(register) then
+      warn_selection_yank_unavailable()
     end
   end, {
     nargs = "?",

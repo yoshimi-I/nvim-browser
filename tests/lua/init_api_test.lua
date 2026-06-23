@@ -18,6 +18,7 @@ assert(type(browser.type_hint) == "function", "type_hint API should exist")
 assert(type(browser.type_hint_mode) == "function", "type_hint_mode API should exist")
 assert(type(browser.input_text_mode) == "function", "focused input text mode API should exist")
 assert(type(browser.paste_register) == "function", "register paste API should exist")
+assert(type(browser.yank_selection) == "function", "browser selection yank API should exist")
 assert(type(browser.start_text_mode) == "function", "interactive browser text mode API should exist")
 assert(type(browser.address) == "function", "address API should exist")
 assert(type(browser.resolve_address_target) == "function", "address target resolver should exist")
@@ -61,6 +62,7 @@ local original_terminal_input_text = terminal.input_text
 local original_terminal_press_key = terminal.press_key
 local original_terminal_start_text_mode = terminal.start_text_mode
 local original_terminal_page_scroll = terminal.page_scroll
+local original_terminal_yank_selection = terminal.yank_selection
 
 browser.hints = function()
   return {}
@@ -290,6 +292,17 @@ assert(browser.paste_register() == false, "paste_register should reject empty re
 vim.fn.setreg('"', unnamed_register)
 vim.fn.setreg("+", plus_register)
 
+local yanked_register = nil
+terminal.yank_selection = function(register)
+  yanked_register = register or '"'
+  return true
+end
+assert(browser.yank_selection() == true, "yank_selection should yank into the unnamed register by default")
+assert(yanked_register == '"', "yank_selection should pass unnamed register to terminal")
+yanked_register = nil
+assert(browser.yank_selection("+") == true, "yank_selection should yank into an explicit register")
+assert(yanked_register == "+", "yank_selection should pass explicit register to terminal")
+
 local text_mode_opts = nil
 terminal.start_text_mode = function(opts)
   text_mode_opts = opts
@@ -400,6 +413,7 @@ terminal.input_text = original_terminal_input_text
 terminal.press_key = original_terminal_press_key
 terminal.start_text_mode = original_terminal_start_text_mode
 terminal.page_scroll = original_terminal_page_scroll
+terminal.yank_selection = original_terminal_yank_selection
 
 local original_open = browser.open
 local original_navigate = browser.navigate

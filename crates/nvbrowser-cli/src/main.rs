@@ -16,7 +16,7 @@ use nvbrowser_core::{
     HistoryNavigationRequest, HoverHintRequest, HoverPointRequest, KeyPressRequest,
     KittyImageDelete, KittyImageTransfer, NavigateRequest, PageMetrics, PageMetricsRequest,
     PageTextRequest, PageTextSnapshot, ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer,
-    ScrollRequest, SessionId, TextInputRequest, Viewport,
+    ScrollRequest, SelectionTextRequest, SessionId, TextInputRequest, Viewport,
 };
 use serde::{Deserialize, Serialize};
 
@@ -346,6 +346,9 @@ enum ServeRequest {
     PageText {
         id: u64,
     },
+    SelectionText {
+        id: u64,
+    },
     Resize {
         id: u64,
         columns: u32,
@@ -373,6 +376,8 @@ struct ServeResponse {
     page: Option<PageMetrics>,
     #[serde(skip_serializing_if = "Option::is_none")]
     text: Option<PageTextSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selection: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     hints: Vec<ElementHint>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -581,6 +586,7 @@ struct CapturePayload {
     payload: Option<String>,
     page: Option<PageMetrics>,
     text: Option<PageTextSnapshot>,
+    selection: Option<String>,
     hints: Vec<ElementHint>,
     hint_error: Option<String>,
     found: Option<bool>,
@@ -602,18 +608,19 @@ impl<R: Renderer> ServeRuntime<R> {
         let id = request.id();
         match self.try_handle(request) {
             Ok(capture) => {
-                let (payload, page, text, hints, hint_error, found) = capture
+                let (payload, page, text, selection, hints, hint_error, found) = capture
                     .map(|capture| {
                         (
                             capture.payload,
                             capture.page,
                             capture.text,
+                            capture.selection,
                             capture.hints,
                             capture.hint_error,
                             capture.found,
                         )
                     })
-                    .unwrap_or((None, None, None, Vec::new(), None, None));
+                    .unwrap_or((None, None, None, None, Vec::new(), None, None));
                 ServeResponse {
                     id,
                     status: ServeStatus::Ok,
@@ -623,6 +630,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     title: self.session.active_page().title().map(str::to_string),
                     page,
                     text,
+                    selection,
                     hints,
                     hint_error,
                     found,
@@ -638,6 +646,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 title: self.session.active_page().title().map(str::to_string),
                 page: None,
                 text: None,
+                selection: None,
                 hints: Vec::new(),
                 hint_error: None,
                 found: None,
@@ -649,7 +658,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 4,
+            protocol_version: 5,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -875,6 +884,22 @@ impl<R: Renderer> ServeRuntime<R> {
                     payload: None,
                     page: None,
                     text: Some(snapshot),
+                    selection: None,
+                    hints: Vec::new(),
+                    hint_error: None,
+                    found: None,
+                }))
+            }
+            ServeRequest::SelectionText { .. } => {
+                let selection = self.renderer.selection_text(SelectionTextRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                ))?;
+                Ok(Some(CapturePayload {
+                    payload: None,
+                    page: None,
+                    text: None,
+                    selection: Some(selection.text),
                     hints: Vec::new(),
                     hint_error: None,
                     found: None,
@@ -923,6 +948,7 @@ impl<R: Renderer> ServeRuntime<R> {
             payload: Some(payload),
             page,
             text: None,
+            selection: None,
             hints,
             hint_error,
             found: None,
@@ -958,6 +984,7 @@ impl ServeRequest {
             | ServeRequest::TypeHint { id, .. }
             | ServeRequest::FindText { id, .. }
             | ServeRequest::PageText { id }
+            | ServeRequest::SelectionText { id }
             | ServeRequest::Resize { id, .. }
             | ServeRequest::Quit { id } => *id,
         }
@@ -1073,6 +1100,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         title: None,
                         page: None,
                         text: None,
+                        selection: None,
                         hints: Vec::new(),
                         hint_error: None,
                         found: None,
@@ -1402,7 +1430,7 @@ mod tests {
         ElementHintKind, ElementHintsRequest, FrameId, FrameMetadata, HistoryNavigationResult,
         InputResult, InteractionSettleResult, NavigationResult, PageId, PageMetricsRequest,
         PageTextRequest, ReloadResult, RendererError, RendererErrorKind, ScrollResult,
-        ShutdownResult,
+        SelectionTextRequest, SelectionTextResult, ShutdownResult,
     };
 
     struct FakeRenderer {
@@ -1556,6 +1584,18 @@ mod tests {
                 title: Some("Example".to_string()),
                 text: "# Example\n\nExample body".to_string(),
                 truncated: false,
+            })
+        }
+
+        fn selection_text(
+            &mut self,
+            request: SelectionTextRequest,
+        ) -> Result<SelectionTextResult, RendererError> {
+            self.operations.push("selection_text");
+            Ok(SelectionTextResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                text: "selected text".to_string(),
             })
         }
 
@@ -2113,6 +2153,11 @@ mod tests {
                 .expect("page text request should parse"),
             ServeRequest::PageText { id: 12 }
         );
+        assert_eq!(
+            parse_serve_request(r#"{"type":"selection_text","id":13}"#)
+                .expect("selection text request should parse"),
+            ServeRequest::SelectionText { id: 13 }
+        );
     }
 
     #[test]
@@ -2126,6 +2171,7 @@ mod tests {
             title: None,
             page: None,
             text: None,
+            selection: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -2149,6 +2195,7 @@ mod tests {
             title: Some("Example Domain".to_string()),
             page: None,
             text: None,
+            selection: None,
             hints: vec![ElementHint {
                 id: 1,
                 kind: ElementHintKind::Link,
@@ -2183,6 +2230,7 @@ mod tests {
             title: Some("Example".to_string()),
             page: None,
             text: None,
+            selection: None,
             hints: Vec::new(),
             hint_error: None,
             found: Some(true),
@@ -2213,6 +2261,7 @@ mod tests {
                 document_height: 1600.0,
             }),
             text: None,
+            selection: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -2243,6 +2292,7 @@ mod tests {
                 text: "# Example\n\nBody".to_string(),
                 truncated: false,
             }),
+            selection: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -2256,12 +2306,36 @@ mod tests {
     }
 
     #[test]
+    fn serve_response_encodes_selection_when_present() {
+        let response = ServeResponse {
+            id: 16,
+            status: ServeStatus::Ok,
+            runtime: None,
+            payload: None,
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            page: None,
+            text: None,
+            selection: Some("selected text".to_string()),
+            hints: Vec::new(),
+            hint_error: None,
+            found: None,
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r#"{"id":16,"status":"ok","url":"https://example.com","title":"Example","selection":"selected text"}"#
+        );
+    }
+
+    #[test]
     fn serve_response_encodes_runtime_metadata_when_present() {
         let response = ServeResponse {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 4,
+                protocol_version: 5,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -2280,6 +2354,7 @@ mod tests {
             title: Some("Example".to_string()),
             page: None,
             text: None,
+            selection: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -2288,7 +2363,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":4,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":5,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -2315,7 +2390,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 4);
+        assert_eq!(runtime_info.protocol_version, 5);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -3332,6 +3407,39 @@ mod tests {
             Some("# Example\n\nExample body")
         );
         assert_eq!(runtime.renderer.operations, vec!["page_text"]);
+        assert_eq!(runtime.renderer.captures, 0);
+    }
+
+    #[test]
+    fn serve_runtime_reads_selection_text_without_capturing_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+        let navigate = runtime.handle(ServeRequest::Navigate {
+            id: 3,
+            url: "https://example.com".to_string(),
+        });
+        assert_eq!(navigate.status, ServeStatus::Ok);
+        runtime.renderer.operations.clear();
+        runtime.renderer.captures = 0;
+
+        let response = runtime.handle(ServeRequest::SelectionText { id: 13 });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_none());
+        assert!(response.hints.is_empty());
+        assert_eq!(response.selection.as_deref(), Some("selected text"));
+        assert_eq!(runtime.renderer.operations, vec!["selection_text"]);
         assert_eq!(runtime.renderer.captures, 0);
     }
 
