@@ -19,7 +19,7 @@ This repository is an early MVP scaffold. Today it includes:
 - Neovim commands for opening, navigating, reloading, history, scrolling, finding text, text input, keys, selector focus, point clicks, and hinted element clicks
 - browser element hints overlaid on cursor-addressable previews
 - persistent Neovim preview surface reuse
-- current URL, title, and status reporting from the active browser session
+- current URL, title, status, and preview buffer naming from the active browser session
 - CLI integration tests for backend command contracts
 - initial OSS packaging and CI
 

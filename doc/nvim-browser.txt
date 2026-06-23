@@ -127,6 +127,7 @@ COMMANDS                                           *nvim-browser-commands*
 							*:NBrowserStatus*
 :NBrowserStatus
 	Echo the last serve response status, current title, and current URL.
+	The preview buffer name is also kept in sync with the current title or URL.
 
 							*:NBrowserPreview*
 :NBrowserPreview

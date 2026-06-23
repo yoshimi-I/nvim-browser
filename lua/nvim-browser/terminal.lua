@@ -406,6 +406,65 @@ local function find_hint(hints, identifier)
   return nil
 end
 
+local function browser_buffer_label(title, url)
+  if title == vim.NIL then
+    title = nil
+  end
+  if title ~= nil and title ~= "" then
+    return title
+  end
+  if url ~= nil and url ~= "" then
+    local label = tostring(url):gsub("^%w+://", "")
+    label = label:gsub("[?#].*$", "")
+    label = label:gsub("/$", "")
+    if label ~= "" then
+      return label
+    end
+  end
+  return "browser"
+end
+
+local function browser_buffer_name(title, url)
+  if title == vim.NIL then
+    title = nil
+  end
+  local label = browser_buffer_label(title, url)
+  if title ~= nil and title ~= "" then
+    label = label:gsub("[/:\\]", "-")
+  else
+    label = label:gsub("[:\\]", "-")
+  end
+  label = label:gsub("[%c]", " "):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+  if label == "" then
+    label = "browser"
+  end
+  if vim.fn.strchars(label) > 80 then
+    label = vim.fn.strcharpart(label, 0, 80)
+  end
+  return "nvim-browser://" .. label
+end
+
+local function set_browser_buffer_name(bufnr, title, url)
+  if bufnr == nil or not vim.api.nvim_buf_is_valid(bufnr) then
+    return false
+  end
+  local name = browser_buffer_name(title, url)
+  if vim.api.nvim_buf_get_name(bufnr) == name then
+    return true, name
+  end
+  local ok = pcall(vim.api.nvim_buf_set_name, bufnr, name)
+  if ok then
+    return true, name
+  end
+  local suffixed = name .. " [" .. bufnr .. "]"
+  ok = pcall(vim.api.nvim_buf_set_name, bufnr, suffixed)
+  return ok, ok and suffixed or nil
+end
+
+local function update_browser_buffer_name(bufnr)
+  return set_browser_buffer_name(bufnr, state.current_title, state.current_url or state.last_target)
+end
+
 local function apply_payload_to_buffer(bufnr, payload, uses_kitty, uses_kitty_unicode, command, geometry)
   state.last_payload = (uses_kitty or uses_kitty_unicode) and payload or nil
   state.last_payload_is_unicode = uses_kitty_unicode and payload ~= nil
@@ -505,6 +564,7 @@ function M.open(command)
   if previous_bufnr ~= nil and vim.api.nvim_buf_is_valid(previous_bufnr) then
     vim.api.nvim_buf_delete(previous_bufnr, { force = true })
   end
+  set_browser_buffer_name(state.bufnr, nil, state.last_target)
 
   vim.bo[state.bufnr].bufhidden = "hide"
   vim.bo[state.bufnr].filetype = "nvim-browser"
@@ -554,6 +614,7 @@ function M.open(command)
         if response.title ~= nil then
           state.current_title = response.title ~= vim.NIL and response.title or nil
         end
+        update_browser_buffer_name(bufnr)
         local response_handler = state.response_handlers[response.id]
         if response_handler ~= nil then
           state.response_handlers[response.id] = nil
@@ -967,6 +1028,8 @@ end
 M._test = {
   assign_hint_labels = assign_hint_labels,
   find_hint = find_hint,
+  browser_buffer_name = browser_buffer_name,
+  set_browser_buffer_name = set_browser_buffer_name,
   apply_hint_overlay = hints_overlay.apply,
   clear_hint_overlay = hints_overlay.clear,
   hint_namespace = function()

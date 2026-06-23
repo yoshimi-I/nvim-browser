@@ -84,6 +84,45 @@ assert(terminal._test.find_hint(target_hints, "1") == target_hints[1], "hint loo
 assert(terminal._test.find_hint(target_hints, 2) == target_hints[2], "hint lookup should preserve numeric id arguments")
 assert(terminal._test.find_hint(target_hints, "missing") == nil, "hint lookup should return nil for unknown labels")
 
+assert(
+  terminal._test.browser_buffer_name("Example Domain", "https://example.com/path?q=1") == "nvim-browser://Example Domain",
+  "buffer name should prefer the current page title"
+)
+assert(
+  terminal._test.browser_buffer_name("", "https://example.com/path?q=1") == "nvim-browser://example.com/path",
+  "buffer name should fall back to URL host and path without query"
+)
+assert(
+  terminal._test.browser_buffer_name(vim.NIL, "https://example.com/path#section") == "nvim-browser://example.com/path",
+  "buffer name should treat vim.NIL title as absent and strip URL fragments"
+)
+assert(
+  terminal._test.browser_buffer_name("docs/guide: intro", nil) == "nvim-browser://docs-guide- intro",
+  "buffer name should sanitize path separators and colons"
+)
+assert(
+  vim.fn.strchars(terminal._test.browser_buffer_name(string.rep("あ", 90), nil):gsub("^nvim%-browser://", "")) == 80,
+  "buffer name truncation should be character-aware for non-ASCII titles"
+)
+
+local name_bufnr = vim.api.nvim_create_buf(false, true)
+local named_ok, named = terminal._test.set_browser_buffer_name(name_bufnr, "Example Domain", "https://example.com")
+assert(named_ok, "setting browser buffer name should succeed")
+assert(named == "nvim-browser://Example Domain", "setter should return the applied buffer name")
+assert(vim.api.nvim_buf_get_name(name_bufnr) == "nvim-browser://Example Domain", "setter should update the buffer name")
+
+local duplicate_bufnr = vim.api.nvim_create_buf(false, true)
+local duplicate_ok, duplicate_name = terminal._test.set_browser_buffer_name(duplicate_bufnr, "Example Domain", "https://example.com")
+assert(duplicate_ok, "setting a duplicate browser buffer name should fall back instead of failing")
+assert(
+  duplicate_name == "nvim-browser://Example Domain [" .. duplicate_bufnr .. "]",
+  "duplicate names should receive a stable buffer-number suffix"
+)
+
+local deleted_bufnr = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_delete(deleted_bufnr, { force = true })
+assert(terminal._test.set_browser_buffer_name(deleted_bufnr, "Gone", nil) == false, "invalid buffers should be ignored")
+
 terminal._test.set_last_find_found(true)
 terminal._test.handle_find_text_response({ status = "error" })
 assert(terminal.state().last_find_found == nil, "failed find responses should clear stale find state")
