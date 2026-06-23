@@ -65,6 +65,13 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserReload
 	Reload the active browser page and capture a fresh frame.
 
+							*:NBrowserStop*
+:NBrowserStop
+	Cancel the current pending browser operation. This clears local loading
+	feedback, ignores a late response for that operation, and stops the active
+	serve job when it appears stuck. Focused preview buffers map <Esc> to this
+	command by default.
+
 							*:NBrowserNavigate*
 :NBrowserNavigate {url}
 	Navigate the active browser session to a URL and capture a fresh frame.
@@ -183,6 +190,8 @@ COMMANDS                                           *nvim-browser-commands*
 	The active browser preview also shows a compact footer with status, title
 	or URL, scroll progress, output mode, cell geometry, and current URL. The
 	preview buffer name is also kept in sync with the current title or URL.
+	Navigation-like operations show immediate "loading | ... | Esc stop"
+	feedback in this footer before Chromium returns a new frame.
 
 							*:NBrowserReader*
 :NBrowserReader

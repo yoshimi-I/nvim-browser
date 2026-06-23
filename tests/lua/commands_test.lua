@@ -15,6 +15,7 @@ local submitted_hint = nil
 local doctor_called = false
 local reader_called = false
 local reader_follow_called = false
+local stop_called = false
 local browser = {
   hints = function()
     return {
@@ -94,6 +95,10 @@ local browser = {
     reader_follow_called = true
     return true
   end,
+  stop = function()
+    stop_called = true
+    return true
+  end,
 }
 
 local echoed = nil
@@ -134,6 +139,9 @@ assert(reader_called == true, "NBrowserReader should call browser.reader")
 
 vim.cmd("NBrowserReaderFollow")
 assert(reader_follow_called == true, "NBrowserReaderFollow should call browser.reader_follow")
+
+vim.cmd("NBrowserStop")
+assert(stop_called == true, "NBrowserStop should call browser.stop")
 
 vim.cmd("NBrowserAddress")
 assert(addressed == "s", "NBrowserAddress should pass the injected input function to browser.address")
@@ -226,6 +234,9 @@ local failed_browser = {
   type_hint = function()
     return false
   end,
+  stop = function()
+    return false
+  end,
 }
 commands.register(failed_browser, {
   input = function()
@@ -252,6 +263,9 @@ assert(
   warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive",
   "NBrowserTypeHintMode should warn when hinted input mode fails"
 )
+
+vim.cmd("NBrowserStop")
+assert(warnings[#warnings] == "nvim-browser: no pending browser operation to stop", "NBrowserStop should warn when no operation is pending")
 
 local warning_count = #warnings
 commands.register(failed_browser, {

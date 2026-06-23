@@ -208,6 +208,10 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.type_hint_mode(input, { submit = true })
   end, "nvim-browser: submit hinted input", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "stop", "<Esc>"), function()
+    browser.stop()
+  end, "nvim-browser: stop loading", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "left_click", "<LeftMouse>"), function()
     browser.click_mouse()
   end, "nvim-browser: click preview", buffer_opts)

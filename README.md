@@ -21,7 +21,7 @@ This repository is an early MVP scaffold. Today it includes:
   with cursor-addressable placeholder cells
 - large literal Kitty browser frames are split into stable image tiles to keep
   oversized transfers replaceable inside the preview surface
-- Neovim commands for opening, navigating, reloading, history, scrolling, finding text, text input, keys, selector focus, point clicks, and hinted element clicks
+- Neovim commands for opening, navigating, reloading, stopping pending loads, history, scrolling, finding text, text input, keys, selector focus, point clicks, and hinted element clicks
 - browser element hints overlaid on cursor-addressable previews
 - persistent Neovim preview surface reuse
 - current URL, title, scroll progress, status, runtime diagnostics, preview footer, and preview buffer naming from the active browser session
@@ -151,6 +151,7 @@ Then run:
 :NBrowserOpen https://example.com
 :NBrowserPreview
 :NBrowserReload
+:NBrowserStop
 :NBrowserNavigate https://example.org
 :NBrowserAddress
 :NBrowserBack
@@ -195,6 +196,11 @@ Browser preview footers show the latest serve status, title or URL, scroll
 progress, output mode, cell geometry, and current URL when reported by the
 Chromium/CDP session. `:NBrowserStatus` echoes the same browser-session state in
 the command line.
+
+Navigation-like operations show immediate `loading | ... | Esc stop` feedback
+in the preview footer before Chromium returns a frame. Run `:NBrowserStop`, or
+press `<Esc>` in the focused preview buffer, to cancel the pending operation and
+terminate a stuck serve job.
 
 `:NBrowserHints` echoes the latest keyboard labels and numbered browser
 elements, including link destinations when available. On ANSI and Kitty Unicode
@@ -246,8 +252,9 @@ untouched; choose another prefix or mapping key if one is already in use.
 
 Focused preview buffers also install buffer-local browser controls by default:
 `r` reload, `H` back, `L` forward, `j`/`k` scroll, `a` address, `/` find, `f`
-hint mode, `t` type into a hinted field, `s` type and submit, left click to
-click the browser viewport, scroll wheel to scroll the page, and `q` close.
+hint mode, `t` type into a hinted field, `s` type and submit, `<Esc>` stop a
+pending load, left click to click the browser viewport, scroll wheel to scroll
+the page, and `q` close.
 Disable or remap them with
 `preview_keymaps = { enabled = false }` or `preview_keymaps.mappings`.
 

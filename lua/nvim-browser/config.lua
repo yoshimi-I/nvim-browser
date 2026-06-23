@@ -51,6 +51,7 @@ M.options = {
       hints = "f",
       type_hint_mode = "t",
       submit_hint_mode = "s",
+      stop = "<Esc>",
       left_click = "<LeftMouse>",
       wheel_down = "<ScrollWheelDown>",
       wheel_up = "<ScrollWheelUp>",

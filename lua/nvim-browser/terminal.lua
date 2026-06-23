@@ -22,6 +22,9 @@ local state = {
   runtime_metadata = nil,
   status = nil,
   status_error = nil,
+  pending_operation = nil,
+  stopped_operation = nil,
+  canceled_request_ids = {},
   last_find_found = nil,
   response_handlers = {},
   element_hints = {},
@@ -325,7 +328,7 @@ local function send_serve_request(request, on_response)
     state.response_handlers[request.id] = on_response
   end
   vim.fn.chansend(state.job_id, vim.json.encode(request) .. "\n")
-  return true
+  return true, request.id
 end
 
 local function handle_find_text_response(response)
@@ -490,6 +493,12 @@ local function handle_reader_response(response)
 end
 
 local function apply_serve_response_metadata(response)
+  if state.pending_operation ~= nil and state.pending_operation.id == response.id then
+    state.pending_operation = nil
+    state.stopped_operation = nil
+  elseif state.pending_operation == nil then
+    state.stopped_operation = nil
+  end
   state.status = response.status
   state.status_error = response.error
   if response.url ~= nil then
@@ -555,6 +564,8 @@ local function request_resize()
   })
 end
 
+local send_pending_request
+
 local function ensure_resize_autocmd()
   if state.resize_autocmd ~= nil then
     return
@@ -586,10 +597,10 @@ local function reuse_active_serve_command(command)
 
   state.last_target = target
   request_resize()
-  return send_serve_request({
+  return send_pending_request({
     type = "navigate",
     url = target,
-  })
+  }, target)
 end
 
 function M.viewport_point_for_cell(row, column, geometry)
@@ -761,10 +772,25 @@ end
 
 local function preview_footer_line(width)
   local parts = {}
-  table.insert(parts, state.status or "idle")
+  local pending = state.pending_operation
+  if pending ~= nil then
+    table.insert(parts, pending.label or "loading")
+    table.insert(parts, pending.target or state.current_url or state.last_target or "operation")
+    table.insert(parts, "Esc stop")
+    local runtime = runtime_footer_label(state.runtime_metadata)
+    if runtime ~= nil then
+      table.insert(parts, runtime)
+    end
+    return truncate_cells(table.concat(parts, " | "), width)
+  end
+
+  table.insert(parts, state.stopped_operation ~= nil and "stopped" or state.status or "idle")
 
   local title = state.current_title ~= nil and state.current_title ~= "" and state.current_title or nil
-  local url = state.current_url ~= nil and state.current_url ~= "" and state.current_url or state.last_target
+  local url = state.stopped_operation ~= nil
+      and state.stopped_operation.target
+    or state.current_url ~= nil and state.current_url ~= "" and state.current_url
+    or state.last_target
   if title ~= nil then
     table.insert(parts, title)
   elseif url ~= nil and url ~= "" then
@@ -823,6 +849,42 @@ local function refresh_preview_footer(bufnr, geometry)
   vim.bo[bufnr].modifiable = true
   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, append_preview_footer(lines, geometry))
   vim.bo[bufnr].modifiable = false
+end
+
+local function mark_pending_operation(id, label, target)
+  if id == nil then
+    return
+  end
+  state.pending_operation = {
+    id = id,
+    label = label or "loading",
+    target = target or state.current_url or state.last_target,
+  }
+  state.stopped_operation = nil
+  state.status_error = nil
+  hints_overlay.clear(state.bufnr)
+  state.element_hints = {}
+  state.element_hints_geometry = nil
+  if is_valid_buffer() then
+    refresh_preview_footer(state.bufnr)
+  end
+end
+
+local function clear_pending_operation(id)
+  if state.pending_operation ~= nil and (id == nil or state.pending_operation.id == id) then
+    state.pending_operation = nil
+    if is_valid_buffer() then
+      refresh_preview_footer(state.bufnr)
+    end
+  end
+end
+
+function send_pending_request(request, target)
+  local ok, id = send_serve_request(request)
+  if ok then
+    mark_pending_operation(id, "loading", target)
+  end
+  return ok
 end
 
 local function apply_payload_to_buffer(bufnr, payload, uses_kitty, uses_kitty_unicode, command, geometry)
@@ -923,6 +985,9 @@ function M.open(command)
   state.runtime_metadata = nil
   state.status = nil
   state.status_error = nil
+  state.pending_operation = nil
+  state.stopped_operation = nil
+  state.canceled_request_ids = {}
   state.last_find_found = nil
   state.response_handlers = {}
   state.element_hints = {}
@@ -979,6 +1044,11 @@ function M.open(command)
           return
         end
         if not vim.api.nvim_buf_is_valid(bufnr) then
+          return
+        end
+        if state.canceled_request_ids[response.id] then
+          state.canceled_request_ids[response.id] = nil
+          state.response_handlers[response.id] = nil
           return
         end
 
@@ -1188,6 +1258,9 @@ function M.close()
   state.runtime_metadata = nil
   state.status = nil
   state.status_error = nil
+  state.pending_operation = nil
+  state.stopped_operation = nil
+  state.canceled_request_ids = {}
   state.last_find_found = nil
   state.response_handlers = {}
   state.element_hints = {}
@@ -1209,7 +1282,7 @@ end
 
 function M.reload()
   request_resize()
-  return send_serve_request({ type = "reload" })
+  return send_pending_request({ type = "reload" }, state.current_url or state.last_target or "reload")
 end
 
 function M.navigate(url)
@@ -1217,10 +1290,10 @@ function M.navigate(url)
     return false
   end
   request_resize()
-  local ok = send_serve_request({
+  local ok = send_pending_request({
     type = "navigate",
     url = url,
-  })
+  }, url)
   if ok then
     state.last_target = url
   end
@@ -1229,12 +1302,44 @@ end
 
 function M.back()
   request_resize()
-  return send_serve_request({ type = "back" })
+  return send_pending_request({ type = "back" }, state.current_url or state.last_target or "back")
 end
 
 function M.forward()
   request_resize()
-  return send_serve_request({ type = "forward" })
+  return send_pending_request({ type = "forward" }, state.current_url or state.last_target or "forward")
+end
+
+function M.stop()
+  if state.pending_operation == nil then
+    return false
+  end
+
+  local pending = state.pending_operation
+  state.canceled_request_ids[pending.id] = true
+  state.pending_operation = nil
+  state.stopped_operation = {
+    id = pending.id,
+    target = pending.target,
+  }
+  state.status_error = nil
+  state.response_handlers[pending.id] = nil
+  state.generation = state.generation + 1
+  hints_overlay.clear(state.bufnr)
+  if is_valid_buffer() then
+    refresh_preview_footer(state.bufnr)
+  end
+  state.mode = nil
+  state.serve_output = nil
+  state.runtime_metadata = nil
+  state.element_hints = {}
+  state.element_hints_geometry = nil
+  state.cursor_addressable_preview = false
+  if state.job_id ~= nil then
+    pcall(vim.fn.jobstop, state.job_id)
+    state.job_id = nil
+  end
+  return true
 end
 
 function M.scroll(delta_y, delta_x)
@@ -1420,13 +1525,17 @@ function M.type_hint(id, text, opts)
     return false
   end
   request_resize()
-  return send_serve_request({
+  local request = {
     type = "type_point",
     x = hint.x,
     y = hint.y,
     text = text,
     submit = opts.submit == true,
-  })
+  }
+  if opts.submit == true then
+    return send_pending_request(request, state.current_url or state.last_target or "submit")
+  end
+  return send_serve_request(request)
 end
 
 function M.toggle()
@@ -1476,6 +1585,8 @@ function M.state()
     runtime_metadata = state.runtime_metadata,
     status = state.status,
     status_error = state.status_error,
+    pending_operation = state.pending_operation,
+    stopped_operation = state.stopped_operation,
     last_find_found = state.last_find_found,
     element_hints = state.element_hints,
     reader_bufnr = state.reader_bufnr,
@@ -1499,6 +1610,10 @@ M._test = {
   apply_payload_to_buffer = apply_payload_to_buffer,
   preview_footer_line = preview_footer_line,
   append_preview_footer = append_preview_footer,
+  set_pending_operation = function(value)
+    state.pending_operation = value
+  end,
+  clear_pending_operation = clear_pending_operation,
   kitty_cleanup_escape = kitty_cleanup_escape,
   set_last_find_found = function(value)
     state.last_find_found = value

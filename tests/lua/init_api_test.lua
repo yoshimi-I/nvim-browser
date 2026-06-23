@@ -19,6 +19,7 @@ assert(type(browser.page_metrics) == "function", "page_metrics API should exist"
 assert(type(browser.reader) == "function", "reader API should exist")
 assert(type(browser.reader_follow) == "function", "reader_follow API should exist")
 assert(type(browser.click_mouse) == "function", "click_mouse API should exist")
+assert(type(browser.stop) == "function", "stop API should exist")
 
 assert(browser.resolve_address_target("https://example.com") == "https://example.com", "address resolver should preserve explicit URLs")
 assert(browser.resolve_address_target("example.com") == "https://example.com", "address resolver should add https to host-like inputs")
@@ -37,6 +38,7 @@ local original_press_key = browser.press_key
 local original_terminal_follow_hint = terminal.follow_hint
 local original_terminal_click_mouse = terminal.click_mouse
 local original_terminal_type_hint = terminal.type_hint
+local original_terminal_stop = terminal.stop
 
 browser.hints = function()
   return {}
@@ -104,6 +106,14 @@ assert(typed_hint.label == "s", "type_hint should pass hint label to terminal")
 assert(typed_hint.text == "hello world", "type_hint should pass text to terminal")
 assert(typed_hint.submit == true, "type_hint should pass submit option to terminal")
 
+local stop_called = false
+terminal.stop = function()
+  stop_called = true
+  return "stopped"
+end
+assert(browser.stop() == "stopped", "stop should delegate to terminal")
+assert(stop_called == true, "stop should call terminal.stop")
+
 browser.hints = function()
   return { { id = 2, hint_label = "s" } }
 end
@@ -167,6 +177,7 @@ browser.press_key = original_press_key
 terminal.follow_hint = original_terminal_follow_hint
 terminal.click_mouse = original_terminal_click_mouse
 terminal.type_hint = original_terminal_type_hint
+terminal.stop = original_terminal_stop
 
 local original_open = browser.open
 local original_navigate = browser.navigate

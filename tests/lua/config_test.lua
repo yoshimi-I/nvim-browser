@@ -47,6 +47,7 @@ assert(
   configured.preview_keymaps.mappings.wheel_up == "<ScrollWheelUp>",
   "preview-local keymaps should include a wheel-up mouse mapping"
 )
+assert(configured.preview_keymaps.mappings.stop == "<Esc>", "preview-local keymaps should include a stop mapping")
 assert(
   configured.keymaps.mappings.type_hint_mode == "t",
   "global keymaps should include a hinted input mapping"
@@ -79,5 +80,9 @@ assert(
 assert(
   remapped.preview_keymaps.mappings.type_hint_mode == "t",
   "preview-local partial remaps should retain hinted input mapping"
+)
+assert(
+  remapped.preview_keymaps.mappings.stop == "<Esc>",
+  "preview-local partial remaps should retain the stop mapping"
 )
 config.options = original_options

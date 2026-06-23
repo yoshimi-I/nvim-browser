@@ -79,6 +79,10 @@ function M.reload()
   return terminal.reload()
 end
 
+function M.stop()
+  return terminal.stop()
+end
+
 function M.navigate(target)
   if target == nil or target == "" then
     return false

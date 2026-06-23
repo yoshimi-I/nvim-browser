@@ -328,6 +328,11 @@ assert(
   "footer truncation should respect the target column width"
 )
 
+terminal._test.set_pending_operation({ id = 202, label = "loading", target = "https://example.com/next" })
+local pending_footer = terminal._test.preview_footer_line(120)
+assert(pending_footer:match("^loading | https://example%.com/next | Esc stop"), "footer should show pending navigation feedback before a response")
+terminal._test.clear_pending_operation(202)
+
 local payload_bufnr = vim.api.nvim_create_buf(false, true)
 terminal._test.apply_payload_to_buffer(
   payload_bufnr,
@@ -507,7 +512,31 @@ assert(link_navigate_seen, "link follow should send a navigate request")
 assert(not link_click_seen, "link follow should not click coordinates when href is available")
 assert(terminal.state().last_target == "https://example.com/docs", "link follow should update the remembered target")
 assert(#terminal.state().element_hints == 0, "link follow should clear stale hints before the next frame")
+assert(terminal.state().pending_operation ~= nil, "link follow should mark the navigation as pending")
+assert(terminal._test.preview_footer_line(120):match("^loading | https://example%.com/docs | Esc stop"), "link follow should refresh the footer with loading feedback")
 
+sent_requests = {}
+local pending_request_id = terminal.state().pending_operation.id
+assert(terminal.stop() == true, "stop should cancel a pending browser operation")
+assert(terminal.state().pending_operation == nil, "stop should clear the pending browser operation")
+assert(#jobstop_calls >= 1, "stop should terminate the serve job when a pending operation is stuck")
+assert(terminal.state().mode == nil, "stop should mark the serve session inactive after terminating the job")
+assert(terminal.state().serve_output == nil, "stop should clear stale serve output metadata")
+assert(terminal._test.preview_footer_line(120):match("^stopped | https://example%.com/docs"), "stop should leave a stopped footer message")
+local cancelled_response = vim.json.encode({
+  id = pending_request_id,
+  status = "ok",
+  payload = "late frame",
+  url = "https://example.com/docs",
+  title = "Late Page",
+})
+serve_stdout(nil, { cancelled_response, "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title ~= "Late Page"
+end), "cancelled operation responses should be ignored")
+
+sent_requests = {}
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
 serve_stdout(nil, { hints_response, "" })
 assert(vim.wait(1000, function()
   return #terminal.state().element_hints == 2

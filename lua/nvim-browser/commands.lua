@@ -115,6 +115,12 @@ function M.register(browser, opts)
     browser.reload()
   end, {})
 
+  vim.api.nvim_create_user_command("NBrowserStop", function()
+    if not browser.stop() then
+      vim.api.nvim_echo({ { "nvim-browser: no pending browser operation to stop", "WarningMsg" } }, false, {})
+    end
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserNavigate", function(opts)
     browser.navigate(opts.args)
   end, {
