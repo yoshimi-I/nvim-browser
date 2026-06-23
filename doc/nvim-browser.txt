@@ -11,7 +11,8 @@ CONTENTS                                             *nvim-browser-contents*
 INTRODUCTION                                           *nvim-browser-intro*
 
 nvim-browser is an experimental browser runtime for Neovim. The first backend
-is a Rust binary that classifies web targets and renders Markdown documents.
+is a Rust binary that classifies web targets and renders styled Markdown
+documents.
 The long-term renderer target is Chromium/CDP output displayed inside Ghostty
 through terminal graphics.
 
@@ -21,8 +22,9 @@ COMMANDS                                           *nvim-browser-commands*
                                                         *:NBrowserOpen*
 :NBrowserOpen [target]
         Open a URL or file target in the browser preview surface. Markdown files
-        are rendered as HTML through the Rust backend. Image files are emitted
-        with Kitty graphics protocol escape sequences for terminals such as
+        are rendered through a browser-styled HTML shell with local relative
+        asset support. Image files are emitted with Kitty graphics protocol
+        escape sequences for terminals such as
 	Ghostty. HTTP and HTTPS URLs start a Chromium-backed browser session for
 	the current POC.
 

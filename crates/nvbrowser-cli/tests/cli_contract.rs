@@ -30,6 +30,8 @@ fn render_md_outputs_html_document() {
         .assert()
         .success()
         .stdout(predicate::str::contains("<!doctype html>"))
+        .stdout(predicate::str::contains("<base href=\"file://"))
+        .stdout(predicate::str::contains("<style>"))
         .stdout(predicate::str::contains("<h1>Title</h1>"))
         .stdout(predicate::str::contains("<strong>Neovim</strong>"));
 }

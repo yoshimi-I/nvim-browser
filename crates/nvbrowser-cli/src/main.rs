@@ -1,14 +1,14 @@
 use std::{
     fs,
     io::{self, BufRead, Cursor, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use base64::{engine::general_purpose, Engine};
 use clap::{Parser, Subcommand, ValueEnum};
 use image::{imageops::FilterType, DynamicImage, GenericImageView, ImageFormat, Rgba};
 use nvbrowser_core::{
-    inspect_target, kitty_image_escape, render_markdown_document,
+    inspect_target, kitty_image_escape, render_markdown_document_with_base_url,
     renderer::chromium::{render_url_png, ChromiumOptions},
     BrowserSession, ChromiumRenderer, ClickPointRequest, ElementHint, ElementHintsRequest,
     FindTextRequest, FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest,
@@ -66,6 +66,8 @@ enum Command {
         height: u32,
         #[arg(long)]
         url: Option<String>,
+        #[arg(long)]
+        markdown: Option<PathBuf>,
     },
 }
 
@@ -84,8 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", inspect_target(&target).to_json());
         }
         Command::RenderMd { path } => {
-            let markdown = fs::read_to_string(path)?;
-            print!("{}", render_markdown_document(&markdown));
+            print!("{}", render_markdown_file(&path)?);
         }
         Command::ShowImage {
             path,
@@ -146,13 +147,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             width,
             height,
             url,
+            markdown,
         } => {
+            let (initial_url, markdown_preview) = match (url, markdown) {
+                (Some(_), Some(_)) => {
+                    return Err("serve accepts either --url or --markdown, not both".into());
+                }
+                (Some(url), None) => (Some(url), None),
+                (None, Some(path)) => {
+                    let preview = MarkdownPreviewFile::create(&path)?;
+                    (Some(preview.url()), Some(preview))
+                }
+                (None, None) => (None, None),
+            };
             let options = ServeOptions {
                 output,
                 columns,
                 rows,
                 viewport: Viewport::new(width, height),
-                initial_url: url,
+                initial_url,
+                markdown_preview,
             };
             serve_stdio(options)?;
         }
@@ -257,13 +271,95 @@ fn encode_serve_response(response: &ServeResponse) -> String {
     serde_json::to_string(response).expect("serve responses should serialize")
 }
 
-#[derive(Debug, Clone, PartialEq)]
+fn render_markdown_file(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let markdown = fs::read_to_string(path)?;
+    let base_href = markdown_base_directory(path).map(path_to_file_url);
+    Ok(render_markdown_document_with_base_url(
+        &markdown,
+        base_href.as_deref(),
+    ))
+}
+
+fn markdown_base_directory(path: &Path) -> Option<PathBuf> {
+    let parent = path.parent()?;
+    if parent.as_os_str().is_empty() {
+        return std::env::current_dir().ok();
+    }
+    fs::canonicalize(parent)
+        .ok()
+        .or_else(|| Some(parent.to_path_buf()))
+}
+
+#[derive(Debug)]
+struct MarkdownPreviewFile {
+    file: tempfile::NamedTempFile,
+}
+
+impl MarkdownPreviewFile {
+    fn create(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let html = render_markdown_file(path)?;
+        let stem = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("markdown");
+        let mut file = tempfile::Builder::new()
+            .prefix(&format!(
+                "nvbrowser-{}-",
+                percent_encode_path(stem).replace('/', "%2F")
+            ))
+            .suffix(".html")
+            .tempfile()?;
+        file.write_all(html.as_bytes())?;
+        file.flush()?;
+        Ok(Self { file })
+    }
+
+    fn path(&self) -> &Path {
+        self.file.path()
+    }
+
+    fn url(&self) -> String {
+        path_to_file_url(self.path())
+    }
+}
+
+fn path_to_file_url(path: impl AsRef<std::path::Path>) -> String {
+    let path = path.as_ref();
+    let mut value = path.to_string_lossy().replace('\\', "/");
+    if !value.starts_with('/') {
+        value = format!("/{value}");
+    }
+    let encoded = percent_encode_path(&value);
+    if encoded.ends_with('/') {
+        format!("file://{encoded}")
+    } else if path.is_dir() || path.extension().is_none() {
+        format!("file://{encoded}/")
+    } else {
+        format!("file://{encoded}")
+    }
+}
+
+fn percent_encode_path(path: &str) -> String {
+    let mut encoded = String::new();
+    for byte in path.bytes() {
+        let keep = byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'.' | b'_' | b'~');
+        if keep {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
+}
+
+#[derive(Debug)]
 struct ServeOptions {
     output: ImageOutput,
     columns: u32,
     rows: u32,
     viewport: Viewport,
     initial_url: Option<String>,
+    markdown_preview: Option<MarkdownPreviewFile>,
 }
 
 struct ServeRuntime<R: Renderer> {
@@ -272,6 +368,7 @@ struct ServeRuntime<R: Renderer> {
     columns: u32,
     rows: u32,
     output: ImageOutput,
+    _markdown_preview: Option<MarkdownPreviewFile>,
 }
 
 struct CapturePayload {
@@ -288,6 +385,7 @@ impl<R: Renderer> ServeRuntime<R> {
             columns: options.columns,
             rows: options.rows,
             output: options.output,
+            _markdown_preview: options.markdown_preview,
         }
     }
 
@@ -551,14 +649,15 @@ fn frame_to_payload(
 }
 
 fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> {
+    let initial_url = options.initial_url.clone();
     let mut runtime = ServeRuntime::new(
         ChromiumRenderer::launch(options.viewport, ChromiumOptions::detect())?,
-        options.clone(),
+        options,
     );
     let stdout = io::stdout();
     let mut writer = stdout.lock();
 
-    if let Some(url) = options.initial_url {
+    if let Some(url) = initial_url {
         writeln!(
             writer,
             "{}",
@@ -1020,6 +1119,35 @@ mod tests {
     }
 
     #[test]
+    fn markdown_preview_file_uses_parent_directory_as_base_url() {
+        let directory = tempfile::tempdir().expect("tempdir should be created");
+        let markdown_path = directory.path().join("README.md");
+        std::fs::write(&markdown_path, "![Logo](images/logo.png)")
+            .expect("markdown fixture should be written");
+
+        let preview =
+            MarkdownPreviewFile::create(&markdown_path).expect("markdown preview should render");
+        let first_path = preview.path().to_path_buf();
+        let second_preview =
+            MarkdownPreviewFile::create(&markdown_path).expect("second preview should render");
+        let url = preview.url();
+        let html =
+            std::fs::read_to_string(preview.path()).expect("preview html should be readable");
+
+        assert!(url.starts_with("file://"));
+        assert!(url.ends_with(".html/") || url.ends_with(".html"));
+        assert_ne!(first_path, second_preview.path());
+        assert!(html.contains("<base href=\"file://"));
+        assert!(html.contains(directory.path().to_string_lossy().as_ref()));
+        assert!(html.contains("images/logo.png"));
+        drop(preview);
+        assert!(
+            !first_path.exists(),
+            "preview file should be cleaned up when its owner is dropped"
+        );
+    }
+
+    #[test]
     fn serve_request_parses_text_input_and_key_press_jsonl() {
         assert_eq!(
             parse_serve_request(r#"{"type":"text_input","id":3,"text":"hello \"world\"\n"}"#)
@@ -1171,6 +1299,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 
@@ -1210,6 +1339,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 
@@ -1234,6 +1364,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
         let navigate = runtime.handle(ServeRequest::Navigate {
@@ -1259,6 +1390,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
         let navigate = runtime.handle(ServeRequest::Navigate {
@@ -1287,6 +1419,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 
@@ -1315,6 +1448,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 
@@ -1354,6 +1488,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 
@@ -1402,6 +1537,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 
@@ -1441,6 +1577,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 
@@ -1469,6 +1606,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 
@@ -1508,6 +1646,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 
@@ -1547,6 +1686,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 
@@ -1589,6 +1729,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 
@@ -1629,6 +1770,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 
@@ -1662,6 +1804,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 
@@ -1712,6 +1855,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 
@@ -1749,6 +1893,7 @@ mod tests {
                 rows: 1,
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
+                markdown_preview: None,
             },
         );
 

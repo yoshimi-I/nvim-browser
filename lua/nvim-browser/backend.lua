@@ -40,7 +40,7 @@ function M.command_for(binary, action, target, opts)
 
   local extension = extension_for(target)
   if extension == "md" or extension == "markdown" then
-    return { binary, "render-md", target }
+    return { binary, "serve", "--output", browser_graphics_output(opts), "--markdown", target }
   end
 
   if is_image_extension(extension) then

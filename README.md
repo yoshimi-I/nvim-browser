@@ -13,7 +13,7 @@ This repository is an early MVP scaffold. Today it includes:
 
 - Rust backend binary: `nvbrowser`
 - target classification for URLs, Markdown, HTML, and images
-- Markdown-to-HTML rendering
+- styled Markdown-to-HTML rendering with local asset base paths
 - image output through Kitty graphics protocol
 - Chromium/CDP browser sessions rendered through Kitty graphics or ANSI output
 - Neovim commands for opening, navigating, reloading, history, scrolling, finding text, text input, keys, selector focus, point clicks, and hinted element clicks
@@ -118,6 +118,9 @@ Then run:
 :NBrowserStatus
 :NBrowserToggle
 ```
+
+Markdown files are rendered with a docs-oriented browser shell and a local
+`<base>` path so relative images can resolve from the Markdown file directory.
 
 `:NBrowserClickHere` maps the preview cursor to browser viewport pixels. It is
 available for ANSI and Kitty Unicode browser previews.
