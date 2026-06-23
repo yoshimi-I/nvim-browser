@@ -172,6 +172,7 @@ Then run:
 :NBrowserCurrentTitle
 :NBrowserStatus
 :NBrowserReader
+:NBrowserReaderFollow
 :NBrowserDoctor
 :NBrowserToggle
 ```
@@ -206,7 +207,9 @@ match through the browser's native find behavior, and captures a fresh frame.
 
 `:NBrowserReader` captures the current browser page as Markdown-like text in a
 normal scratch buffer so page content can be selected, searched, and yanked
-without leaving Neovim.
+without leaving Neovim. Links are preserved as Markdown links where possible;
+press `<CR>` or `gf` on a reader link, or run `:NBrowserReaderFollow`, to
+navigate the active browser session to that URL.
 
 Opt-in browser keymaps can be enabled from setup:
 

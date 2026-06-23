@@ -13,6 +13,7 @@ local typed_hint = nil
 local submitted_hint = nil
 local doctor_called = false
 local reader_called = false
+local reader_follow_called = false
 local browser = {
   hints = function()
     return {
@@ -74,6 +75,10 @@ local browser = {
     reader_called = true
     return true
   end,
+  reader_follow = function()
+    reader_follow_called = true
+    return true
+  end,
 }
 
 local echoed = nil
@@ -106,6 +111,9 @@ assert(echoed:match("scroll 25%%"), "NBrowserStatus should include scroll progre
 
 vim.cmd("NBrowserReader")
 assert(reader_called == true, "NBrowserReader should call browser.reader")
+
+vim.cmd("NBrowserReaderFollow")
+assert(reader_follow_called == true, "NBrowserReaderFollow should call browser.reader_follow")
 
 vim.cmd("NBrowserAddress")
 assert(addressed == "s", "NBrowserAddress should pass the injected input function to browser.address")

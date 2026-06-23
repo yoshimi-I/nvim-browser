@@ -256,6 +256,10 @@ function M.register(browser, opts)
     end
   end, {})
 
+  vim.api.nvim_create_user_command("NBrowserReaderFollow", function()
+    browser.reader_follow()
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserStatus", function()
     local status = browser.status() or "unknown"
     local url = browser.current_url() or ""

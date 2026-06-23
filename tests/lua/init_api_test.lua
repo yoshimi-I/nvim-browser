@@ -16,6 +16,7 @@ assert(type(browser.last_find_found) == "function", "last_find_found API should 
 assert(type(browser.doctor) == "function", "doctor API should exist")
 assert(type(browser.page_metrics) == "function", "page_metrics API should exist")
 assert(type(browser.reader) == "function", "reader API should exist")
+assert(type(browser.reader_follow) == "function", "reader_follow API should exist")
 
 assert(browser.resolve_address_target("https://example.com") == "https://example.com", "address resolver should preserve explicit URLs")
 assert(browser.resolve_address_target("example.com") == "https://example.com", "address resolver should add https to host-like inputs")
@@ -123,6 +124,22 @@ assert(opened == nil, "address should not open a new preview when a session is a
 assert(browser.address(function()
   return ""
 end, { is_active = true }) == false, "address should return false for empty input")
+
+local original_terminal_reader_follow = terminal.reader_follow
+terminal.reader_follow = function()
+  return "https://example.com/from-reader"
+end
+assert(browser.reader_follow() == true, "reader_follow should delegate to the terminal reader follow")
+assert(browser.last_target() == "https://example.com/from-reader", "reader_follow should update the public last target")
+terminal.reader_follow = function()
+  return false
+end
+assert(browser.reader_follow() == false, "reader_follow should propagate terminal failure")
+assert(
+  browser.last_target() == "https://example.com/from-reader",
+  "failed reader_follow should not replace the public last target"
+)
+terminal.reader_follow = original_terminal_reader_follow
 
 browser.open = original_open
 browser.navigate = original_navigate

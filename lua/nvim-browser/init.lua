@@ -148,6 +148,15 @@ function M.reader()
   return terminal.reader()
 end
 
+function M.reader_follow()
+  local target = terminal.reader_follow()
+  if target == false or target == nil then
+    return false
+  end
+  state.last_target = target
+  return true
+end
+
 function M.click_here()
   return terminal.click_here()
 end
@@ -181,7 +190,7 @@ function M.toggle()
 end
 
 function M.last_target()
-  return state.last_target
+  return terminal.state().last_target or state.last_target
 end
 
 function M.current_url()

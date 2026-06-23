@@ -620,8 +620,18 @@ const PAGE_TEXT_SCRIPT: &str = r#"
   const root = document.querySelector('main, article') || document.body || document.documentElement;
   const title = (document.title || '').trim() || null;
   const parts = [];
+  const seenLinks = new WeakSet();
   let length = 0;
   let truncated = false;
+  const markdownText = (value) => value.replace(/\\/g, '\\\\').replace(/\]/g, '\\]');
+  const markdownUrl = (value) => value.replace(/\\/g, '\\\\').replace(/\)/g, '\\)');
+  const markdownLink = (label, url) => {
+    const text = (label || url || '').replace(/\s+/g, ' ').trim();
+    if (!text || !url) {
+      return '';
+    }
+    return `[${markdownText(text)}](${markdownUrl(url)})`;
+  };
   const append = (value) => {
     if (!value || truncated) {
       return;
@@ -659,6 +669,18 @@ const PAGE_TEXT_SCRIPT: &str = r#"
       }
     });
     for (let node = walker.nextNode(); node && !truncated; node = walker.nextNode()) {
+      const link = node.parentElement.closest('a[href]');
+      if (link && root.contains(link)) {
+        if (!seenLinks.has(link)) {
+          seenLinks.add(link);
+          append(markdownLink(link.textContent || '', link.href));
+          if (!truncated) {
+            parts.push('\n');
+            length += 1;
+          }
+        }
+        continue;
+      }
       append(node.nodeValue || '');
       if (!truncated) {
         parts.push('\n');
@@ -947,6 +969,8 @@ mod tests {
     fn page_text_script_uses_bounded_text_node_walker() {
         assert!(PAGE_TEXT_SCRIPT.contains("document.createTreeWalker"));
         assert!(PAGE_TEXT_SCRIPT.contains("NodeFilter.SHOW_TEXT"));
+        assert!(PAGE_TEXT_SCRIPT.contains("closest('a[href]'"));
+        assert!(PAGE_TEXT_SCRIPT.contains("markdownLink"));
         assert!(!PAGE_TEXT_SCRIPT.contains("innerText"));
         assert!(!PAGE_TEXT_SCRIPT.contains("+ '\\n\\n[truncated]'"));
     }

@@ -169,7 +169,14 @@ COMMANDS                                           *nvim-browser-commands*
 							*:NBrowserReader*
 :NBrowserReader
 	Capture the active browser page as Markdown-like text in a normal scratch
-	buffer for selection, search, and yank workflows.
+	buffer for selection, search, and yank workflows. Links are preserved as
+	Markdown links where possible. In the reader buffer, press <CR> or gf on a
+	link to navigate the active browser session.
+
+							*:NBrowserReaderFollow*
+:NBrowserReaderFollow
+	Follow the URL under the cursor in a reader buffer and navigate the active
+	browser session to that URL.
 
 							*:NBrowserDoctor*
 :NBrowserDoctor

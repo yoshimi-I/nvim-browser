@@ -346,6 +346,98 @@ local function reader_buffer_name(snapshot)
   return "nvim-browser-reader://" .. title
 end
 
+local function reader_url_at_line(line, column)
+  if line == nil or line == "" then
+    return nil
+  end
+  column = tonumber(column) or 1
+
+  local function unescape_markdown(value)
+    return value:gsub("\\(.)", "%1")
+  end
+
+  local index = 1
+  while index <= #line do
+    local label_start = line:find("%[", index)
+    if label_start == nil then
+      break
+    end
+    local cursor = label_start + 1
+    while cursor <= #line do
+      local char = line:sub(cursor, cursor)
+      if char == "\\" then
+        cursor = cursor + 2
+      elseif char == "]" then
+        break
+      else
+        cursor = cursor + 1
+      end
+    end
+    if cursor <= #line and line:sub(cursor + 1, cursor + 1) == "(" then
+      local url_start = cursor + 2
+      cursor = url_start
+      while cursor <= #line do
+        local char = line:sub(cursor, cursor)
+        if char == "\\" then
+          cursor = cursor + 2
+        elseif char == ")" then
+          break
+        else
+          cursor = cursor + 1
+        end
+      end
+      if cursor <= #line then
+        local link_end = cursor
+        local url = unescape_markdown(line:sub(url_start, cursor - 1))
+        if url:match("^https?://") and column >= label_start and column <= link_end then
+          return url
+        end
+        index = link_end + 1
+      else
+        index = label_start + 1
+      end
+    else
+      index = label_start + 1
+    end
+  end
+
+  local search_start = 1
+  while true do
+    local start_index, end_index, url = line:find("<(https?://[^>%s]+)>", search_start)
+    if start_index == nil then
+      break
+    end
+    if column >= start_index and column <= end_index then
+      return url
+    end
+    search_start = end_index + 1
+  end
+
+  search_start = 1
+  while true do
+    local start_index, end_index, url = line:find("(https?://[^%s%)>%]]+)", search_start)
+    if start_index == nil then
+      return nil
+    end
+    if column >= start_index and column <= end_index then
+      return url
+    end
+    search_start = end_index + 1
+  end
+end
+
+local function warn_reader_follow(message)
+  vim.api.nvim_echo({ { message, "WarningMsg" } }, false, {})
+end
+
+local function install_reader_keymaps(bufnr)
+  local function follow()
+    M.reader_follow()
+  end
+  vim.keymap.set("n", "<CR>", follow, { buffer = bufnr, silent = true, desc = "nvim-browser: follow reader link" })
+  vim.keymap.set("n", "gf", follow, { buffer = bufnr, silent = true, desc = "nvim-browser: follow reader link" })
+end
+
 local function delete_reader_buffer()
   if state.reader_bufnr ~= nil and vim.api.nvim_buf_is_valid(state.reader_bufnr) then
     vim.api.nvim_buf_delete(state.reader_bufnr, { force = true })
@@ -360,6 +452,7 @@ local function apply_reader_snapshot(snapshot)
     vim.bo[state.reader_bufnr].bufhidden = "hide"
     vim.bo[state.reader_bufnr].swapfile = false
     vim.bo[state.reader_bufnr].filetype = "markdown"
+    install_reader_keymaps(state.reader_bufnr)
   end
   pcall(vim.api.nvim_buf_set_name, state.reader_bufnr, reader_buffer_name(snapshot))
   local lines = {}
@@ -993,10 +1086,14 @@ function M.navigate(url)
     return false
   end
   request_resize()
-  return send_serve_request({
+  local ok = send_serve_request({
     type = "navigate",
     url = url,
   })
+  if ok then
+    state.last_target = url
+  end
+  return ok
 end
 
 function M.back()
@@ -1079,6 +1176,29 @@ end
 
 function M.reader()
   return send_serve_request({ type = "page_text" }, handle_reader_response)
+end
+
+function M.reader_follow()
+  if state.reader_bufnr == nil or not vim.api.nvim_buf_is_valid(state.reader_bufnr) then
+    warn_reader_follow("nvim-browser: reader follow requires a reader buffer")
+    return false
+  end
+  if vim.api.nvim_get_current_buf() ~= state.reader_bufnr then
+    warn_reader_follow("nvim-browser: reader follow must be run from the reader buffer")
+    return false
+  end
+
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local line = vim.api.nvim_buf_get_lines(state.reader_bufnr, cursor[1] - 1, cursor[1], false)[1]
+  local url = reader_url_at_line(line, cursor[2] + 1)
+  if url == nil then
+    warn_reader_follow("nvim-browser: no reader link under cursor")
+    return false
+  end
+  if not M.navigate(url) then
+    return false
+  end
+  return url
 end
 
 function M.click_here()
@@ -1197,10 +1317,17 @@ M._test = {
   end,
   handle_find_text_response = handle_find_text_response,
   handle_reader_response = handle_reader_response,
+  reader_url_at_line = reader_url_at_line,
   apply_serve_response = apply_serve_response_metadata,
   kitty_cleanup_escape = kitty_cleanup_escape,
   set_last_find_found = function(value)
     state.last_find_found = value
+  end,
+  set_mode = function(value)
+    state.mode = value
+  end,
+  set_job_id = function(value)
+    state.job_id = value
   end,
   command_for_window = command_for_window,
   set_test_window = function(winid)

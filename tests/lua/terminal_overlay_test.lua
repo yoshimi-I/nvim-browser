@@ -193,6 +193,46 @@ local reader_lines = table.concat(vim.api.nvim_buf_get_lines(reader_bufnr, 0, -1
 assert(reader_lines:match("# Example"), "reader buffer should include page title")
 assert(reader_lines:match("https://example%.com"), "reader buffer should include page URL")
 assert(reader_lines:match("Body text"), "reader buffer should include page text")
+assert(
+  vim.api.nvim_buf_call(reader_bufnr, function()
+    return vim.fn.maparg("<CR>", "n", false, true).buffer == 1
+  end),
+  "reader buffer should install a buffer-local follow mapping"
+)
+assert(
+  vim.api.nvim_buf_call(reader_bufnr, function()
+    return vim.fn.maparg("gf", "n", false, true).buffer == 1
+  end),
+  "reader buffer should install a gf follow mapping"
+)
+assert(terminal._test.reader_url_at_line("[Docs](https://example.com/docs)", 8) == "https://example.com/docs", "reader URL extraction should read markdown links")
+assert(
+  terminal._test.reader_url_at_line("[Docs\\]](https://example.com/a\\)b)", 7) == "https://example.com/a)b",
+  "reader URL extraction should unescape Markdown links emitted by Chromium"
+)
+assert(terminal._test.reader_url_at_line("<https://example.com/from-angle>", 3) == "https://example.com/from-angle", "reader URL extraction should read angle links")
+assert(terminal._test.reader_url_at_line("bare https://example.com/bare link", 10) == "https://example.com/bare", "reader URL extraction should read bare links")
+
+terminal._test.set_mode("serve")
+terminal._test.set_job_id(99)
+vim.api.nvim_set_current_buf(reader_bufnr)
+vim.api.nvim_win_set_cursor(0, { 7, 8 })
+local original_chansend_for_reader = vim.fn.chansend
+local reader_requests = {}
+vim.fn.chansend = function(job_id, payload)
+  table.insert(reader_requests, { job_id = job_id, request = vim.json.decode(payload) })
+  return 1
+end
+assert(
+  terminal.reader_follow() == "https://example.com/docs",
+  "reader follow should return the navigated reader link URL"
+)
+vim.fn.chansend = original_chansend_for_reader
+local followed_request = reader_requests[1]
+assert(followed_request ~= nil, "reader follow should send a serve request")
+assert(followed_request.request.type == "navigate", "reader follow should reuse the active browser session")
+assert(followed_request.request.url == "https://example.com/docs", "reader follow should navigate to the link URL")
+assert(terminal.state().last_target == "https://example.com/docs", "reader follow mappings should update terminal last target")
 
 terminal._test.handle_reader_response({
   status = "ok",
