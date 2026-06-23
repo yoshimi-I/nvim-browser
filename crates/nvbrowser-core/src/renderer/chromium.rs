@@ -32,6 +32,8 @@ use crate::{
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
 
+const INTERACTION_SETTLE_STABLE_SAMPLES: usize = 3;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChromiumOptions {
     pub cdp_ws_url: Option<String>,
@@ -787,7 +789,9 @@ impl ChromiumRenderer {
                 );
             }
             samples.push(self.read_interaction_settle_sample()?);
-            if let Some(sample) = choose_interaction_settle_sample(&samples, 2) {
+            if let Some(sample) =
+                choose_interaction_settle_sample(&samples, INTERACTION_SETTLE_STABLE_SAMPLES)
+            {
                 return Ok(sample);
             }
             if std::time::Instant::now() >= deadline {
@@ -807,7 +811,9 @@ impl ChromiumRenderer {
 
         loop {
             samples.push(self.read_interaction_settle_sample()?);
-            if let Some(sample) = choose_interaction_settle_sample(&samples, 2) {
+            if let Some(sample) =
+                choose_interaction_settle_sample(&samples, INTERACTION_SETTLE_STABLE_SAMPLES)
+            {
                 return Ok(sample);
             }
             if std::time::Instant::now() >= deadline {
@@ -2351,6 +2357,34 @@ mod tests {
         ];
 
         let settled = choose_interaction_settle_sample(&samples, 2).expect("sample should settle");
+
+        assert_eq!(settled.url, "https://example.com/app");
+        assert_eq!(settled.title.as_deref(), Some("App"));
+    }
+
+    #[test]
+    fn interaction_settle_decision_requires_three_stable_complete_samples() {
+        assert_eq!(
+            INTERACTION_SETTLE_STABLE_SAMPLES, 3,
+            "runtime settle should require three stable complete samples before capture"
+        );
+
+        let two_samples = vec![
+            InteractionSettleSample::new("https://example.com/app", Some("App"), Some("complete")),
+            InteractionSettleSample::new("https://example.com/app", Some("App"), Some("complete")),
+        ];
+        assert!(
+            choose_interaction_settle_sample(&two_samples, 3).is_none(),
+            "two matching complete samples should not settle when three stable samples are required"
+        );
+
+        let three_samples = vec![
+            InteractionSettleSample::new("https://example.com/app", Some("App"), Some("complete")),
+            InteractionSettleSample::new("https://example.com/app", Some("App"), Some("complete")),
+            InteractionSettleSample::new("https://example.com/app", Some("App"), Some("complete")),
+        ];
+        let settled = choose_interaction_settle_sample(&three_samples, 3)
+            .expect("three matching complete samples should settle");
 
         assert_eq!(settled.url, "https://example.com/app");
         assert_eq!(settled.title.as_deref(), Some("App"));

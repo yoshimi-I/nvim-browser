@@ -92,6 +92,10 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   `window.open`, and delayed `about:blank` navigations should stay covered by
   opt-in E2E because real pages commonly create and navigate child targets
   asynchronously.
+- Interaction settling favors correctness over the fastest possible capture:
+  Chromium responses wait for DOM quiet plus multiple stable complete
+  URL/title samples before screenshotting, with a bounded latest-sample fallback
+  when pages stay unstable.
 - Hint clicks on `a[target=_blank][href]` should follow the direct `href` in the
   current preview. Native popup-opening pointer events can close the old CDP
   target before adoption, so direct href navigation is the stable single-preview
