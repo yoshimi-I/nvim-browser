@@ -86,6 +86,12 @@ function M.register(browser)
     nargs = "+",
   })
 
+  vim.api.nvim_create_user_command("NBrowserClickHere", function()
+    if not browser.click_here() then
+      vim.api.nvim_echo({ { "nvim-browser: cursor click requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+    end
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserCurrentUrl", function()
     vim.api.nvim_echo({ { browser.current_url() or "" } }, false, {})
   end, {})

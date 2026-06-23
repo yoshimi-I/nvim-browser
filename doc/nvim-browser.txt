@@ -71,6 +71,11 @@ COMMANDS                                           *nvim-browser-commands*
 	Click viewport coordinates in the active browser page and capture a fresh
 	frame.
 
+							*:NBrowserClickHere*
+:NBrowserClickHere
+	Click the viewport point under the preview cursor and capture a fresh frame.
+	This requires an ANSI or Kitty Unicode browser preview.
+
 							*:NBrowserCurrentUrl*
 :NBrowserCurrentUrl
 	Echo the current URL reported by the active browser session.

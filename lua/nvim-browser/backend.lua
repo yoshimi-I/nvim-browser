@@ -8,17 +8,25 @@ local function is_image_extension(extension)
   return vim.tbl_contains({ "png", "jpg", "jpeg", "gif", "webp" }, extension)
 end
 
-local function graphics_output(opts)
+local function image_graphics_output(opts)
+  local graphics = opts and opts.graphics or "auto"
+  if graphics == "kitty" or graphics == "ansi" then
+    return graphics
+  end
+
+  return "kitty"
+end
+
+local function browser_graphics_output(opts)
   local graphics = opts and opts.graphics or "auto"
   if graphics == "kitty" or graphics == "kitty-unicode" or graphics == "ansi" then
     return graphics
   end
-
   if vim.env.ZELLIJ ~= nil then
     return "ansi"
   end
 
-  return "kitty"
+  return "kitty-unicode"
 end
 
 function M.command_for(binary, action, target, opts)
@@ -27,7 +35,7 @@ function M.command_for(binary, action, target, opts)
   end
 
   if target:match("^https?://") then
-    return { binary, "serve", "--output", graphics_output(opts), "--url", target }
+    return { binary, "serve", "--output", browser_graphics_output(opts), "--url", target }
   end
 
   local extension = extension_for(target)
@@ -36,7 +44,7 @@ function M.command_for(binary, action, target, opts)
   end
 
   if is_image_extension(extension) then
-    return { binary, "show-image", target, "--output", graphics_output(opts) }
+    return { binary, "show-image", target, "--output", image_graphics_output(opts) }
   end
 
   return { binary, "inspect", target }

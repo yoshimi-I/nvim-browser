@@ -87,6 +87,10 @@ function M.click_point(x, y)
   return terminal.click_point(x, y)
 end
 
+function M.click_here()
+  return terminal.click_here()
+end
+
 function M.toggle()
   return terminal.toggle()
 end

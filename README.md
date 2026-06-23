@@ -15,17 +15,17 @@ This repository is an early MVP scaffold. Today it includes:
 - target classification for URLs, Markdown, HTML, and images
 - Markdown-to-HTML rendering
 - image output through Kitty graphics protocol
-- one-shot Chromium URL screenshot preview through Kitty graphics protocol
-- Neovim commands for opening and inspecting targets
+- Chromium/CDP browser sessions rendered through Kitty graphics or ANSI output
+- Neovim commands for opening, navigating, reloading, history, scrolling, text input, keys, selector focus, and point clicks
 - persistent Neovim preview surface reuse
+- current URL, title, and status reporting from the active browser session
 - CLI integration tests for backend command contracts
 - initial OSS packaging and CI
 
 Planned next steps:
 
-- Chromium/CDP renderer backend
-- tile-based page screenshots inside a Neovim preview split
-- scroll/input bridge from Neovim to the browser session
+- terminal-multiplexer graphics passthrough support and documentation
+- richer browser interaction hints for links and form controls
 - image, SVG, PDF, Mermaid, and KaTeX preview through the same browser runtime
 
 ## Architecture
@@ -102,11 +102,15 @@ Then run:
 :NBrowserInput hello
 :NBrowserKey Enter
 :NBrowserClick 120 240
+:NBrowserClickHere
 :NBrowserCurrentUrl
 :NBrowserCurrentTitle
 :NBrowserStatus
 :NBrowserToggle
 ```
+
+`:NBrowserClickHere` maps the preview cursor to browser viewport pixels. It is
+available for ANSI and Kitty Unicode browser previews.
 
 ## License
 

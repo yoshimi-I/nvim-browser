@@ -17,6 +17,7 @@ local state = {
   current_title = nil,
   status = nil,
   status_error = nil,
+  cursor_addressable_preview = false,
 }
 
 local kitty_placeholder = vim.fn.nr2char(0x10eeee)
@@ -149,6 +150,16 @@ local function preview_cells()
   return {
     columns = math.max(20, vim.api.nvim_win_get_width(state.winid) - 2),
     rows = math.max(6, vim.api.nvim_win_get_height(state.winid) - 2),
+  }
+end
+
+local function current_preview_geometry()
+  local cells = preview_cells()
+  return {
+    columns = cells.columns,
+    rows = cells.rows,
+    width = cells.columns * 10,
+    height = cells.rows * 20,
   }
 end
 
@@ -286,14 +297,27 @@ local function request_resize()
     return false
   end
 
-  local cells = preview_cells()
+  local geometry = current_preview_geometry()
   return send_serve_request({
     type = "resize",
-    columns = cells.columns,
-    rows = cells.rows,
-    width = cells.columns * 10,
-    height = cells.rows * 20,
+    columns = geometry.columns,
+    rows = geometry.rows,
+    width = geometry.width,
+    height = geometry.height,
   })
+end
+
+function M.viewport_point_for_cell(row, column, geometry)
+  if geometry == nil then
+    geometry = current_preview_geometry()
+  end
+
+  row = math.max(1, math.min(tonumber(row) or 1, geometry.rows))
+  column = math.max(1, math.min(tonumber(column) or 1, geometry.columns))
+  return {
+    x = (column - 0.5) * geometry.width / geometry.columns,
+    y = (row - 0.5) * geometry.height / geometry.rows,
+  }
 end
 
 local function apply_payload_to_buffer(bufnr, payload, uses_kitty, uses_kitty_unicode, command)
@@ -302,8 +326,13 @@ local function apply_payload_to_buffer(bufnr, payload, uses_kitty, uses_kitty_un
 
   vim.bo[bufnr].modifiable = true
   if uses_kitty_unicode then
-    local columns = command_option_value(command, "--columns") or preview_cells().columns
-    local rows = command_option_value(command, "--rows") or preview_cells().rows
+    local geometry = command_uses_serve(command) and current_preview_geometry() or nil
+    local columns = (geometry and geometry.columns)
+      or command_option_value(command, "--columns")
+      or preview_cells().columns
+    local rows = (geometry and geometry.rows)
+      or command_option_value(command, "--rows")
+      or preview_cells().rows
     local lines = kitty_placeholder_lines(columns, rows)
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
     apply_kitty_placeholder_highlight(bufnr, #lines)
@@ -375,6 +404,7 @@ function M.open(command)
   state.current_url = nil
   state.current_title = nil
   state.status = nil
+  state.cursor_addressable_preview = false
   pcall(send_terminal_escape, kitty_delete_escape())
 
   local previous_bufnr = state.bufnr
@@ -397,6 +427,7 @@ function M.open(command)
     local target = command_target(command)
     local uses_kitty = command_uses_kitty_serve(command)
     local uses_kitty_unicode = command_uses_kitty_unicode_serve(command)
+    state.cursor_addressable_preview = uses_kitty_unicode or command_uses_ansi_serve(command)
 
     vim.bo[state.bufnr].modifiable = true
     vim.api.nvim_buf_set_lines(
@@ -605,6 +636,7 @@ function M.close()
   state.current_title = nil
   state.status = nil
   state.status_error = nil
+  state.cursor_addressable_preview = false
   if state.stop_timer ~= nil then
     state.stop_timer:stop()
     state.stop_timer:close()
@@ -699,6 +731,19 @@ function M.click_point(x, y)
     x = x,
     y = y,
   })
+end
+
+function M.click_here()
+  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+    return false
+  end
+
+  local cursor = vim.api.nvim_win_get_cursor(state.winid)
+  local column = vim.api.nvim_win_call(state.winid, function()
+    return vim.fn.virtcol(".")
+  end)
+  local point = M.viewport_point_for_cell(cursor[1], column)
+  return M.click_point(point.x, point.y)
 end
 
 function M.toggle()
