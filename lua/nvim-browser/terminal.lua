@@ -41,6 +41,11 @@ local kitty_diacritics = {
   0x07ef, 0x07f0, 0x07f1, 0x0816, 0x0817, 0x0818, 0x0819, 0x081b,
   0x081c, 0x081d, 0x081e, 0x081f, 0x0820, 0x0821, 0x0822, 0x0823,
 }
+local hint_label_keys = {
+  "a", "s", "d", "f", "g", "h", "j", "k", "l",
+  "q", "w", "e", "r", "t", "y", "u", "i", "o", "p",
+  "z", "x", "c", "v", "b", "n", "m",
+}
 
 local function preview_width()
   return math.max(40, math.min(120, math.floor(vim.o.columns * 0.48)))
@@ -346,6 +351,44 @@ local function same_preview_geometry(left, right)
     and left.height == right.height
 end
 
+local function hint_label_for_index(index)
+  local base = #hint_label_keys
+  local label = ""
+  while index > 0 do
+    local key_index = ((index - 1) % base) + 1
+    label = hint_label_keys[key_index] .. label
+    index = math.floor((index - 1) / base)
+  end
+  return label
+end
+
+local function assign_hint_labels(hints)
+  local labeled = {}
+  for index, hint in ipairs(hints or {}) do
+    local copy = vim.tbl_extend("force", {}, hint)
+    copy.hint_label = copy.hint_label or hint_label_for_index(index)
+    table.insert(labeled, copy)
+  end
+  return labeled
+end
+
+local function find_hint(hints, identifier)
+  if identifier == nil then
+    return nil
+  end
+  local numeric_id = tonumber(identifier)
+  local label = tostring(identifier):lower()
+  for _, hint in ipairs(hints or {}) do
+    if numeric_id ~= nil and tonumber(hint.id) == numeric_id then
+      return hint
+    end
+    if hint.hint_label ~= nil and tostring(hint.hint_label):lower() == label then
+      return hint
+    end
+  end
+  return nil
+end
+
 local function apply_payload_to_buffer(bufnr, payload, uses_kitty, uses_kitty_unicode, command, geometry)
   state.last_payload = (uses_kitty or uses_kitty_unicode) and payload or nil
   state.last_payload_is_unicode = uses_kitty_unicode and payload ~= nil
@@ -492,7 +535,7 @@ function M.open(command)
           state.current_title = response.title ~= vim.NIL and response.title or nil
         end
         local geometry = valid_preview_geometry()
-        state.element_hints = response.hints or {}
+        state.element_hints = assign_hint_labels(response.hints or {})
         state.element_hints_geometry = #state.element_hints > 0 and geometry or nil
 
         if response.status == "ok" and response.payload ~= nil then
@@ -788,20 +831,15 @@ function M.click_here()
 end
 
 function M.click_hint(id)
-  id = tonumber(id)
-  if id == nil then
-    return false
-  end
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false
   end
   if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
     return false
   end
-  for _, hint in ipairs(state.element_hints or {}) do
-    if hint.id == id then
-      return M.click_point(hint.x, hint.y)
-    end
+  local hint = find_hint(state.element_hints, id)
+  if hint ~= nil then
+    return M.click_point(hint.x, hint.y)
   end
   return false
 end
@@ -854,6 +892,8 @@ function M.state()
 end
 
 M._test = {
+  assign_hint_labels = assign_hint_labels,
+  find_hint = find_hint,
   apply_hint_overlay = hints_overlay.apply,
   clear_hint_overlay = hints_overlay.clear,
   hint_namespace = function()

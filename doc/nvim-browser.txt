@@ -78,13 +78,18 @@ COMMANDS                                           *nvim-browser-commands*
 
 							*:NBrowserHints*
 :NBrowserHints
-	Echo numbered links and form controls from the latest browser frame. On
-	ANSI and Kitty Unicode browser previews, the same numbers are overlaid on
-	the preview.
+	Echo keyboard labels and numbered links/form controls from the latest
+	browser frame. On ANSI and Kitty Unicode browser previews, the same labels
+	are overlaid on the preview.
 
 							*:NBrowserClickHint*
-:NBrowserClickHint {id}
-	Click the center point of a numbered browser hint and capture a fresh frame.
+:NBrowserClickHint {id-or-label}
+	Click the center point of a browser hint and capture a fresh frame.
+
+							*:NBrowserFollowHint*
+:NBrowserFollowHint {label}
+	Click the center point of a keyboard-labeled browser hint and capture a
+	fresh frame.
 
 							*:NBrowserCurrentUrl*
 :NBrowserCurrentUrl

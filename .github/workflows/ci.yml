@@ -17,4 +17,4 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
-      - run: nvim --headless -u NONE -l tests/lua/terminal_overlay_test.lua
+      - run: for test in tests/lua/*_test.lua; do nvim --headless -u NONE -l "$test"; done

@@ -95,6 +95,10 @@ function M.click_hint(id)
   return terminal.click_hint(id)
 end
 
+function M.follow_hint(id)
+  return terminal.click_hint(id)
+end
+
 function M.toggle()
   return terminal.toggle()
 end

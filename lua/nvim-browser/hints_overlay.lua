@@ -44,8 +44,9 @@ function M.apply(bufnr, hints, geometry)
   for _, hint in ipairs(hints) do
     local x = tonumber(hint.x)
     local y = tonumber(hint.y)
-    if x ~= nil and y ~= nil and hint.id ~= nil then
-      local label = tostring(hint.id)
+    local display_label = hint.hint_label or hint.id
+    if x ~= nil and y ~= nil and display_label ~= nil then
+      local label = tostring(display_label)
       local label_width = math.max(1, vim.fn.strdisplaywidth(label))
       local row = clamp(math.floor(y * rows / height), 0, math.min(rows - 1, line_count - 1))
       local column = clamp(math.floor(x * columns / width), 0, math.max(0, columns - label_width))

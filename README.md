@@ -68,7 +68,7 @@ Run tests:
 
 ```sh
 cargo test
-nvim --headless -u NONE -l tests/lua/terminal_overlay_test.lua
+for test in tests/lua/*_test.lua; do nvim --headless -u NONE -l "$test"; done
 ```
 
 Try the backend:
@@ -107,6 +107,7 @@ Then run:
 :NBrowserClickHere
 :NBrowserHints
 :NBrowserClickHint 1
+:NBrowserFollowHint a
 :NBrowserCurrentUrl
 :NBrowserCurrentTitle
 :NBrowserStatus
@@ -116,9 +117,10 @@ Then run:
 `:NBrowserClickHere` maps the preview cursor to browser viewport pixels. It is
 available for ANSI and Kitty Unicode browser previews.
 
-`:NBrowserHints` echoes the latest numbered browser elements. On ANSI and Kitty
-Unicode browser previews, the same numbers are also overlaid on the preview, and
-`:NBrowserClickHint {id}` clicks the matching element.
+`:NBrowserHints` echoes the latest keyboard labels and numbered browser
+elements. On ANSI and Kitty Unicode browser previews, the same labels are also
+overlaid on the preview. `:NBrowserClickHint {id-or-label}` and
+`:NBrowserFollowHint {label}` click the matching element.
 
 ## License
 
