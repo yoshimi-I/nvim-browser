@@ -13,6 +13,7 @@ assert(type(browser.resolve_address_target) == "function", "address target resol
 assert(type(browser.find_text) == "function", "find_text API should exist")
 assert(type(browser.last_find_found) == "function", "last_find_found API should exist")
 assert(type(browser.doctor) == "function", "doctor API should exist")
+assert(type(browser.page_metrics) == "function", "page_metrics API should exist")
 
 assert(browser.resolve_address_target("https://example.com") == "https://example.com", "address resolver should preserve explicit URLs")
 assert(browser.resolve_address_target("example.com") == "https://example.com", "address resolver should add https to host-like inputs")

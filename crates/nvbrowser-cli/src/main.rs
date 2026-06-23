@@ -13,9 +13,9 @@ use nvbrowser_core::{
     renderer::chromium::{render_url_png, ChromiumOptions},
     BrowserSession, ChromiumRenderer, ClickPointRequest, ElementHint, ElementHintsRequest,
     FindTextRequest, FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest,
-    KeyPressRequest, KittyImageDelete, KittyImageTransfer, NavigateRequest, ReloadRequest,
-    RenderFrameRequest, RenderedFrame, Renderer, ScrollRequest, SessionId, TextInputRequest,
-    Viewport,
+    KeyPressRequest, KittyImageDelete, KittyImageTransfer, NavigateRequest, PageMetrics,
+    PageMetricsRequest, ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer, ScrollRequest,
+    SessionId, TextInputRequest, Viewport,
 };
 use serde::{Deserialize, Serialize};
 
@@ -325,6 +325,8 @@ struct ServeResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
     title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    page: Option<PageMetrics>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     hints: Vec<ElementHint>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -501,6 +503,7 @@ struct ServeRuntime<R: Renderer> {
 
 struct CapturePayload {
     payload: String,
+    page: Option<PageMetrics>,
     hints: Vec<ElementHint>,
     found: Option<bool>,
 }
@@ -521,15 +524,23 @@ impl<R: Renderer> ServeRuntime<R> {
         let id = request.id();
         match self.try_handle(request) {
             Ok(capture) => {
-                let (payload, hints, found) = capture
-                    .map(|capture| (Some(capture.payload), capture.hints, capture.found))
-                    .unwrap_or((None, Vec::new(), None));
+                let (payload, page, hints, found) = capture
+                    .map(|capture| {
+                        (
+                            Some(capture.payload),
+                            capture.page,
+                            capture.hints,
+                            capture.found,
+                        )
+                    })
+                    .unwrap_or((None, None, Vec::new(), None));
                 ServeResponse {
                     id,
                     status: ServeStatus::Ok,
                     payload,
                     url: self.session.active_page().url().map(str::to_string),
                     title: self.session.active_page().title().map(str::to_string),
+                    page,
                     hints,
                     found,
                     error: None,
@@ -541,6 +552,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 payload: None,
                 url: self.session.active_page().url().map(str::to_string),
                 title: self.session.active_page().title().map(str::to_string),
+                page: None,
                 hints: Vec::new(),
                 found: None,
                 error: Some(error.to_string()),
@@ -710,9 +722,14 @@ impl<R: Renderer> ServeRuntime<R> {
             self.session.id(),
             self.session.active_page_id(),
         ))?;
+        let page = self.renderer.page_metrics(PageMetricsRequest::new(
+            self.session.id(),
+            self.session.active_page_id(),
+        ))?;
         let payload = frame_to_payload(frame, self.output, self.columns, Some(self.rows))?;
         Ok(CapturePayload {
             payload,
+            page,
             hints,
             found: None,
         })
@@ -846,6 +863,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         payload: None,
                         url: None,
                         title: None,
+                        page: None,
                         hints: Vec::new(),
                         found: None,
                         error: Some(error.to_string()),
@@ -1139,8 +1157,8 @@ mod tests {
     use super::*;
     use nvbrowser_core::{
         ElementHintKind, ElementHintsRequest, FrameId, FrameMetadata, HistoryNavigationResult,
-        InputResult, InteractionSettleResult, NavigationResult, PageId, ReloadResult,
-        RendererError, RendererErrorKind, ScrollResult, ShutdownResult,
+        InputResult, InteractionSettleResult, NavigationResult, PageId, PageMetricsRequest,
+        ReloadResult, RendererError, RendererErrorKind, ScrollResult, ShutdownResult,
     };
 
     struct FakeRenderer {
@@ -1247,6 +1265,20 @@ mod tests {
                 delta_x: request.delta_x,
                 delta_y: request.delta_y,
             })
+        }
+
+        fn page_metrics(
+            &mut self,
+            _request: PageMetricsRequest,
+        ) -> Result<Option<PageMetrics>, RendererError> {
+            Ok(Some(PageMetrics {
+                scroll_x: 0.0,
+                scroll_y: 100.0,
+                viewport_width: 10.0,
+                viewport_height: 10.0,
+                document_width: 10.0,
+                document_height: 30.0,
+            }))
         }
 
         fn reload(&mut self, request: ReloadRequest) -> Result<ReloadResult, RendererError> {
@@ -1684,6 +1716,7 @@ mod tests {
             payload: Some("frame".to_string()),
             url: None,
             title: None,
+            page: None,
             hints: Vec::new(),
             found: None,
             error: None,
@@ -1703,6 +1736,7 @@ mod tests {
             payload: Some("frame".to_string()),
             url: Some("https://example.com".to_string()),
             title: Some("Example Domain".to_string()),
+            page: None,
             hints: vec![ElementHint {
                 id: 1,
                 kind: ElementHintKind::Link,
@@ -1733,6 +1767,7 @@ mod tests {
             payload: Some("frame".to_string()),
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
+            page: None,
             hints: Vec::new(),
             found: Some(true),
             error: None,
@@ -1741,6 +1776,33 @@ mod tests {
         assert_eq!(
             encode_serve_response(&response),
             r#"{"id":12,"status":"ok","payload":"frame","url":"https://example.com","title":"Example","found":true}"#
+        );
+    }
+
+    #[test]
+    fn serve_response_encodes_page_metrics_when_present() {
+        let response = ServeResponse {
+            id: 13,
+            status: ServeStatus::Ok,
+            payload: Some("frame".to_string()),
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            page: Some(PageMetrics {
+                scroll_x: 0.0,
+                scroll_y: 250.0,
+                viewport_width: 800.0,
+                viewport_height: 600.0,
+                document_width: 800.0,
+                document_height: 1600.0,
+            }),
+            hints: Vec::new(),
+            found: None,
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r#"{"id":13,"status":"ok","payload":"frame","url":"https://example.com","title":"Example","page":{"scroll_x":0.0,"scroll_y":250.0,"viewport_width":800.0,"viewport_height":600.0,"document_width":800.0,"document_height":1600.0}}"#
         );
     }
 
@@ -1768,6 +1830,17 @@ mod tests {
         assert_eq!(response.status, ServeStatus::Ok);
         assert_eq!(response.url, Some("https://example.com".to_string()));
         assert_eq!(response.title, Some("https://example.com".to_string()));
+        assert_eq!(
+            response.page,
+            Some(PageMetrics {
+                scroll_x: 0.0,
+                scroll_y: 100.0,
+                viewport_width: 10.0,
+                viewport_height: 10.0,
+                document_width: 10.0,
+                document_height: 30.0,
+            })
+        );
         assert!(response.hints.is_empty());
         assert!(response.payload.expect("payload").contains("▀"));
     }

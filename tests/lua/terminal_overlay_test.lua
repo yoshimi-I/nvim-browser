@@ -155,6 +155,28 @@ assert(warnings[#warnings] == "nvim-browser: text was not found", "not-found res
 terminal._test.handle_find_text_response({ status = "ok", found = true })
 assert(terminal.state().last_find_found == true, "found responses should update find state to true")
 
+terminal._test.apply_serve_response({
+  id = 99,
+  status = "ok",
+  url = "https://example.com/long",
+  page = {
+    scroll_x = 0,
+    scroll_y = 250,
+    viewport_width = 800,
+    viewport_height = 600,
+    document_width = 800,
+    document_height = 1600,
+  },
+})
+local page_metrics = terminal.state().page_metrics
+assert(page_metrics ~= nil, "serve responses should store page metrics")
+assert(page_metrics.scroll_y == 250, "stored page metrics should preserve scroll position")
+assert(page_metrics.document_height == 1600, "stored page metrics should preserve document size")
+terminal.close()
+assert(terminal.state().page_metrics == nil, "closing a browser session should clear page metrics")
+terminal._test.apply_serve_response({ id = 100, status = "error", error = "navigation failed" })
+assert(terminal.state().page_metrics == nil, "responses without page metrics should clear stale page metrics")
+
 vim.cmd("vsplit")
 local image_win = vim.api.nvim_get_current_win()
 vim.api.nvim_win_set_width(image_win, 52)

@@ -19,8 +19,9 @@ use crate::{
         ClickPointRequest, ElementHint, ElementHintsRequest, FindTextRequest, FindTextResult,
         FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest, HistoryNavigationResult,
         InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
-        ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
-        RendererErrorKind, ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
+        PageMetrics, PageMetricsRequest, ReloadRequest, ReloadResult, RenderFrameRequest,
+        RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest, ScrollResult,
+        ShutdownResult, TextInputRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -329,6 +330,13 @@ impl Renderer for ChromiumRenderer {
         Ok(self.read_element_hints().unwrap_or_default())
     }
 
+    fn page_metrics(
+        &mut self,
+        _request: PageMetricsRequest,
+    ) -> Result<Option<PageMetrics>, RendererError> {
+        Ok(self.read_page_metrics())
+    }
+
     fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
         thread::sleep(Duration::from_millis(75));
         self.tab.wait_until_navigated().map_err(render_error)?;
@@ -418,6 +426,17 @@ impl ChromiumRenderer {
         value
             .as_str()
             .and_then(|hints| serde_json::from_str(hints).ok())
+    }
+
+    fn read_page_metrics(&self) -> Option<PageMetrics> {
+        let value = self
+            .tab
+            .evaluate(PAGE_METRICS_SCRIPT, true)
+            .ok()
+            .and_then(|remote_object| remote_object.value)?;
+        value
+            .as_str()
+            .and_then(|metrics| parse_page_metrics_json(metrics).ok())
     }
 
     fn wait_for_current_url(&self, target_url: &str) -> Result<String, RendererError> {
@@ -544,6 +563,36 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
 })()
 "#;
 
+const PAGE_METRICS_SCRIPT: &str = r#"
+(() => {
+  const root = document.documentElement;
+  const body = document.body;
+  const max = (...values) => Math.max(...values.filter((value) => Number.isFinite(value)));
+  const documentWidth = max(
+    root ? root.scrollWidth : 0,
+    root ? root.clientWidth : 0,
+    body ? body.scrollWidth : 0,
+    body ? body.clientWidth : 0,
+    window.innerWidth || 0
+  );
+  const documentHeight = max(
+    root ? root.scrollHeight : 0,
+    root ? root.clientHeight : 0,
+    body ? body.scrollHeight : 0,
+    body ? body.clientHeight : 0,
+    window.innerHeight || 0
+  );
+  return JSON.stringify({
+    scroll_x: window.scrollX || window.pageXOffset || 0,
+    scroll_y: window.scrollY || window.pageYOffset || 0,
+    viewport_width: window.innerWidth || (root ? root.clientWidth : 0) || 0,
+    viewport_height: window.innerHeight || (root ? root.clientHeight : 0) || 0,
+    document_width: documentWidth,
+    document_height: documentHeight
+  });
+})()
+"#;
+
 #[derive(Debug, Clone, Copy)]
 enum HistoryDirection {
     Back,
@@ -658,6 +707,10 @@ fn render_error(error: impl std::fmt::Display) -> RendererError {
     RendererError::new(RendererErrorKind::RenderFailed, error.to_string())
 }
 
+fn parse_page_metrics_json(metrics: &str) -> Result<PageMetrics, serde_json::Error> {
+    serde_json::from_str(metrics)
+}
+
 fn non_empty_string(value: String) -> Option<String> {
     let value = value.trim().to_string();
     if value.is_empty() {
@@ -758,5 +811,20 @@ mod tests {
         assert_eq!(clip.width, 640.0);
         assert_eq!(clip.height, 480.0);
         assert_eq!(clip.scale, 1.0);
+    }
+
+    #[test]
+    fn parses_page_metrics_json_from_chromium_script() {
+        let metrics = parse_page_metrics_json(
+            r#"{"scroll_x":0,"scroll_y":250,"viewport_width":800,"viewport_height":600,"document_width":800,"document_height":1600}"#,
+        )
+        .expect("page metrics should parse");
+
+        assert_eq!(metrics.scroll_x, 0.0);
+        assert_eq!(metrics.scroll_y, 250.0);
+        assert_eq!(metrics.viewport_width, 800.0);
+        assert_eq!(metrics.viewport_height, 600.0);
+        assert_eq!(metrics.document_width, 800.0);
+        assert_eq!(metrics.document_height, 1600.0);
     }
 }

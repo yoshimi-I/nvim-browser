@@ -18,6 +18,7 @@ local state = {
   resize_autocmd = nil,
   current_url = nil,
   current_title = nil,
+  page_metrics = nil,
   status = nil,
   status_error = nil,
   last_find_found = nil,
@@ -332,6 +333,22 @@ local function handle_find_text_response(response)
   end
 end
 
+local function apply_serve_response_metadata(response)
+  state.status = response.status
+  state.status_error = response.error
+  if response.url ~= nil then
+    state.current_url = response.url
+  end
+  if response.title ~= nil then
+    state.current_title = response.title ~= vim.NIL and response.title or nil
+  end
+  if response.page ~= nil and response.page ~= vim.NIL then
+    state.page_metrics = response.page
+  else
+    state.page_metrics = nil
+  end
+end
+
 local function stop_existing_job(force)
   if state.job_id == nil then
     return
@@ -625,6 +642,7 @@ function M.open(command)
   state.next_request_id = 1
   state.current_url = nil
   state.current_title = nil
+  state.page_metrics = nil
   state.status = nil
   state.status_error = nil
   state.last_find_found = nil
@@ -685,14 +703,7 @@ function M.open(command)
           return
         end
 
-        state.status = response.status
-        state.status_error = response.error
-        if response.url ~= nil then
-          state.current_url = response.url
-        end
-        if response.title ~= nil then
-          state.current_title = response.title ~= vim.NIL and response.title or nil
-        end
+        apply_serve_response_metadata(response)
         update_browser_buffer_name(bufnr)
         local response_handler = state.response_handlers[response.id]
         if response_handler ~= nil then
@@ -891,6 +902,7 @@ function M.close()
   state.serve_output = nil
   state.current_url = nil
   state.current_title = nil
+  state.page_metrics = nil
   state.status = nil
   state.status_error = nil
   state.last_find_found = nil
@@ -1101,6 +1113,7 @@ function M.state()
     last_target = state.last_target,
     current_url = state.current_url,
     current_title = state.current_title,
+    page_metrics = state.page_metrics,
     status = state.status,
     status_error = state.status_error,
     last_find_found = state.last_find_found,
@@ -1119,6 +1132,7 @@ M._test = {
     return hints_overlay.namespace()
   end,
   handle_find_text_response = handle_find_text_response,
+  apply_serve_response = apply_serve_response_metadata,
   kitty_cleanup_escape = kitty_cleanup_escape,
   set_last_find_found = function(value)
     state.last_find_found = value

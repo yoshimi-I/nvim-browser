@@ -168,6 +168,10 @@ function M.current_title()
   return terminal.state().current_title
 end
 
+function M.page_metrics()
+  return terminal.state().page_metrics
+end
+
 function M.status()
   return terminal.state().status
 end

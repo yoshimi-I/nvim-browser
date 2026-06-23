@@ -44,6 +44,13 @@ pub trait Renderer {
         Ok(Vec::new())
     }
 
+    fn page_metrics(
+        &mut self,
+        _request: PageMetricsRequest,
+    ) -> Result<Option<PageMetrics>, RendererError> {
+        Ok(None)
+    }
+
     fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError>;
 
     fn shutdown(&mut self) -> Result<ShutdownResult, RendererError>;
@@ -101,6 +108,31 @@ pub enum FrameArtifact {
 pub struct RenderedFrame {
     pub metadata: FrameMetadata,
     pub artifact: FrameArtifact,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct PageMetricsRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+}
+
+impl PageMetricsRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId) -> Self {
+        Self {
+            session_id,
+            page_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PageMetrics {
+    pub scroll_x: f64,
+    pub scroll_y: f64,
+    pub viewport_width: f64,
+    pub viewport_height: f64,
+    pub document_width: f64,
+    pub document_height: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

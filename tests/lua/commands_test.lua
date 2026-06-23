@@ -47,6 +47,28 @@ local browser = {
     doctor_called = true
     return { lines = { "nvim-browser doctor", "browser output: kitty-unicode" } }
   end,
+  status = function()
+    return "ok"
+  end,
+  current_url = function()
+    return "https://example.com/long"
+  end,
+  current_title = function()
+    return "Example"
+  end,
+  status_error = function()
+    return nil
+  end,
+  page_metrics = function()
+    return {
+      scroll_x = 0,
+      scroll_y = 250,
+      viewport_width = 800,
+      viewport_height = 600,
+      document_width = 800,
+      document_height = 1600,
+    }
+  end,
 }
 
 local echoed = nil
@@ -73,6 +95,9 @@ assert(echoed:match("\ns%s+2%s+input%s+Search%s+@%s+30,40"), "NBrowserHints shou
 vim.cmd("NBrowserDoctor")
 assert(doctor_called == true, "NBrowserDoctor should call browser.doctor")
 assert(echoed == "nvim-browser doctor\nbrowser output: kitty-unicode", "NBrowserDoctor should echo doctor lines")
+
+vim.cmd("NBrowserStatus")
+assert(echoed:match("scroll 25%%"), "NBrowserStatus should include scroll progress when page metrics exist")
 
 vim.cmd("NBrowserAddress")
 assert(addressed == "s", "NBrowserAddress should pass the injected input function to browser.address")

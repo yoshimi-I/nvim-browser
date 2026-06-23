@@ -8,6 +8,24 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: hint not found, stale, or browser session is inactive", "WarningMsg" } }, false, {})
   end
 
+  local function page_scroll_label(metrics)
+    if type(metrics) ~= "table" then
+      return nil
+    end
+    local scroll_y = tonumber(metrics.scroll_y)
+    local viewport_height = tonumber(metrics.viewport_height)
+    local document_height = tonumber(metrics.document_height)
+    if scroll_y == nil or viewport_height == nil or document_height == nil then
+      return nil
+    end
+    local scrollable = document_height - viewport_height
+    if scrollable <= 0 then
+      return "scroll 0%"
+    end
+    local percent = math.floor(math.max(0, math.min(100, (scroll_y / scrollable) * 100)) + 0.5)
+    return "scroll " .. percent .. "%"
+  end
+
   local function warn_hint_input_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: hint input failed, stale, or browser session is inactive", "WarningMsg" } }, false, {})
   end
@@ -237,9 +255,13 @@ function M.register(browser, opts)
     local url = browser.current_url() or ""
     local title = browser.current_title and browser.current_title() or nil
     local error = browser.status_error and browser.status_error() or nil
+    local scroll = browser.page_metrics and page_scroll_label(browser.page_metrics()) or nil
     local message = status
     if title ~= nil and title ~= "" then
       message = message .. " " .. title
+    end
+    if scroll ~= nil then
+      message = message .. " " .. scroll
     end
     if url ~= "" then
       message = message .. " " .. url
