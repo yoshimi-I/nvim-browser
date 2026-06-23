@@ -84,6 +84,10 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   output and future auto-detection should reduce this burden.
 - Quiet input improves text latency but means metadata, hints, and screenshots
   can lag until Enter, exit, or a later capture.
+- Chromium target lifecycle is a core reliability area. `target=_blank`,
+  `window.open`, and delayed `about:blank` navigations should stay covered by
+  opt-in E2E because real pages commonly create and navigate child targets
+  asynchronously.
 - Long-running Chromium lifecycle, stuck navigation cancellation, and late
   response handling remain operational risk areas and should stay covered by
   tests.

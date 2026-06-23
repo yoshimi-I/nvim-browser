@@ -883,6 +883,143 @@ fn opt_in_e2e_serve_loop_reports_metrics_for_top_bottom_scroll() {
 }
 
 #[test]
+fn opt_in_e2e_serve_loop_adopts_delayed_about_blank_window_open() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let fixture_path = directory.path().join("delayed-window-open.html");
+    let delayed_path = directory.path().join("delayed-target.html");
+    let delayed_url = format!("file://{}", delayed_path.display());
+    std::fs::write(
+        &delayed_path,
+        r##"<!doctype html>
+<html>
+  <head><title>Delayed Window Adopted</title></head>
+  <body>
+    <main>
+      <p>delayed adopted text</p>
+      <button onclick="alert('delayed alert'); document.getElementById('out').textContent='delayed alert handled'">Delayed Alert</button>
+      <p id="out">delayed empty</p>
+    </main>
+  </body>
+</html>"##,
+    )
+    .expect("delayed target fixture should be written");
+    std::fs::write(
+        &fixture_path,
+        format!(
+            r##"<!doctype html>
+<html>
+  <head><title>NBrowser Delayed Window Fixture</title></head>
+  <body>
+    <main>
+      <button onclick="const child = window.open('about:blank', '_blank'); setTimeout(() => {{ child.location.href = '{delayed_url}'; }}, 250)">Open Delayed Window</button>
+    </main>
+  </body>
+</html>"##
+        ),
+    )
+    .expect("delayed opener fixture should be written");
+    let fixture_url = format!("file://{}", fixture_path.display());
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--url",
+            &fixture_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok", "initial navigation should succeed");
+    let delayed_open_hint = initial["hints"]
+        .as_array()
+        .expect("initial response should include hints")
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Open Delayed Window")
+        .expect("real Chromium hints should include delayed window button")["id"]
+        .as_u64()
+        .expect("delayed window hint should include id");
+
+    let adopted = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "click_hint",
+        "hint_id": delayed_open_hint
+    }));
+    assert_eq!(
+        adopted["status"], "ok",
+        "delayed about:blank window.open should succeed; response={adopted:?}"
+    );
+    assert_eq!(
+        adopted["title"], "Delayed Window Adopted",
+        "delayed about:blank window.open should adopt the navigated child target"
+    );
+    assert!(
+        adopted["url"]
+            .as_str()
+            .is_some_and(|url| url.ends_with("delayed-target.html")),
+        "delayed window response should use the adopted page URL"
+    );
+    let text = serve.request(serde_json::json!({ "id": 2, "type": "page_text" }));
+    assert!(
+        text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("delayed adopted text")),
+        "page_text should read from the delayed adopted target"
+    );
+
+    let alert_hint = adopted["hints"]
+        .as_array()
+        .expect("adopted response should include hints")
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Delayed Alert")
+        .expect("adopted delayed target should expose alert button")["id"]
+        .as_u64()
+        .expect("delayed alert hint should include id");
+    let alert = serve.request(serde_json::json!({
+        "id": 3,
+        "type": "click_hint",
+        "hint_id": alert_hint
+    }));
+    assert_eq!(
+        alert["status"], "ok",
+        "adopted delayed target should have a dialog handler"
+    );
+    let alert_text = serve.request(serde_json::json!({ "id": 4, "type": "page_text" }));
+    assert!(
+        alert_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("delayed alert handled")),
+        "adopted delayed target dialog should be handled"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 5, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
+#[test]
 fn opt_in_e2e_serve_loop_selects_real_chromium_hint() {
     if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
         return;

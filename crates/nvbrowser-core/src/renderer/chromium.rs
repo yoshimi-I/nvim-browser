@@ -143,6 +143,7 @@ pub struct ChromiumRenderer {
     browser: Browser,
     tab: Arc<Tab>,
     known_target_ids: HashSet<String>,
+    pending_page_target_ids: HashSet<String>,
     dialog_handler_target_ids: HashSet<String>,
     active_viewport: Viewport,
     current_url: Option<String>,
@@ -164,6 +165,7 @@ impl ChromiumRenderer {
             browser,
             tab,
             known_target_ids,
+            pending_page_target_ids: HashSet::new(),
             dialog_handler_target_ids,
             active_viewport: viewport,
             current_url: None,
@@ -599,19 +601,28 @@ impl ChromiumRenderer {
         let new_target_deadline = std::time::Instant::now() + Duration::from_millis(500);
         loop {
             let (tabs, candidates) = self.current_target_candidates();
-            if !has_unknown_targets(&candidates) {
+            track_pending_page_targets(
+                &mut self.known_target_ids,
+                &mut self.pending_page_target_ids,
+                &candidates,
+            );
+            if self.try_adopt_target_from_candidates(&tabs, &candidates)? {
+                return Ok(());
+            }
+            if !has_unknown_targets(&candidates, &self.pending_page_target_ids) {
                 if std::time::Instant::now() >= new_target_deadline {
                     return Ok(());
                 }
                 thread::sleep(Duration::from_millis(25));
                 continue;
             }
-            if self.try_adopt_target_from_candidates(&tabs, &candidates)? {
-                return Ok(());
-            }
 
             if std::time::Instant::now() >= deadline {
-                mark_observed_targets_known(&mut self.known_target_ids, &candidates);
+                mark_observed_targets_known(
+                    &mut self.known_target_ids,
+                    &mut self.pending_page_target_ids,
+                    &candidates,
+                );
                 return Ok(());
             }
             thread::sleep(Duration::from_millis(50));
@@ -624,7 +635,9 @@ impl ChromiumRenderer {
         candidates: &[TargetCandidate],
     ) -> Result<bool, RendererError> {
         let active_id = self.tab.get_target_id().clone();
-        let Some(target_id) = choose_new_page_target_id(&active_id, candidates) else {
+        let Some(target_id) =
+            choose_new_page_target_id(&active_id, candidates, &self.pending_page_target_ids)
+        else {
             return Ok(false);
         };
         let Some(tab) = tabs
@@ -638,6 +651,7 @@ impl ChromiumRenderer {
         tab.activate().map_err(render_error)?;
         resize_tab(&tab, self.active_viewport)?;
         self.tab = tab;
+        self.pending_page_target_ids.remove(&target_id);
         self.known_target_ids = tabs
             .iter()
             .map(|tab| tab.get_target_id().clone())
@@ -689,18 +703,27 @@ impl ChromiumRenderer {
 
         loop {
             let (tabs, candidates) = self.current_target_candidates();
+            track_pending_page_targets(
+                &mut self.known_target_ids,
+                &mut self.pending_page_target_ids,
+                &candidates,
+            );
             if self.try_adopt_target_from_candidates(&tabs, &candidates)? {
                 samples.clear();
                 let _ = self.wait_for_dom_quiet();
                 continue;
             }
-            if has_unknown_targets(&candidates) {
+            if has_unknown_targets(&candidates, &self.pending_page_target_ids) {
                 if std::time::Instant::now() < deadline {
                     samples.clear();
                     thread::sleep(Duration::from_millis(50));
                     continue;
                 }
-                mark_observed_targets_known(&mut self.known_target_ids, &candidates);
+                mark_observed_targets_known(
+                    &mut self.known_target_ids,
+                    &mut self.pending_page_target_ids,
+                    &candidates,
+                );
             }
             samples.push(self.read_interaction_settle_sample()?);
             if let Some(sample) = choose_interaction_settle_sample(&samples, 2) {
@@ -1613,13 +1636,14 @@ struct TargetCandidate {
 fn choose_new_page_target_id(
     active_target_id: &str,
     candidates: &[TargetCandidate],
+    pending_page_target_ids: &HashSet<String>,
 ) -> Option<String> {
     candidates
         .iter()
         .rev()
         .find(|candidate| {
             candidate.id != active_target_id
-                && !candidate.previously_known
+                && (!candidate.previously_known || pending_page_target_ids.contains(&candidate.id))
                 && is_adoptable_page_url(&candidate.url)
         })
         .map(|candidate| candidate.id.clone())
@@ -1627,24 +1651,65 @@ fn choose_new_page_target_id(
 
 fn mark_observed_targets_known(
     known_target_ids: &mut HashSet<String>,
+    pending_page_target_ids: &mut HashSet<String>,
     candidates: &[TargetCandidate],
 ) {
+    track_pending_page_targets(known_target_ids, pending_page_target_ids, candidates);
     known_target_ids.extend(candidates.iter().map(|candidate| candidate.id.clone()));
 }
 
-fn has_unknown_targets(candidates: &[TargetCandidate]) -> bool {
-    candidates
+fn track_pending_page_targets(
+    known_target_ids: &mut HashSet<String>,
+    pending_page_target_ids: &mut HashSet<String>,
+    candidates: &[TargetCandidate],
+) {
+    let present_target_ids = candidates
         .iter()
-        .any(|candidate| !candidate.previously_known)
+        .map(|candidate| candidate.id.as_str())
+        .collect::<HashSet<_>>();
+    pending_page_target_ids.retain(|target_id| present_target_ids.contains(target_id.as_str()));
+
+    for candidate in candidates {
+        if pending_page_target_ids.contains(&candidate.id) && is_internal_page_url(&candidate.url) {
+            pending_page_target_ids.remove(&candidate.id);
+        }
+        if candidate.previously_known {
+            continue;
+        }
+        if is_pending_new_page_url(&candidate.url) {
+            pending_page_target_ids.insert(candidate.id.clone());
+            known_target_ids.insert(candidate.id.clone());
+        } else if is_internal_page_url(&candidate.url) {
+            known_target_ids.insert(candidate.id.clone());
+        }
+    }
+}
+
+fn has_unknown_targets(
+    candidates: &[TargetCandidate],
+    pending_page_target_ids: &HashSet<String>,
+) -> bool {
+    candidates.iter().any(|candidate| {
+        !candidate.previously_known
+            && !pending_page_target_ids.contains(&candidate.id)
+            && !is_internal_page_url(&candidate.url)
+    })
+}
+
+fn is_pending_new_page_url(url: &str) -> bool {
+    url.trim() == "about:blank"
 }
 
 fn is_adoptable_page_url(url: &str) -> bool {
     let url = url.trim();
-    !url.is_empty()
-        && url != "about:blank"
-        && !url.starts_with("devtools:")
-        && !url.starts_with("chrome:")
-        && !url.starts_with("chrome-extension:")
+    !url.is_empty() && !is_pending_new_page_url(url) && !is_internal_page_url(url)
+}
+
+fn is_internal_page_url(url: &str) -> bool {
+    let url = url.trim();
+    url.starts_with("devtools:")
+        || url.starts_with("chrome:")
+        || url.starts_with("chrome-extension:")
 }
 
 fn collect_tab_target_ids(browser: &Browser) -> HashSet<String> {
@@ -2034,7 +2099,7 @@ mod tests {
         ];
 
         assert_eq!(
-            choose_new_page_target_id(&active_id, &candidates).as_deref(),
+            choose_new_page_target_id(&active_id, &candidates, &HashSet::new()).as_deref(),
             Some("new-page")
         );
     }
@@ -2060,12 +2125,13 @@ mod tests {
             },
         ];
 
-        assert!(choose_new_page_target_id(&active_id, &candidates).is_none());
+        assert!(choose_new_page_target_id(&active_id, &candidates, &HashSet::new()).is_none());
     }
 
     #[test]
-    fn observed_blank_targets_become_known_after_non_adopting_scan() {
+    fn observed_blank_targets_remain_adoptable_after_late_navigation() {
         let mut known_target_ids = HashSet::from(["active".to_string()]);
+        let mut pending_page_target_ids = HashSet::new();
         let first_scan = vec![
             TargetCandidate {
                 id: "active".to_string(),
@@ -2079,8 +2145,22 @@ mod tests {
             },
         ];
 
-        assert!(choose_new_page_target_id("active", &first_scan).is_none());
-        mark_observed_targets_known(&mut known_target_ids, &first_scan);
+        track_pending_page_targets(
+            &mut known_target_ids,
+            &mut pending_page_target_ids,
+            &first_scan,
+        );
+        assert!(
+            choose_new_page_target_id("active", &first_scan, &pending_page_target_ids).is_none()
+        );
+        assert!(
+            known_target_ids.contains("late-popup"),
+            "pending blank targets should be known so they do not keep settle loops waiting"
+        );
+        assert!(
+            pending_page_target_ids.contains("late-popup"),
+            "pending blank targets should remain adoptable after they navigate"
+        );
 
         let second_scan = vec![
             TargetCandidate {
@@ -2095,7 +2175,45 @@ mod tests {
             },
         ];
 
-        assert!(choose_new_page_target_id("active", &second_scan).is_none());
+        assert_eq!(
+            choose_new_page_target_id("active", &second_scan, &pending_page_target_ids).as_deref(),
+            Some("late-popup")
+        );
+    }
+
+    #[test]
+    fn pending_target_tracking_ignores_internal_and_cleans_closed_targets() {
+        let mut known_target_ids = HashSet::from(["active".to_string()]);
+        let mut pending_page_target_ids = HashSet::from(["closed-popup".to_string()]);
+        let candidates = vec![
+            TargetCandidate {
+                id: "active".to_string(),
+                url: "https://example.com/current".to_string(),
+                previously_known: true,
+            },
+            TargetCandidate {
+                id: "blank-popup".to_string(),
+                url: "about:blank".to_string(),
+                previously_known: false,
+            },
+            TargetCandidate {
+                id: "devtools".to_string(),
+                url: "devtools://devtools/bundled/inspector.html".to_string(),
+                previously_known: false,
+            },
+        ];
+
+        track_pending_page_targets(
+            &mut known_target_ids,
+            &mut pending_page_target_ids,
+            &candidates,
+        );
+
+        assert!(!pending_page_target_ids.contains("closed-popup"));
+        assert!(pending_page_target_ids.contains("blank-popup"));
+        assert!(!pending_page_target_ids.contains("devtools"));
+        assert!(known_target_ids.contains("devtools"));
+        assert!(!has_unknown_targets(&candidates, &pending_page_target_ids));
     }
 
     #[test]
