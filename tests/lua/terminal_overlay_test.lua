@@ -903,6 +903,56 @@ end
 assert(text_input_seen, "focused text input should emit a text_input JSONL request")
 assert(shifted_tab_seen, "modified key presses should emit modifiers in the key_press JSONL request")
 
+sent_requests = {}
+assert(terminal.start_text_mode({
+  getcharstr = (function()
+    local keys = { "h", "i", "\r", "\t", vim.keycode("<S-Tab>"), vim.keycode("<BS>"), vim.keycode("<Esc>") }
+    local first = true
+    return function()
+      if first then
+        first = false
+        assert(terminal._test.preview_footer_line(120):match("^text"), "browser text mode should be visible in the preview footer")
+      end
+      return table.remove(keys, 1)
+    end
+  end)(),
+}) == true, "browser text mode should start for active cursor-addressable previews")
+assert(terminal.state().text_mode_active == false, "browser text mode should exit after Escape")
+local text_mode_text = {}
+local text_mode_keys = {}
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "text_input" then
+    table.insert(text_mode_text, decoded.text)
+  end
+  if ok and decoded.type == "key_press" then
+    table.insert(text_mode_keys, decoded.key .. ":" .. table.concat(decoded.modifiers or {}, "+"))
+  end
+end
+assert(table.concat(text_mode_text, "") == "hi", "browser text mode should send printable keys as text_input")
+assert(
+  table.concat(text_mode_keys, ",") == "Enter:,Tab:,Tab:shift,Backspace:",
+  "browser text mode should translate common editing keys to browser key presses"
+)
+assert(terminal._test.text_mode_key_action("\1") == nil, "browser text mode should ignore unmapped control characters")
+assert(terminal._test.text_mode_key_action(vim.keycode("<Del>")).key == "Delete", "browser text mode should translate Delete")
+assert(terminal._test.text_mode_key_action(vim.keycode("<Up>")).key == "ArrowUp", "browser text mode should translate ArrowUp")
+assert(terminal._test.text_mode_key_action(vim.keycode("<Down>")).key == "ArrowDown", "browser text mode should translate ArrowDown")
+assert(terminal._test.text_mode_key_action(vim.keycode("<Left>")).key == "ArrowLeft", "browser text mode should translate ArrowLeft")
+assert(terminal._test.text_mode_key_action(vim.keycode("<Right>")).key == "ArrowRight", "browser text mode should translate ArrowRight")
+
+terminal._test.set_cursor_addressable_preview(false)
+local text_mode_warning_count = #warnings
+assert(terminal.start_text_mode({ getcharstr = function()
+  error("inactive text mode should not read keys")
+end }) == false, "browser text mode should refuse inactive cursor-addressable previews")
+assert(
+  warnings[#warnings] == "nvim-browser: text mode requires an active cursor-addressable browser preview",
+  "browser text mode should warn when unavailable"
+)
+assert(#warnings == text_mode_warning_count + 1, "browser text mode should emit one inactive warning")
+terminal._test.set_cursor_addressable_preview(true)
+
 local reused_bufnr = second_state.bufnr
 terminal.open({ "nvbrowser", "show-image", "/tmp/image.png", "--output", "ansi" })
 local replacement_state = terminal.state()

@@ -11,6 +11,7 @@ assert(type(browser.hint_mode) == "function", "hint_mode API should exist")
 assert(type(browser.type_hint) == "function", "type_hint API should exist")
 assert(type(browser.type_hint_mode) == "function", "type_hint_mode API should exist")
 assert(type(browser.input_text_mode) == "function", "focused input text mode API should exist")
+assert(type(browser.start_text_mode) == "function", "interactive browser text mode API should exist")
 assert(type(browser.address) == "function", "address API should exist")
 assert(type(browser.resolve_address_target) == "function", "address target resolver should exist")
 assert(type(browser.find_text) == "function", "find_text API should exist")
@@ -42,6 +43,7 @@ local original_terminal_type_hint = terminal.type_hint
 local original_terminal_stop = terminal.stop
 local original_terminal_input_text = terminal.input_text
 local original_terminal_press_key = terminal.press_key
+local original_terminal_start_text_mode = terminal.start_text_mode
 
 browser.hints = function()
   return {}
@@ -122,6 +124,14 @@ assert(focused_input == "focused text", "input_text_mode should pass prompted te
 assert(browser.input_text_mode(function()
   return ""
 end) == false, "input_text_mode should cancel on empty text")
+
+local text_mode_opts = nil
+terminal.start_text_mode = function(opts)
+  text_mode_opts = opts
+  return true
+end
+assert(browser.start_text_mode({ source = "test" }) == true, "start_text_mode should delegate to terminal")
+assert(text_mode_opts.source == "test", "start_text_mode should pass options to terminal")
 
 local pressed_key = nil
 terminal.press_key = function(key, opts)
@@ -206,6 +216,7 @@ terminal.type_hint = original_terminal_type_hint
 terminal.stop = original_terminal_stop
 terminal.input_text = original_terminal_input_text
 terminal.press_key = original_terminal_press_key
+terminal.start_text_mode = original_terminal_start_text_mode
 
 local original_open = browser.open
 local original_navigate = browser.navigate

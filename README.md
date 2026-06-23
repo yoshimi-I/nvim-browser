@@ -190,6 +190,7 @@ Then run:
 :NBrowserFocusSelector input[name="q"]
 :NBrowserInput hello
 :NBrowserInputMode
+:NBrowserTextMode
 :NBrowserKey Enter
 :NBrowserKey A ctrl
 :NBrowserClick 120 240
@@ -264,12 +265,16 @@ or pass a value directly with `require("nvim-browser").address("example.com")`.
 match through the browser's native find behavior, and captures a fresh frame.
 
 `:NBrowserInput {text}` types text into the currently focused browser element.
-`:NBrowserInputMode` prompts once for text and sends it to the focused element,
-which is useful after clicking a field or focusing one with hints. Focused
-preview buffers also forward common browser keys: `<CR>`, `<Tab>`, `<S-Tab>`,
-`<BS>`, `x` Delete, `ge` Escape, `A` Ctrl-A select-all, `gl` Meta-L focus
-location, and arrow keys. `:NBrowserKey {key} [modifier ...]` accepts modifier
-names such as `ctrl`, `shift`, `alt`, and `meta`.
+`:NBrowserInputMode` prompts once for text and sends it to the focused element.
+`:NBrowserTextMode` enters an interactive browser text mode for the focused
+preview: printable keys are sent as text, `<CR>`, `<Tab>`, `<S-Tab>`, `<BS>`,
+Delete, and arrow keys are forwarded as browser keys, and `<Esc>` exits the text
+mode locally. Focused preview buffers map `i` to this text mode by default after
+clicking a field or focusing one with hints. Outside text mode, preview buffers
+also forward common browser keys: `<CR>`, `<Tab>`, `<S-Tab>`, `<BS>`, `x`
+Delete, `ge` Escape, `A` Ctrl-A select-all, `gl` Meta-L focus location, and
+arrow keys. `:NBrowserKey {key} [modifier ...]` accepts modifier names such as
+`ctrl`, `shift`, `alt`, and `meta`.
 
 `:NBrowserReader` captures the current browser page as Markdown-like text in a
 normal scratch buffer so page content can be selected, searched, and yanked
@@ -300,10 +305,11 @@ untouched; choose another prefix or mapping key if one is already in use.
 Focused preview buffers also install buffer-local browser controls by default:
 `r` reload, `H` back, `L` forward, `j`/`k` scroll, `a` address, `/` find, `f`
 hint mode, `t` type into a hinted field, `s` type and submit, `i` type into the
-focused element, `<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
-Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` Meta-L
-focus location, arrow keys, `<Esc>` stop a pending load, left click to click
-the browser viewport, scroll wheel to scroll the page, and `q` close.
+focused element with browser text mode, `<CR>` Enter, `<Tab>` Tab, `<S-Tab>`
+reverse Tab, `<BS>` Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A
+select-all, `gl` Meta-L focus location, arrow keys, `<Esc>` stop a pending
+load, left click to click the browser viewport, scroll wheel to scroll the
+page, and `q` close.
 Disable or remap them with
 `preview_keymaps = { enabled = false }` or `preview_keymaps.mappings`.
 

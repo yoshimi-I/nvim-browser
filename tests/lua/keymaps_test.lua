@@ -35,6 +35,10 @@ local browser = {
   input_text_mode = function(input)
     table.insert(calls, "input_mode:" .. input("nvim-browser text: "))
   end,
+  start_text_mode = function()
+    table.insert(calls, "text_mode")
+    return true
+  end,
   press_key = function(key, opts)
     local modifiers = opts ~= nil and opts.modifiers ~= nil and table.concat(opts.modifiers, "+") or ""
     table.insert(calls, "key:" .. key .. ":" .. modifiers)
@@ -257,7 +261,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,address,find:local,hints,type_hints:type:buffer text,type_hints:submit:buffer text,input_mode:buffer text,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,address,find:local,hints,type_hints:type:buffer text,type_hints:submit:buffer text,text_mode,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,close,click_mouse,scroll:120:0,scroll:-120:0,stop",
   "buffer-local controls should call browser APIs"
 )
 

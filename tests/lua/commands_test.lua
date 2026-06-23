@@ -14,6 +14,7 @@ local typed_hint = nil
 local submitted_hint = nil
 local input_text = nil
 local pressed_key = nil
+local text_mode_called = false
 local doctor_called = false
 local reader_called = false
 local reader_follow_called = false
@@ -55,6 +56,10 @@ local browser = {
   end,
   input_text_mode = function(input_fn)
     input_text = input_fn("nvim-browser text: ")
+    return true
+  end,
+  start_text_mode = function()
+    text_mode_called = true
     return true
   end,
   type_hint = function(label, text, opts)
@@ -195,6 +200,9 @@ vim.cmd("NBrowserInputMode")
 assert(prompted == "nvim-browser text: ", "NBrowserInputMode should prompt for focused text")
 assert(input_text == "s", "NBrowserInputMode should type prompted text into the focused element")
 
+vim.cmd("NBrowserTextMode")
+assert(text_mode_called == true, "NBrowserTextMode should start interactive browser text mode")
+
 vim.cmd("NBrowserTypeHint s hello world")
 assert(typed_hint == "s:hello world", "NBrowserTypeHint should pass the label and text to browser.type_hint")
 
@@ -270,6 +278,9 @@ local failed_browser = {
   input_text_mode = function()
     return false
   end,
+  start_text_mode = function()
+    return false
+  end,
   type_hint = function()
     return false
   end,
@@ -299,6 +310,9 @@ assert(warnings[#warnings] == "nvim-browser: focused text input failed or browse
 
 vim.cmd("NBrowserInputMode")
 assert(warnings[#warnings] == "nvim-browser: focused text input failed or browser session is inactive", "NBrowserInputMode should warn when focused text input fails")
+
+vim.cmd("NBrowserTextMode")
+assert(warnings[#warnings] == "nvim-browser: text mode requires an active cursor-addressable browser preview", "NBrowserTextMode should warn when text mode fails")
 
 vim.cmd("NBrowserTypeHint s missing")
 assert(warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive", "NBrowserTypeHint should warn when type_hint fails")

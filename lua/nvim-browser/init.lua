@@ -151,6 +151,10 @@ function M.input_text_mode(input)
   return M.input_text(text)
 end
 
+function M.start_text_mode(opts)
+  return terminal.start_text_mode(opts)
+end
+
 function M.press_key(key, opts)
   return terminal.press_key(key, opts)
 end

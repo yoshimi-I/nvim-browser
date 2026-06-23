@@ -33,6 +33,7 @@ local state = {
   element_hints = {},
   element_hints_geometry = nil,
   cursor_addressable_preview = false,
+  text_mode_active = false,
   reader_bufnr = nil,
   reader_base_url = nil,
 }
@@ -1012,7 +1013,7 @@ local function preview_footer_line(width)
     return truncate_cells(table.concat(parts, " | "), width)
   end
 
-  table.insert(parts, state.stopped_operation ~= nil and "stopped" or state.status or "idle")
+  table.insert(parts, state.text_mode_active and "text" or state.stopped_operation ~= nil and "stopped" or state.status or "idle")
 
   local title = state.current_title ~= nil and state.current_title ~= "" and state.current_title or nil
   local url = state.stopped_operation ~= nil
@@ -1503,6 +1504,7 @@ function M.close()
   state.element_hints = {}
   state.element_hints_geometry = nil
   state.cursor_addressable_preview = false
+  state.text_mode_active = false
   if state.stop_timer ~= nil then
     state.stop_timer:stop()
     state.stop_timer:close()
@@ -1608,6 +1610,91 @@ function M.press_key(key, opts)
     key = key,
     modifiers = opts.modifiers or {},
   })
+end
+
+local function text_mode_key_action(key)
+  if key == nil or key == "" then
+    return nil
+  end
+  local keycodes = {
+    escape = vim.keycode("<Esc>"),
+    enter = vim.keycode("<CR>"),
+    tab = vim.keycode("<Tab>"),
+    shift_tab = vim.keycode("<S-Tab>"),
+    backspace = vim.keycode("<BS>"),
+    delete = vim.keycode("<Del>"),
+    up = vim.keycode("<Up>"),
+    down = vim.keycode("<Down>"),
+    left = vim.keycode("<Left>"),
+    right = vim.keycode("<Right>"),
+  }
+  if key == "\27" or key == keycodes.escape then
+    return { type = "exit" }
+  end
+  if key == "\r" or key == "\n" or key == keycodes.enter then
+    return { type = "key", key = "Enter" }
+  end
+  if key == "\t" or key == keycodes.tab then
+    return { type = "key", key = "Tab" }
+  end
+  if key == keycodes.shift_tab then
+    return { type = "key", key = "Tab", modifiers = { "shift" } }
+  end
+  if key == "\127" or key == "\8" or key == keycodes.backspace then
+    return { type = "key", key = "Backspace" }
+  end
+  if key == keycodes.delete then
+    return { type = "key", key = "Delete" }
+  end
+  if key == keycodes.up then
+    return { type = "key", key = "ArrowUp" }
+  end
+  if key == keycodes.down then
+    return { type = "key", key = "ArrowDown" }
+  end
+  if key == keycodes.left then
+    return { type = "key", key = "ArrowLeft" }
+  end
+  if key == keycodes.right then
+    return { type = "key", key = "ArrowRight" }
+  end
+  if key:find("\27", 1, true) == nil and vim.fn.strchars(key) == 1 and key:byte(1) >= 32 then
+    return { type = "text", text = key }
+  end
+  return nil
+end
+
+function M.start_text_mode(opts)
+  opts = opts or {}
+  if state.mode ~= "serve" or state.job_id == nil or not is_valid_window() or not state.cursor_addressable_preview then
+    vim.api.nvim_echo({ { "nvim-browser: text mode requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+    return false
+  end
+
+  local getcharstr = opts.getcharstr or vim.fn.getcharstr
+  state.text_mode_active = true
+  refresh_preview_footer(state.bufnr)
+  local ok, err = pcall(function()
+    while state.text_mode_active do
+      local key = getcharstr()
+      local action = text_mode_key_action(key)
+      if action == nil then
+        -- Ignore terminal-only control sequences that do not map to browser input.
+      elseif action.type == "exit" then
+        state.text_mode_active = false
+      elseif action.type == "text" then
+        M.input_text(action.text)
+      elseif action.type == "key" then
+        M.press_key(action.key, { modifiers = action.modifiers or {} })
+      end
+    end
+  end)
+  state.text_mode_active = false
+  refresh_preview_footer(state.bufnr)
+  if not ok then
+    error(err)
+  end
+  return true
 end
 
 function M.focus_selector(selector)
@@ -1832,6 +1919,7 @@ function M.state()
     has_payload = state.last_payload ~= nil,
     mode = state.mode,
     serve_output = state.serve_output,
+    text_mode_active = state.text_mode_active,
     last_target = state.last_target,
     current_url = state.current_url,
     current_title = state.current_title,
@@ -1898,6 +1986,7 @@ M._test = {
   set_cursor_addressable_preview = function(value)
     state.cursor_addressable_preview = value
   end,
+  text_mode_key_action = text_mode_key_action,
   command_for_window = command_for_window,
   set_test_window = function(winid)
     state.winid = winid

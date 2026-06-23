@@ -209,8 +209,12 @@ function M.setup_buffer(browser, bufnr, opts)
   end, "nvim-browser: submit hinted input", buffer_opts)
 
   set_mapping(nil, mapping_lhs(mappings, "input_text_mode", "i"), function()
+    if browser.start_text_mode ~= nil then
+      browser.start_text_mode()
+      return
+    end
     browser.input_text_mode(input)
-  end, "nvim-browser: type into focused element", buffer_opts)
+  end, "nvim-browser: browser text mode", buffer_opts)
 
   set_mapping(nil, mapping_lhs(mappings, "key_enter", "<CR>"), function()
     browser.press_key("Enter")

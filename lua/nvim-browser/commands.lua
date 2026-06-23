@@ -73,6 +73,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: focused text input failed or browser session is inactive", "WarningMsg" } }, false, {})
   end
 
+  local function warn_text_mode_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: text mode requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+  end
+
   local function follow_hint(label)
     if browser.follow_hint ~= nil then
       return browser.follow_hint(label)
@@ -200,6 +204,16 @@ function M.register(browser, opts)
     end
     if not browser.input_text(text) then
       warn_focused_input_unavailable()
+    end
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserTextMode", function()
+    if browser.start_text_mode == nil then
+      warn_text_mode_unavailable()
+      return
+    end
+    if not browser.start_text_mode() then
+      warn_text_mode_unavailable()
     end
   end, {})
 
