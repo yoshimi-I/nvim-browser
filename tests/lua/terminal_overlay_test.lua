@@ -581,6 +581,17 @@ end
 
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
 local first_state = terminal.state()
+local startup_lines = vim.api.nvim_buf_get_lines(first_state.bufnr, 0, -1, false)
+local startup_columns = math.max(20, vim.api.nvim_win_get_width(first_state.winid) - 2)
+local startup_expected_rows = math.max(6, vim.api.nvim_win_get_height(first_state.winid) - 3) + 1
+assert(
+  #startup_lines == startup_expected_rows,
+  "serve startup placeholders should reserve render rows plus one footer row"
+)
+assert(
+  startup_lines[#startup_lines] == terminal._test.preview_footer_line(startup_columns),
+  "serve startup should append the preview footer"
+)
 assert(#fake_timers == 1, "serve sessions should start a live refresh timer by default")
 assert(fake_timers[1].starts[1].timeout == 1500, "live refresh should use the default interval as its initial delay")
 assert(fake_timers[1].starts[1].repeat_ms == 1500, "live refresh should repeat at the configured interval")

@@ -1181,6 +1181,9 @@ local function preview_lines(message, target)
     "",
     "Target: " .. (target or ""),
   }
+  if state.mode == "serve" and is_valid_window() then
+    return append_preview_footer(lines, current_preview_geometry())
+  end
   local height = is_valid_window() and vim.api.nvim_win_get_height(state.winid) or 24
   while #lines < height do
     table.insert(lines, "")

@@ -18,3 +18,10 @@ cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 ```
+
+Run the opt-in real Chromium serve loop test when touching CDP or JSONL browser
+session behavior:
+
+```sh
+NVBROWSER_E2E=1 cargo test -p nvbrowser --test cli_contract opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl -- --nocapture
+```

@@ -75,3 +75,6 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Long-running Chromium lifecycle, stuck navigation cancellation, and late
   response handling remain operational risk areas and should stay covered by
   tests.
+- Changes to the CDP renderer, JSONL `serve` protocol, frame payloads, hints,
+  page text, or resize behavior should run the opt-in real Chromium E2E test
+  with `NVBROWSER_E2E=1` in addition to the fake-renderer unit suite.
