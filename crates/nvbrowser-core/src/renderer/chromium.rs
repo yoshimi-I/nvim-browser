@@ -7,17 +7,20 @@ use std::{
 
 use headless_chrome::{
     browser::tab::{point::Point, Tab},
+    protocol::cdp::types::Method,
     protocol::cdp::Page::CaptureScreenshotFormatOption,
     types::Bounds,
     Browser, LaunchOptions,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     renderer::{
-        ClickPointRequest, FocusSelectorRequest, FrameArtifact, InputResult,
-        InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult, ReloadRequest,
-        ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
-        RendererErrorKind, ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
+        ClickPointRequest, FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest,
+        HistoryNavigationResult, InputResult, InteractionSettleResult, KeyPressRequest,
+        NavigateRequest, NavigationResult, ReloadRequest, ReloadResult, RenderFrameRequest,
+        RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest, ScrollResult,
+        ShutdownResult, TextInputRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -201,6 +204,20 @@ impl Renderer for ChromiumRenderer {
         })
     }
 
+    fn go_back(
+        &mut self,
+        request: HistoryNavigationRequest,
+    ) -> Result<HistoryNavigationResult, RendererError> {
+        self.navigate_history(request, HistoryDirection::Back)
+    }
+
+    fn go_forward(
+        &mut self,
+        request: HistoryNavigationRequest,
+    ) -> Result<HistoryNavigationResult, RendererError> {
+        self.navigate_history(request, HistoryDirection::Forward)
+    }
+
     fn input_text(&mut self, request: TextInputRequest) -> Result<InputResult, RendererError> {
         self.tab.type_str(&request.text).map_err(render_error)?;
         Ok(InputResult {
@@ -258,6 +275,109 @@ impl Renderer for ChromiumRenderer {
         Ok(ShutdownResult {})
     }
 }
+
+impl ChromiumRenderer {
+    fn navigate_history(
+        &mut self,
+        request: HistoryNavigationRequest,
+        direction: HistoryDirection,
+    ) -> Result<HistoryNavigationResult, RendererError> {
+        let history = self
+            .tab
+            .call_method(GetNavigationHistory {})
+            .map_err(render_error)?;
+        let target_index = match direction {
+            HistoryDirection::Back => history.current_index.checked_sub(1).ok_or_else(|| {
+                RendererError::new(RendererErrorKind::InvalidState, "no back history entry")
+            })?,
+            HistoryDirection::Forward => {
+                let next = history.current_index + 1;
+                if next >= history.entries.len() {
+                    return Err(RendererError::new(
+                        RendererErrorKind::InvalidState,
+                        "no forward history entry",
+                    ));
+                }
+                next
+            }
+        };
+        let target = history.entries.get(target_index).ok_or_else(|| {
+            RendererError::new(RendererErrorKind::InvalidState, "history entry is missing")
+        })?;
+        let target_url = target.url.clone();
+        self.tab
+            .call_method(NavigateToHistoryEntry {
+                entry_id: target.id,
+            })
+            .map_err(render_error)?;
+        let url = self.wait_for_current_url(&target_url)?;
+        self.tab.wait_until_navigated().map_err(render_error)?;
+        self.current_url = Some(url.clone());
+        Ok(HistoryNavigationResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+            url,
+        })
+    }
+
+    fn wait_for_current_url(&self, target_url: &str) -> Result<String, RendererError> {
+        for _ in 0..20 {
+            let url = self.tab.get_url();
+            if url == target_url {
+                return Ok(url);
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        let current_url = self.tab.get_url();
+        Err(RendererError::new(
+            RendererErrorKind::NavigationFailed,
+            format!("history navigation did not reach {target_url}; current URL is {current_url}"),
+        ))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum HistoryDirection {
+    Back,
+    Forward,
+}
+
+#[derive(Debug, Serialize)]
+struct GetNavigationHistory {}
+
+impl Method for GetNavigationHistory {
+    const NAME: &'static str = "Page.getNavigationHistory";
+
+    type ReturnObject = GetNavigationHistoryReturnObject;
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GetNavigationHistoryReturnObject {
+    current_index: usize,
+    entries: Vec<NavigationEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NavigationEntry {
+    id: i64,
+    url: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NavigateToHistoryEntry {
+    entry_id: i64,
+}
+
+impl Method for NavigateToHistoryEntry {
+    const NAME: &'static str = "Page.navigateToHistoryEntry";
+
+    type ReturnObject = NavigateToHistoryEntryReturnObject;
+}
+
+#[derive(Debug, Deserialize)]
+struct NavigateToHistoryEntryReturnObject {}
 
 fn launch_browser(binary: &Path, viewport: Viewport) -> Result<Browser, RendererError> {
     let options = LaunchOptions::default_builder()

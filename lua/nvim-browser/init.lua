@@ -59,6 +59,14 @@ function M.navigate(target)
   return ok
 end
 
+function M.back()
+  return terminal.back()
+end
+
+function M.forward()
+  return terminal.forward()
+end
+
 function M.scroll(delta_y, delta_x)
   return terminal.scroll(delta_y, delta_x)
 end
@@ -93,6 +101,10 @@ end
 
 function M.status()
   return terminal.state().status
+end
+
+function M.status_error()
+  return terminal.state().status_error
 end
 
 M.setup()

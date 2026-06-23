@@ -11,8 +11,9 @@ use nvbrowser_core::{
     inspect_target, kitty_image_escape, render_markdown_document,
     renderer::chromium::{render_url_png, ChromiumOptions},
     BrowserSession, ChromiumRenderer, ClickPointRequest, FocusSelectorRequest, FrameArtifact,
-    KeyPressRequest, KittyImageTransfer, NavigateRequest, ReloadRequest, RenderFrameRequest,
-    RenderedFrame, Renderer, ScrollRequest, SessionId, TextInputRequest, Viewport,
+    HistoryNavigationRequest, KeyPressRequest, KittyImageTransfer, NavigateRequest, ReloadRequest,
+    RenderFrameRequest, RenderedFrame, Renderer, ScrollRequest, SessionId, TextInputRequest,
+    Viewport,
 };
 use serde::{Deserialize, Serialize};
 
@@ -178,6 +179,12 @@ enum ServeRequest {
     Reload {
         id: u64,
     },
+    Back {
+        id: u64,
+    },
+    Forward {
+        id: u64,
+    },
     TextInput {
         id: u64,
         text: String,
@@ -318,6 +325,24 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.session.finish_active_page_load();
                 self.capture_payload().map(Some)
             }
+            ServeRequest::Back { .. } => {
+                let navigation = self.renderer.go_back(HistoryNavigationRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                ))?;
+                self.session.navigate_active_page(navigation.url);
+                self.session.finish_active_page_load();
+                self.capture_payload().map(Some)
+            }
+            ServeRequest::Forward { .. } => {
+                let navigation = self.renderer.go_forward(HistoryNavigationRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                ))?;
+                self.session.navigate_active_page(navigation.url);
+                self.session.finish_active_page_load();
+                self.capture_payload().map(Some)
+            }
             ServeRequest::TextInput { text, .. } => {
                 self.renderer.input_text(TextInputRequest::new(
                     self.session.id(),
@@ -400,6 +425,8 @@ impl ServeRequest {
             | ServeRequest::Capture { id }
             | ServeRequest::Scroll { id, .. }
             | ServeRequest::Reload { id }
+            | ServeRequest::Back { id }
+            | ServeRequest::Forward { id }
             | ServeRequest::TextInput { id, .. }
             | ServeRequest::KeyPress { id, .. }
             | ServeRequest::FocusSelector { id, .. }
@@ -561,8 +588,9 @@ fn rgba_to_rgb(pixel: Rgba<u8>) -> (u8, u8, u8) {
 mod tests {
     use super::*;
     use nvbrowser_core::{
-        FrameId, FrameMetadata, InputResult, InteractionSettleResult, NavigationResult,
-        ReloadResult, RendererError, RendererErrorKind, ScrollResult, ShutdownResult,
+        FrameId, FrameMetadata, HistoryNavigationResult, InputResult, InteractionSettleResult,
+        NavigationResult, ReloadResult, RendererError, RendererErrorKind, ScrollResult,
+        ShutdownResult,
     };
 
     struct FakeRenderer {
@@ -574,6 +602,8 @@ mod tests {
         focused_selectors: Vec<String>,
         clicked_points: Vec<(f64, f64)>,
         operations: Vec<&'static str>,
+        history: Vec<String>,
+        history_index: Option<usize>,
         settled_url: Option<String>,
         final_navigation_url: Option<String>,
         final_reload_url: Option<String>,
@@ -591,6 +621,8 @@ mod tests {
                 focused_selectors: Vec::new(),
                 clicked_points: Vec::new(),
                 operations: Vec::new(),
+                history: Vec::new(),
+                history_index: None,
                 settled_url: None,
                 final_navigation_url: None,
                 final_reload_url: None,
@@ -605,6 +637,11 @@ mod tests {
             request: NavigateRequest,
         ) -> Result<NavigationResult, RendererError> {
             let url = self.final_navigation_url.clone().unwrap_or(request.url);
+            if let Some(index) = self.history_index {
+                self.history.truncate(index + 1);
+            }
+            self.history.push(url.clone());
+            self.history_index = Some(self.history.len() - 1);
             self.url = Some(url.clone());
             Ok(NavigationResult {
                 session_id: request.session_id,
@@ -653,6 +690,52 @@ mod tests {
                 .unwrap_or_else(|| "about:blank".to_string());
             self.url = Some(url.clone());
             Ok(ReloadResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                url,
+            })
+        }
+
+        fn go_back(
+            &mut self,
+            request: HistoryNavigationRequest,
+        ) -> Result<HistoryNavigationResult, RendererError> {
+            self.operations.push("back");
+            let index = self.history_index.ok_or_else(|| {
+                RendererError::new(RendererErrorKind::InvalidState, "no browser history")
+            })?;
+            let previous = index.checked_sub(1).ok_or_else(|| {
+                RendererError::new(RendererErrorKind::InvalidState, "no back history entry")
+            })?;
+            self.history_index = Some(previous);
+            let url = self.history[previous].clone();
+            self.url = Some(url.clone());
+            Ok(HistoryNavigationResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                url,
+            })
+        }
+
+        fn go_forward(
+            &mut self,
+            request: HistoryNavigationRequest,
+        ) -> Result<HistoryNavigationResult, RendererError> {
+            self.operations.push("forward");
+            let index = self.history_index.ok_or_else(|| {
+                RendererError::new(RendererErrorKind::InvalidState, "no browser history")
+            })?;
+            let next = index + 1;
+            if next >= self.history.len() {
+                return Err(RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "no forward history entry",
+                ));
+            }
+            self.history_index = Some(next);
+            let url = self.history[next].clone();
+            self.url = Some(url.clone());
+            Ok(HistoryNavigationResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
                 url,
@@ -786,6 +869,17 @@ mod tests {
                 width: 800,
                 height: 480,
             }
+        );
+
+        assert_eq!(
+            parse_serve_request(r#"{"type":"back","id":9}"#).expect("back request should parse"),
+            ServeRequest::Back { id: 9 }
+        );
+
+        assert_eq!(
+            parse_serve_request(r#"{"type":"forward","id":10}"#)
+                .expect("forward request should parse"),
+            ServeRequest::Forward { id: 10 }
         );
     }
 
@@ -956,6 +1050,90 @@ mod tests {
                 .expect("frame")
                 .url,
             "https://example.com/reloaded"
+        );
+    }
+
+    #[test]
+    fn serve_runtime_goes_back_and_forward_in_browser_history() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com/one".to_string(),
+        });
+        runtime.handle(ServeRequest::Navigate {
+            id: 2,
+            url: "https://example.com/two".to_string(),
+        });
+
+        let back = runtime.handle(ServeRequest::Back { id: 3 });
+
+        assert_eq!(back.status, ServeStatus::Ok);
+        assert_eq!(back.url, Some("https://example.com/one".to_string()));
+        assert_eq!(
+            runtime.session.active_page().url(),
+            Some("https://example.com/one")
+        );
+
+        let forward = runtime.handle(ServeRequest::Forward { id: 4 });
+
+        assert_eq!(forward.status, ServeStatus::Ok);
+        assert_eq!(forward.url, Some("https://example.com/two".to_string()));
+        assert_eq!(
+            runtime.session.active_page().url(),
+            Some("https://example.com/two")
+        );
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["capture", "capture", "back", "capture", "forward", "capture"]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_reports_history_edge_without_replacing_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com/one".to_string(),
+        });
+        let frame_before = runtime
+            .session
+            .active_page()
+            .last_frame()
+            .expect("initial frame")
+            .clone();
+        let response = runtime.handle(ServeRequest::Back { id: 2 });
+
+        assert_eq!(response.id, 2);
+        assert_eq!(response.status, ServeStatus::Error);
+        assert_eq!(response.payload, None);
+        assert_eq!(response.url, Some("https://example.com/one".to_string()));
+        assert!(response
+            .error
+            .expect("error")
+            .contains("no back history entry"));
+        assert_eq!(
+            runtime.session.active_page().last_frame(),
+            Some(&frame_before)
         );
     }
 

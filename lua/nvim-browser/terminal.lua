@@ -15,6 +15,7 @@ local state = {
   stop_timer = nil,
   current_url = nil,
   status = nil,
+  status_error = nil,
 }
 
 local kitty_placeholder = vim.fn.nr2char(0x10eeee)
@@ -422,6 +423,7 @@ function M.open(command)
         end
 
         state.status = response.status
+        state.status_error = response.error
         if response.url ~= nil then
           state.current_url = response.url
         end
@@ -438,15 +440,7 @@ function M.open(command)
         end
 
         if response.status == "error" then
-          vim.bo[bufnr].modifiable = true
-          vim.api.nvim_buf_set_lines(
-            bufnr,
-            0,
-            -1,
-            false,
-            preview_lines("Browser session failed: " .. (response.error or "unknown error"), target)
-          )
-          vim.bo[bufnr].modifiable = false
+          vim.api.nvim_echo({ { "nvim-browser: " .. (response.error or "unknown error"), "WarningMsg" } }, false, {})
         end
       end)
     end
@@ -604,6 +598,7 @@ function M.close()
   state.mode = nil
   state.current_url = nil
   state.status = nil
+  state.status_error = nil
   if state.stop_timer ~= nil then
     state.stop_timer:stop()
     state.stop_timer:close()
@@ -632,6 +627,16 @@ function M.navigate(url)
     type = "navigate",
     url = url,
   })
+end
+
+function M.back()
+  request_resize()
+  return send_serve_request({ type = "back" })
+end
+
+function M.forward()
+  request_resize()
+  return send_serve_request({ type = "forward" })
 end
 
 function M.scroll(delta_y, delta_x)
@@ -725,6 +730,7 @@ function M.state()
     mode = state.mode,
     current_url = state.current_url,
     status = state.status,
+    status_error = state.status_error,
   }
 end
 

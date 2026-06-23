@@ -14,6 +14,16 @@ pub trait Renderer {
 
     fn reload(&mut self, request: ReloadRequest) -> Result<ReloadResult, RendererError>;
 
+    fn go_back(
+        &mut self,
+        request: HistoryNavigationRequest,
+    ) -> Result<HistoryNavigationResult, RendererError>;
+
+    fn go_forward(
+        &mut self,
+        request: HistoryNavigationRequest,
+    ) -> Result<HistoryNavigationResult, RendererError>;
+
     fn input_text(&mut self, request: TextInputRequest) -> Result<InputResult, RendererError>;
 
     fn press_key(&mut self, request: KeyPressRequest) -> Result<InputResult, RendererError>;
@@ -127,6 +137,28 @@ impl ReloadRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ReloadResult {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct HistoryNavigationRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+}
+
+impl HistoryNavigationRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId) -> Self {
+        Self {
+            session_id,
+            page_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HistoryNavigationResult {
     pub session_id: SessionId,
     pub page_id: PageId,
     pub url: String,
@@ -335,6 +367,30 @@ mod tests {
             })
         }
 
+        fn go_back(
+            &mut self,
+            request: HistoryNavigationRequest,
+        ) -> Result<HistoryNavigationResult, RendererError> {
+            self.current_url = Some("https://example.com/back".to_string());
+            Ok(HistoryNavigationResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                url: "https://example.com/back".to_string(),
+            })
+        }
+
+        fn go_forward(
+            &mut self,
+            request: HistoryNavigationRequest,
+        ) -> Result<HistoryNavigationResult, RendererError> {
+            self.current_url = Some("https://example.com/forward".to_string());
+            Ok(HistoryNavigationResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                url: "https://example.com/forward".to_string(),
+            })
+        }
+
         fn input_text(&mut self, request: TextInputRequest) -> Result<InputResult, RendererError> {
             Ok(InputResult {
                 session_id: request.session_id,
@@ -418,6 +474,12 @@ mod tests {
         let reload = renderer
             .reload(ReloadRequest::new(session_id, page_id))
             .expect("reload should succeed");
+        let back = renderer
+            .go_back(HistoryNavigationRequest::new(session_id, page_id))
+            .expect("back should succeed");
+        let forward = renderer
+            .go_forward(HistoryNavigationRequest::new(session_id, page_id))
+            .expect("forward should succeed");
         let shutdown = renderer.shutdown();
 
         assert_eq!(scroll.session_id, session_id);
@@ -425,6 +487,12 @@ mod tests {
         assert_eq!(reload.session_id, session_id);
         assert_eq!(reload.page_id, page_id);
         assert_eq!(reload.url, "https://example.com");
+        assert_eq!(back.session_id, session_id);
+        assert_eq!(back.page_id, page_id);
+        assert_eq!(back.url, "https://example.com/back");
+        assert_eq!(forward.session_id, session_id);
+        assert_eq!(forward.page_id, page_id);
+        assert_eq!(forward.url, "https://example.com/forward");
         assert!(shutdown.is_ok());
         assert!(renderer.shutdown);
     }

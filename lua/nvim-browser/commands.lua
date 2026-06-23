@@ -41,6 +41,14 @@ function M.register(browser)
     nargs = 1,
   })
 
+  vim.api.nvim_create_user_command("NBrowserBack", function()
+    browser.back()
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserForward", function()
+    browser.forward()
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserScrollDown", function(opts)
     browser.scroll(tonumber(opts.args) or 400, 0)
   end, {
@@ -85,7 +93,12 @@ function M.register(browser)
   vim.api.nvim_create_user_command("NBrowserStatus", function()
     local status = browser.status() or "unknown"
     local url = browser.current_url() or ""
-    vim.api.nvim_echo({ { status .. (url ~= "" and (" " .. url) or "") } }, false, {})
+    local error = browser.status_error and browser.status_error() or nil
+    local message = status .. (url ~= "" and (" " .. url) or "")
+    if error ~= nil and error ~= "" then
+      message = message .. " " .. error
+    end
+    vim.api.nvim_echo({ { message } }, false, {})
   end, {})
 
   vim.api.nvim_create_user_command("NBrowserToggle", function()
