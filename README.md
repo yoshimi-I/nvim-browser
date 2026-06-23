@@ -18,6 +18,8 @@ This repository is an early MVP scaffold. Today it includes:
 - Chromium/CDP browser sessions rendered through Kitty graphics or ANSI output
 - Ghostty-oriented browser previews use full-frame Kitty Unicode image placement
   with cursor-addressable placeholder cells
+- large literal Kitty browser frames are split into stable image tiles to keep
+  oversized transfers replaceable inside the preview surface
 - Neovim commands for opening, navigating, reloading, history, scrolling, finding text, text input, keys, selector focus, point clicks, and hinted element clicks
 - browser element hints overlaid on cursor-addressable previews
 - persistent Neovim preview surface reuse

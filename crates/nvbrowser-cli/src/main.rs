@@ -8,7 +8,8 @@ use base64::{engine::general_purpose, Engine};
 use clap::{Parser, Subcommand, ValueEnum};
 use image::{imageops::FilterType, DynamicImage, GenericImageView, ImageFormat, Rgba};
 use nvbrowser_core::{
-    inspect_target, kitty_image_escape, render_markdown_document_with_base_url,
+    inspect_target, kitty_image_escape, kitty_tiled_image_delete_escape,
+    render_markdown_document_with_base_url,
     renderer::chromium::{render_url_png, ChromiumOptions},
     BrowserSession, ChromiumRenderer, ClickPointRequest, ElementHint, ElementHintsRequest,
     FindTextRequest, FocusSelectorRequest, FrameArtifact, HistoryNavigationRequest,
@@ -176,15 +177,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } => {
             let viewport = Viewport::new(width, height);
             let frame = render_url_png(&url, viewport, chromium_options(cdp_ws_url))?;
-            let FrameArtifact::Png(png) = frame.artifact else {
-                return Err("Chromium renderer returned a non-PNG artifact".into());
-            };
             match output {
                 ImageOutput::Kitty => {
-                    let encoded = general_purpose::STANDARD.encode(png);
-                    print!("{}", kitty_browse_escape(encoded, viewport, columns, rows));
+                    print!("{}", frame_to_payload(frame, output, columns, rows)?);
                 }
                 ImageOutput::KittyUnicode => {
+                    let FrameArtifact::Png(png) = frame.artifact else {
+                        return Err("Chromium renderer returned a non-PNG artifact".into());
+                    };
                     let encoded = general_purpose::STANDARD.encode(png);
                     print!(
                         "{}",
@@ -192,6 +192,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
                 ImageOutput::Ansi => {
+                    let FrameArtifact::Png(png) = frame.artifact else {
+                        return Err("Chromium renderer returned a non-PNG artifact".into());
+                    };
                     let image = image::load_from_memory_with_format(&png, ImageFormat::Png)?;
                     print!("{}", image_to_ansi_halfblocks(&image, columns, None));
                 }
@@ -757,8 +760,16 @@ fn frame_to_payload(
     let viewport = frame.metadata.viewport;
     match output {
         ImageOutput::Kitty => {
+            if should_tile_kitty_frame(&png, viewport) {
+                let rows = rows.unwrap_or_else(|| inferred_kitty_rows(viewport, columns));
+                return kitty_tiled_browse_escape(&png, viewport, columns, rows, 40, 20);
+            }
             let encoded = general_purpose::STANDARD.encode(png);
-            Ok(kitty_browse_escape(encoded, viewport, columns, rows))
+            Ok(format!(
+                "{}{}",
+                kitty_tile_cleanup_escape(),
+                kitty_browse_escape(encoded, viewport, columns, rows)
+            ))
         }
         ImageOutput::KittyUnicode => {
             let encoded = general_purpose::STANDARD.encode(png);
@@ -771,6 +782,30 @@ fn frame_to_payload(
             Ok(image_to_ansi_halfblocks(&image, columns, None))
         }
     }
+}
+
+fn should_tile_kitty_frame(png: &[u8], viewport: Viewport) -> bool {
+    const LARGE_FRAME_BYTES: usize = 1024 * 1024;
+    const LARGE_FRAME_PIXELS: u64 = 1024 * 1024;
+    png.len() > LARGE_FRAME_BYTES
+        || u64::from(viewport.width) * u64::from(viewport.height) > LARGE_FRAME_PIXELS
+}
+
+const MAX_KITTY_TILES: u32 = 256;
+
+fn inferred_kitty_rows(viewport: Viewport, columns: u32) -> u32 {
+    let columns = columns.max(1);
+    let width = viewport.width.max(1);
+    let height = viewport.height.max(1);
+    ((u64::from(height) * u64::from(columns)).div_ceil(u64::from(width))) as u32
+}
+
+fn kitty_tile_cleanup_escape() -> String {
+    format!(
+        "{}{}",
+        KittyImageDelete::new(1).escape(),
+        kitty_tiled_image_delete_escape(2, MAX_KITTY_TILES)
+    )
 }
 
 fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> {
@@ -875,6 +910,80 @@ fn kitty_unicode_browse_escape(
         KittyImageDelete::new(1).escape(),
         transfer.virtual_placement_escape(columns, rows.unwrap_or(1))
     )
+}
+
+fn kitty_tiled_browse_escape(
+    png: &[u8],
+    viewport: Viewport,
+    columns: u32,
+    rows: u32,
+    tile_columns: u32,
+    tile_rows: u32,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let image = image::load_from_memory_with_format(png, ImageFormat::Png)?;
+    let columns = columns.max(1);
+    let rows = rows.max(1);
+    let tile_columns = tile_columns.max(1);
+    let tile_rows = tile_rows.max(1);
+    let tile_count =
+        u64::from(columns.div_ceil(tile_columns)) * u64::from(rows.div_ceil(tile_rows));
+    if tile_count > u64::from(MAX_KITTY_TILES) {
+        return Err(format!("Kitty tile count {tile_count} exceeds max {MAX_KITTY_TILES}").into());
+    }
+
+    let mut output = kitty_tile_cleanup_escape();
+
+    let mut tile_index = 0;
+    for row in (0..rows).step_by(tile_rows as usize) {
+        let cell_rows = (rows - row).min(tile_rows);
+        let y = cell_to_pixel(row, rows, viewport.height);
+        let bottom = cell_to_pixel(row + cell_rows, rows, viewport.height);
+        for column in (0..columns).step_by(tile_columns as usize) {
+            let cell_columns = (columns - column).min(tile_columns);
+            let x = cell_to_pixel(column, columns, viewport.width);
+            let right = cell_to_pixel(column + cell_columns, columns, viewport.width);
+            let tile_width = (right - x).max(1);
+            let tile_height = (bottom - y).max(1);
+            let tile = image.crop_imm(x, y, tile_width, tile_height);
+            let mut tile_png = Cursor::new(Vec::new());
+            tile.write_to(&mut tile_png, ImageFormat::Png)?;
+            let encoded = general_purpose::STANDARD.encode(tile_png.into_inner());
+            let transfer =
+                KittyImageTransfer::new(2 + tile_index, tile_width, tile_height, encoded);
+            output.push_str(&relative_cursor_move_escape(column, row));
+            output.push_str(&transfer.tile_escape(1 + tile_index, cell_columns, cell_rows));
+            output.push_str(&relative_cursor_restore_escape(column, row));
+            tile_index += 1;
+        }
+    }
+
+    Ok(output)
+}
+
+fn cell_to_pixel(cell: u32, cells: u32, pixels: u32) -> u32 {
+    ((cell as u64 * pixels as u64) / cells.max(1) as u64) as u32
+}
+
+fn relative_cursor_move_escape(columns: u32, rows: u32) -> String {
+    let mut escape = String::new();
+    if rows > 0 {
+        escape.push_str(&format!("\x1b[{rows}B"));
+    }
+    if columns > 0 {
+        escape.push_str(&format!("\x1b[{columns}C"));
+    }
+    escape
+}
+
+fn relative_cursor_restore_escape(columns: u32, rows: u32) -> String {
+    let mut escape = String::new();
+    if columns > 0 {
+        escape.push_str(&format!("\x1b[{columns}D"));
+    }
+    if rows > 0 {
+        escape.push_str(&format!("\x1b[{rows}A"));
+    }
+    escape
 }
 
 fn kitty_placed_image_escape(
@@ -1384,6 +1493,42 @@ mod tests {
     }
 
     #[test]
+    fn kitty_tiled_browse_escape_splits_frame_into_stable_tiles() {
+        let png = test_png(10, 5);
+        let escape = kitty_tiled_browse_escape(&png, Viewport::new(10, 5), 5, 3, 2, 2)
+            .expect("tiled kitty payload should be created");
+
+        assert!(escape.starts_with("\x1b_Ga=d,d=i,i=1\x1b\\"));
+        assert!(escape.contains("\x1b_Ga=d,d=i,i=257\x1b\\"));
+        assert!(escape.contains("\x1b_Ga=d,d=i,i=7\x1b\\"));
+        assert!(escape.contains("a=T,C=1,i=2,p=1,c=2,r=2,f=100,s=4,v=3"));
+        assert!(escape.contains("\x1b[2C\x1b_Ga=T,C=1,i=3,p=2,c=2,r=2,f=100,s=4,v=3"));
+        assert!(escape.contains("\x1b[2D"));
+        assert!(escape.contains("a=T,C=1,i=7,p=6,c=1,r=1,f=100,s=2,v=2"));
+        assert!(escape.contains("\x1b[2B\x1b[4C\x1b_Ga=T,C=1,i=7,p=6,c=1,r=1,f=100,s=2,v=2"));
+        assert!(escape.contains("\x1b[4D\x1b[2A"));
+        assert_eq!(escape.matches("a=T,C=1").count(), 6);
+    }
+
+    #[test]
+    fn kitty_tiled_browse_escape_rejects_more_than_stable_tile_range() {
+        let png = test_png(17, 17);
+        let err = kitty_tiled_browse_escape(&png, Viewport::new(17, 17), 17, 17, 1, 1)
+            .expect_err("too many tiles should be rejected");
+
+        assert!(err.to_string().contains("exceeds max 256"));
+    }
+
+    #[test]
+    fn kitty_tiled_browse_escape_rejects_tile_count_before_u32_overflow() {
+        let png = tiny_png();
+        let err = kitty_tiled_browse_escape(&png, Viewport::new(1, 1), u32::MAX, u32::MAX, 1, 1)
+            .expect_err("overflow-sized tile grids should be rejected");
+
+        assert!(err.to_string().contains("exceeds max 256"));
+    }
+
+    #[test]
     fn ansi_halfblocks_can_use_fitted_height() {
         let image = DynamicImage::new_rgba8(20, 200);
         let output = image_to_ansi_halfblocks(&image, 4, Some(4));
@@ -1651,6 +1796,40 @@ mod tests {
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(payload.starts_with("\x1b_Ga=d,d=i,i=1\x1b\\"));
         assert!(payload.contains("a=T,q=2,U=1,i=1,c=12,r=6,f=100,s=120,v=60"));
+    }
+
+    #[test]
+    fn frame_to_payload_tiles_large_kitty_browser_frames() {
+        let frame = frame_with_png(1200, 900);
+
+        let payload = frame_to_payload(frame, ImageOutput::Kitty, 120, Some(90)).expect("payload");
+
+        assert!(payload.starts_with("\x1b_Ga=d,d=i,i=1\x1b\\"));
+        assert!(payload.contains("a=T,C=1,i=2,p=1,c=40,r=20"));
+        assert!(payload.matches("a=T,C=1").count() > 1);
+    }
+
+    #[test]
+    fn frame_to_payload_tiles_large_kitty_browser_frames_without_explicit_rows() {
+        let frame = frame_with_png(1200, 900);
+
+        let payload = frame_to_payload(frame, ImageOutput::Kitty, 120, None).expect("payload");
+
+        assert!(payload.starts_with("\x1b_Ga=d,d=i,i=1\x1b\\"));
+        assert!(payload.contains("a=T,C=1,i=2,p=1,c=40,r=20"));
+        assert!(payload.matches("a=T,C=1").count() > 1);
+    }
+
+    #[test]
+    fn frame_to_payload_keeps_small_kitty_browser_frames_monolithic() {
+        let frame = frame_with_png(320, 200);
+
+        let payload = frame_to_payload(frame, ImageOutput::Kitty, 80, Some(24)).expect("payload");
+
+        assert!(payload.starts_with("\x1b_Ga=d,d=i,i=1\x1b\\"));
+        assert!(payload.contains("\x1b_Ga=d,d=i,i=257\x1b\\"));
+        assert!(payload.contains("\x1b_Ga=T,i=1,p=1,c=80,r=24"));
+        assert!(!payload.contains("C=1"));
     }
 
     #[test]
@@ -2381,10 +2560,34 @@ mod tests {
         }
     }
 
+    fn frame_with_png(width: u32, height: u32) -> RenderedFrame {
+        RenderedFrame {
+            metadata: FrameMetadata::new(
+                FrameId::new(1),
+                SessionId::new(1),
+                PageId::new(1),
+                "https://example.com",
+                Some("Example Domain".to_string()),
+                Viewport::new(width, height),
+                123456,
+            ),
+            artifact: FrameArtifact::Png(test_png(width, height)),
+        }
+    }
+
     fn tiny_png() -> Vec<u8> {
         const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
         general_purpose::STANDARD
             .decode(PNG)
             .expect("embedded PNG should decode")
+    }
+
+    fn test_png(width: u32, height: u32) -> Vec<u8> {
+        let image = DynamicImage::new_rgba8(width, height);
+        let mut png = Cursor::new(Vec::new());
+        image
+            .write_to(&mut png, ImageFormat::Png)
+            .expect("test PNG should encode");
+        png.into_inner()
     }
 }

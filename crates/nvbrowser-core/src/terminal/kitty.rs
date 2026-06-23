@@ -48,6 +48,20 @@ impl KittyImageTransfer {
         )
     }
 
+    pub fn tile_escape(&self, placement_id: u32, columns: u32, rows: u32) -> String {
+        let control = format!(
+            "a=T,C=1,i={},p={},c={},r={},f=100,s={},v={}",
+            self.image_id,
+            placement_id,
+            columns.max(1),
+            rows.max(1),
+            self.width_px,
+            self.height_px
+        );
+
+        chunked_escape(&control, &self.base64_png)
+    }
+
     pub fn virtual_placement_escape(&self, columns: u32, rows: u32) -> String {
         let control = format!(
             "a=T,q=2,U=1,i={},c={},r={},f=100,s={},v={}",
@@ -152,6 +166,12 @@ pub fn kitty_image_escape(base64_png: &str) -> String {
     format!("\x1b_Ga=T,f=100,m=0;{base64_png}\x1b\\")
 }
 
+pub fn kitty_tiled_image_delete_escape(first_image_id: u32, tile_count: u32) -> String {
+    (0..tile_count)
+        .map(|offset| KittyImageDelete::new(first_image_id + offset).escape())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,6 +214,24 @@ mod tests {
         assert_eq!(
             transfer.placed_escape(7, 80, 24),
             "\x1b_Ga=T,i=42,p=7,c=80,r=24,f=100,s=800,v=600,m=0;iVBORw0KGgo=\x1b\\"
+        );
+    }
+
+    #[test]
+    fn image_transfer_can_display_tile_without_moving_cursor() {
+        let transfer = KittyImageTransfer::new(42, 400, 300, "iVBORw0KGgo=");
+
+        assert_eq!(
+            transfer.tile_escape(7, 40, 12),
+            "\x1b_Ga=T,C=1,i=42,p=7,c=40,r=12,f=100,s=400,v=300,m=0;iVBORw0KGgo=\x1b\\"
+        );
+    }
+
+    #[test]
+    fn tiled_image_delete_clears_stable_tile_range() {
+        assert_eq!(
+            kitty_tiled_image_delete_escape(2, 3),
+            "\x1b_Ga=d,d=i,i=2\x1b\\\x1b_Ga=d,d=i,i=3\x1b\\\x1b_Ga=d,d=i,i=4\x1b\\"
         );
     }
 

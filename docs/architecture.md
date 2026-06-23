@@ -58,11 +58,13 @@ renderer returns frame artifacts and metadata. A later presentation layer can
 turn those artifacts into Kitty graphics, text buffers, tiled screenshots, or
 other terminal output.
 
-The current browser preview path uses a single full-frame Chromium PNG per
+The default browser preview path uses a single full-frame Chromium PNG per
 capture and presents it as one Kitty Unicode virtual placement. The Neovim
 buffer is filled with terminal-cell placeholders so the preview remains
-cursor-addressable. Literal multi-image screenshot tiling is intentionally left
-as a later optimization if full-frame transfers become too large or too slow.
+cursor-addressable. Literal Kitty output (`--output kitty`) can split large
+browser frames into stable row-major image tiles. Tile payloads clear the full
+stable tile ID range before reusing IDs so frame replacement is deterministic
+when a large capture is followed by a smaller one.
 
 Image preview should also follow this contract. Direct image handling can be a
 renderer adapter that accepts a file target, produces a `RenderedFrame` with a

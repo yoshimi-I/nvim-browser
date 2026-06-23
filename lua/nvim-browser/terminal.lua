@@ -286,8 +286,12 @@ local function apply_kitty_placeholder_highlight(bufnr, rows)
   end
 end
 
-local function kitty_delete_escape()
-  return "\x1b_Ga=d,d=i,i=" .. state.image_id .. "\x1b\\"
+local function kitty_cleanup_escape()
+  local escapes = { "\x1b_Ga=d,d=i,i=" .. state.image_id .. "\x1b\\" }
+  for image_id = 2, 257 do
+    table.insert(escapes, "\x1b_Ga=d,d=i,i=" .. image_id .. "\x1b\\")
+  end
+  return table.concat(escapes)
 end
 
 local function terminal_escape(payload)
@@ -570,7 +574,7 @@ local function emit_terminal_graphics(payload, winid)
   end
 
   vim.cmd("redraw")
-  send_terminal_escape(kitty_delete_escape())
+  send_terminal_escape(kitty_cleanup_escape())
   vim.api.nvim_chan_send(vim.v.stderr, cursor_position_escape(winid))
   send_terminal_escape(payload)
 end
@@ -628,7 +632,7 @@ function M.open(command)
   state.element_hints = {}
   state.element_hints_geometry = nil
   state.cursor_addressable_preview = false
-  pcall(send_terminal_escape, kitty_delete_escape())
+  pcall(send_terminal_escape, kitty_cleanup_escape())
 
   local previous_bufnr = state.bufnr
   state.bufnr = vim.api.nvim_create_buf(false, true)
@@ -868,7 +872,7 @@ end
 function M.close()
   state.generation = state.generation + 1
   stop_existing_job(false)
-  pcall(send_terminal_escape, kitty_delete_escape())
+  pcall(send_terminal_escape, kitty_cleanup_escape())
   hints_overlay.clear(state.bufnr)
   if is_valid_window() then
     vim.api.nvim_win_close(state.winid, true)
@@ -1056,7 +1060,7 @@ end
 
 function M.toggle()
   if is_valid_window() then
-    pcall(send_terminal_escape, kitty_delete_escape())
+    pcall(send_terminal_escape, kitty_cleanup_escape())
     hints_overlay.clear(state.bufnr)
     vim.api.nvim_win_close(state.winid, true)
     state.winid = nil
@@ -1115,6 +1119,7 @@ M._test = {
     return hints_overlay.namespace()
   end,
   handle_find_text_response = handle_find_text_response,
+  kitty_cleanup_escape = kitty_cleanup_escape,
   set_last_find_found = function(value)
     state.last_find_found = value
   end,

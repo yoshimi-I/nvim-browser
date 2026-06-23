@@ -3,6 +3,19 @@ package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.pa
 
 local terminal = require("nvim-browser.terminal")
 
+local original_nvim_chan_send = vim.api.nvim_chan_send
+vim.api.nvim_chan_send = function(channel, payload)
+  if channel == vim.v.stderr then
+    return 0
+  end
+  return original_nvim_chan_send(channel, payload)
+end
+
+local cleanup_escape = terminal._test.kitty_cleanup_escape()
+assert(cleanup_escape:find("\27_Ga=d,d=i,i=1\27\\", 1, true), "cleanup should delete monolithic image id 1")
+assert(cleanup_escape:find("\27_Ga=d,d=i,i=2\27\\", 1, true), "cleanup should delete first tile image id")
+assert(cleanup_escape:find("\27_Ga=d,d=i,i=257\27\\", 1, true), "cleanup should delete the max stable tile image id")
+
 local bufnr = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { string.rep(" ", 12), string.rep(" ", 12), string.rep(" ", 12) })
 
@@ -247,4 +260,5 @@ vim.fn.jobstop = original_jobstop
 vim.fn.termopen = original_termopen
 terminal.close()
 
+vim.api.nvim_chan_send = original_nvim_chan_send
 vim.api.nvim_echo = original_echo
