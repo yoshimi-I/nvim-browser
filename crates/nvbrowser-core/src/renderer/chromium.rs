@@ -14,10 +14,10 @@ use headless_chrome::{
 
 use crate::{
     renderer::{
-        ClickPointRequest, FocusSelectorRequest, FrameArtifact, InputResult, KeyPressRequest,
-        NavigateRequest, NavigationResult, ReloadRequest, ReloadResult, RenderFrameRequest,
-        RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest, ScrollResult,
-        ShutdownResult, TextInputRequest,
+        ClickPointRequest, FocusSelectorRequest, FrameArtifact, InputResult,
+        InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult, ReloadRequest,
+        ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
+        RendererErrorKind, ScrollRequest, ScrollResult, ShutdownResult, TextInputRequest,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -241,11 +241,12 @@ impl Renderer for ChromiumRenderer {
         })
     }
 
-    fn settle_after_interaction(&mut self) -> Result<(), RendererError> {
+    fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
         thread::sleep(Duration::from_millis(75));
         self.tab.wait_until_navigated().map_err(render_error)?;
-        self.current_url = Some(self.tab.get_url());
-        Ok(())
+        let url = self.tab.get_url();
+        self.current_url = Some(url.clone());
+        Ok(InteractionSettleResult::new(url))
     }
 
     fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {

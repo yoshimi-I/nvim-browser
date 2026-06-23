@@ -25,7 +25,7 @@ pub trait Renderer {
 
     fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError>;
 
-    fn settle_after_interaction(&mut self) -> Result<(), RendererError>;
+    fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError>;
 
     fn shutdown(&mut self) -> Result<ShutdownResult, RendererError>;
 }
@@ -169,6 +169,17 @@ impl KeyPressRequest {
 pub struct InputResult {
     pub session_id: SessionId,
     pub page_id: PageId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct InteractionSettleResult {
+    pub url: String,
+}
+
+impl InteractionSettleResult {
+    pub fn new(url: impl Into<String>) -> Self {
+        Self { url: url.into() }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -356,9 +367,9 @@ mod tests {
             })
         }
 
-        fn settle_after_interaction(&mut self) -> Result<(), RendererError> {
+        fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
             self.settled = true;
-            Ok(())
+            Ok(InteractionSettleResult::new("https://example.com"))
         }
 
         fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
@@ -461,10 +472,11 @@ mod tests {
     fn renderer_contract_supports_interaction_settle() {
         let mut renderer = FakeRenderer::new();
 
-        renderer
+        let settled = renderer
             .settle_after_interaction()
             .expect("interaction settle should succeed");
 
         assert!(renderer.settled);
+        assert_eq!(settled.url, "https://example.com");
     }
 }

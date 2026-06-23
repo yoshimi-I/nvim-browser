@@ -318,7 +318,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.active_page_id(),
                     text,
                 ))?;
-                self.renderer.settle_after_interaction()?;
+                self.settle_after_interaction()?;
                 self.capture_payload().map(Some)
             }
             ServeRequest::KeyPress { key, .. } => {
@@ -327,7 +327,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.active_page_id(),
                     key,
                 ))?;
-                self.renderer.settle_after_interaction()?;
+                self.settle_after_interaction()?;
                 self.capture_payload().map(Some)
             }
             ServeRequest::FocusSelector { selector, .. } => {
@@ -336,7 +336,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.active_page_id(),
                     selector,
                 ))?;
-                self.renderer.settle_after_interaction()?;
+                self.settle_after_interaction()?;
                 self.capture_payload().map(Some)
             }
             ServeRequest::ClickPoint { x, y, .. } => {
@@ -346,7 +346,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     x,
                     y,
                 ))?;
-                self.renderer.settle_after_interaction()?;
+                self.settle_after_interaction()?;
                 self.capture_payload().map(Some)
             }
             ServeRequest::Resize {
@@ -377,6 +377,13 @@ impl<R: Renderer> ServeRuntime<R> {
         ))?;
         self.session.set_active_page_frame(frame.metadata.clone());
         frame_to_payload(frame, self.output, self.columns, Some(self.rows))
+    }
+
+    fn settle_after_interaction(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let settled = self.renderer.settle_after_interaction()?;
+        self.session.navigate_active_page(settled.url);
+        self.session.finish_active_page_load();
+        Ok(())
     }
 }
 
@@ -547,8 +554,8 @@ fn rgba_to_rgb(pixel: Rgba<u8>) -> (u8, u8, u8) {
 mod tests {
     use super::*;
     use nvbrowser_core::{
-        FrameId, FrameMetadata, InputResult, NavigationResult, ReloadResult, RendererError,
-        RendererErrorKind, ScrollResult, ShutdownResult,
+        FrameId, FrameMetadata, InputResult, InteractionSettleResult, NavigationResult,
+        ReloadResult, RendererError, RendererErrorKind, ScrollResult, ShutdownResult,
     };
 
     struct FakeRenderer {
@@ -560,6 +567,7 @@ mod tests {
         focused_selectors: Vec<String>,
         clicked_points: Vec<(f64, f64)>,
         operations: Vec<&'static str>,
+        settled_url: Option<String>,
         shutdown: bool,
     }
 
@@ -574,6 +582,7 @@ mod tests {
                 focused_selectors: Vec::new(),
                 clicked_points: Vec::new(),
                 operations: Vec::new(),
+                settled_url: None,
                 shutdown: false,
             }
         }
@@ -673,9 +682,15 @@ mod tests {
             })
         }
 
-        fn settle_after_interaction(&mut self) -> Result<(), RendererError> {
+        fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
             self.operations.push("settle");
-            Ok(())
+            let url = self.settled_url.clone().unwrap_or_else(|| {
+                self.url
+                    .clone()
+                    .unwrap_or_else(|| "about:blank".to_string())
+            });
+            self.url = Some(url.clone());
+            Ok(InteractionSettleResult::new(url))
         }
 
         fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
@@ -995,6 +1010,46 @@ mod tests {
         assert_eq!(
             runtime.renderer.operations,
             vec!["capture", "click_point", "settle", "capture"]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_syncs_session_url_after_interaction_settle() {
+        let mut renderer = FakeRenderer::new();
+        renderer.settled_url = Some("https://example.com/after-submit".to_string());
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com/form".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::KeyPress {
+            id: 2,
+            key: "Enter".to_string(),
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert_eq!(
+            runtime.session.active_page().url(),
+            Some("https://example.com/after-submit")
+        );
+        assert_eq!(
+            runtime
+                .session
+                .active_page()
+                .last_frame()
+                .expect("frame")
+                .url,
+            "https://example.com/after-submit"
         );
     }
 
