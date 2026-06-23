@@ -32,6 +32,7 @@ local stop_called = false
 local hovered_here = false
 local hovered_hint = nil
 local page_scroll_direction = nil
+local picked_action = nil
 local browser = {
   hints = function()
     return {
@@ -143,6 +144,24 @@ local browser = {
     doctor_called = true
     return { lines = { "nvim-browser doctor", "browser output: kitty-unicode" } }
   end,
+  pick_hint = function(select, opts)
+    picked_action = opts and opts.action or "follow"
+    select({
+      { id = 1, hint_label = "a", kind = "link", label = "Docs" },
+    }, { prompt = "nvim-browser hint: " }, function() end)
+    if opts ~= nil and opts.action == "hover" and opts.on_error ~= nil then
+      opts.on_error("action_failed")
+    end
+    return true
+  end,
+  pick_hint_action_available = function(action)
+    return action == nil
+      or action == "follow"
+      or action == "click"
+      or action == "focus"
+      or action == "hover"
+      or action == "toggle"
+  end,
   status = function()
     return "ok"
   end,
@@ -224,6 +243,10 @@ commands.register(browser, {
     prompt_default = default
     return "s"
   end,
+  select = function(items, opts, on_choice)
+    prompted = opts.prompt
+    on_choice(items[1])
+  end,
 })
 vim.cmd("NBrowserHints")
 
@@ -232,6 +255,21 @@ assert(echoed:match("https://example%.com/docs"), "NBrowserHints should show str
 assert(echoed:match("\ns%s+2%s+input%s+Search%s+@%s+30,40"), "NBrowserHints should show all keyboard labels")
 assert(echoed:match("\nc%s+3%s+checkbox%s+%[checked%]%s+Subscribe%s+@%s+50,60"), "NBrowserHints should show checked checkbox state")
 assert(echoed:match("\nr%s+4%s+radio%s+%[unchecked%]%s+Standard%s+@%s+70,80"), "NBrowserHints should show unchecked radio state")
+
+vim.cmd("NBrowserPickHint")
+assert(picked_action == "follow", "NBrowserPickHint should default to follow action")
+assert(prompted == "nvim-browser hint: ", "NBrowserPickHint should pass configured select prompt")
+
+vim.cmd("NBrowserPickHint focus")
+assert(picked_action == "focus", "NBrowserPickHint should pass explicit action")
+
+local invalid_warning_count = #warnings
+vim.cmd("NBrowserPickHint bogus")
+assert(warnings[#warnings] == "nvim-browser: unsupported hint picker action: bogus", "NBrowserPickHint should warn for invalid actions")
+assert(#warnings == invalid_warning_count + 1, "invalid actions should produce one warning")
+
+vim.cmd("NBrowserPickHint hover")
+assert(warnings[#warnings] == "nvim-browser: hint not found, stale, or browser session is inactive", "NBrowserPickHint should warn when async picked action fails")
 
 vim.cmd("NBrowserDoctor")
 assert(doctor_called == true, "NBrowserDoctor should call browser.doctor")

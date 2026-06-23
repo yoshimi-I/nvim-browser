@@ -288,6 +288,116 @@ function M.follow_hint(id)
   return terminal.follow_hint(id)
 end
 
+local function hint_identifier(hint)
+  if type(hint) ~= "table" then
+    return nil
+  end
+  if hint.hint_label ~= nil and hint.hint_label ~= "" then
+    return tostring(hint.hint_label)
+  end
+  if hint.id ~= nil then
+    return tostring(hint.id)
+  end
+  return nil
+end
+
+local function hint_picker_label(hint)
+  if type(hint) ~= "table" then
+    return ""
+  end
+  local parts = { hint_identifier(hint) or "?", tostring(hint.kind or "other") }
+  local label = hint.label ~= nil and tostring(hint.label) or ""
+  if hint.checked ~= nil then
+    label = string.format("[%s] %s", hint.checked and "checked" or "unchecked", label)
+  end
+  if label ~= "" then
+    table.insert(parts, label)
+  end
+  if hint.href ~= nil and hint.href ~= "" then
+    table.insert(parts, "-> " .. tostring(hint.href))
+  end
+  if hint.x ~= nil and hint.y ~= nil then
+    table.insert(parts, string.format("@ %.0f,%.0f", hint.x or 0, hint.y or 0))
+  end
+  return table.concat(parts, " ")
+end
+
+local function pick_hint_action(action)
+  if action == nil or action == "" or action == "follow" then
+    return M.follow_hint
+  end
+  if action == "click" then
+    return M.click_hint
+  end
+  if action == "focus" then
+    return M.focus_hint
+  end
+  if action == "hover" then
+    return M.hover_hint
+  end
+  if action == "toggle" then
+    return M.toggle_hint
+  end
+  return nil
+end
+
+function M.pick_hint_action_available(action)
+  return pick_hint_action(action) ~= nil
+end
+
+function M.pick_hint(select_or_opts, maybe_opts)
+  local select = vim.ui.select
+  local opts = maybe_opts or {}
+  if type(select_or_opts) == "function" then
+    select = select_or_opts
+  elseif type(select_or_opts) == "table" then
+    opts = select_or_opts
+    if type(opts.select) == "function" then
+      select = opts.select
+    end
+  end
+
+  local hints = M.hints()
+  if #hints == 0 then
+    return false
+  end
+  local action = pick_hint_action(opts.action or "follow")
+  if action == nil then
+    return false
+  end
+
+  local selected = nil
+  local completed = false
+  local action_ok = true
+  select(hints, {
+    prompt = opts.prompt or "nvim-browser hint: ",
+    format_item = opts.format_item or hint_picker_label,
+  }, function(choice)
+    completed = true
+    selected = choice
+    if choice == nil then
+      return
+    end
+    local identifier = hint_identifier(choice)
+    if identifier ~= nil then
+      action_ok = action(identifier) ~= false
+      if not action_ok and type(opts.on_error) == "function" then
+        opts.on_error("action_failed")
+      end
+    elseif type(opts.on_error) == "function" then
+      opts.on_error("missing_identifier")
+    end
+  end)
+
+  if completed and selected == nil then
+    return false
+  end
+  if completed and not action_ok then
+    return false
+  end
+  return true
+end
+
 function M.type_hint(id, text, opts)
   return terminal.type_hint(id, text, opts)
 end

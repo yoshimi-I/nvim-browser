@@ -3,9 +3,14 @@ local M = {}
 function M.register(browser, opts)
   opts = opts or {}
   local input = opts.input or vim.fn.input
+  local select = opts.select or vim.ui.select
 
   local function warn_hint_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: hint not found, stale, or browser session is inactive", "WarningMsg" } }, false, {})
+  end
+
+  local function warn_invalid_picker_action(action)
+    vim.api.nvim_echo({ { "nvim-browser: unsupported hint picker action: " .. tostring(action), "WarningMsg" } }, false, {})
   end
 
   local function page_scroll_label(metrics)
@@ -386,6 +391,31 @@ function M.register(browser, opts)
     end
     vim.api.nvim_echo({ { table.concat(lines, "\n") } }, false, {})
   end, {})
+
+  vim.api.nvim_create_user_command("NBrowserPickHint", function(cmd_opts)
+    local action = cmd_opts.args ~= nil and cmd_opts.args ~= "" and cmd_opts.args or "follow"
+    if browser.pick_hint_action_available ~= nil and not browser.pick_hint_action_available(action) then
+      warn_invalid_picker_action(action)
+      return
+    end
+    if browser.pick_hint == nil or not browser.pick_hint(select, {
+      action = action,
+      on_error = function()
+        warn_hint_unavailable()
+      end,
+    }) then
+      if #browser.hints() == 0 then
+        warn_no_hints()
+      else
+        warn_hint_unavailable()
+      end
+    end
+  end, {
+    nargs = "?",
+    complete = function()
+      return { "follow", "click", "focus", "hover", "toggle" }
+    end,
+  })
 
   vim.api.nvim_create_user_command("NBrowserClickHint", function(opts)
     if not browser.click_hint(opts.args) then

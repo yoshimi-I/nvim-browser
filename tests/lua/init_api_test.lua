@@ -7,6 +7,7 @@ local terminal = require("nvim-browser.terminal")
 
 assert(type(browser.click_hint) == "function", "click_hint API should exist")
 assert(type(browser.follow_hint) == "function", "follow_hint API should exist")
+assert(type(browser.pick_hint) == "function", "pick_hint API should exist")
 assert(type(browser.hint_mode) == "function", "hint_mode API should exist")
 assert(type(browser.transient_hint_mode) == "function", "transient_hint_mode API should exist")
 assert(type(browser.hover_point) == "function", "hover_point API should exist")
@@ -61,6 +62,8 @@ assert(browser.resolve_address_target("") == nil, "address resolver should rejec
 local original_hints = browser.hints
 local original_click_hint = browser.click_hint
 local original_follow_hint = browser.follow_hint
+local original_focus_hint = browser.focus_hint
+local original_hover_hint = browser.hover_hint
 local original_input_text = browser.input_text
 local original_press_key = browser.press_key
 local original_terminal_follow_hint = terminal.follow_hint
@@ -121,6 +124,92 @@ end) == false, "hint_mode should propagate failed follow_hint")
 
 browser.hints = original_hints
 browser.follow_hint = original_follow_hint
+
+local picked_follow = nil
+browser.hints = function()
+  return {
+    { id = 1, hint_label = "a", kind = "link", label = "Docs", href = "https://example.com/docs" },
+    { id = 2, hint_label = "s", kind = "input", label = "Search" },
+  }
+end
+browser.follow_hint = function(label)
+  picked_follow = label
+  return true
+end
+local select_prompt = nil
+local select_format = nil
+assert(browser.pick_hint(function(items, opts, on_choice)
+  select_prompt = opts.prompt
+  select_format = opts.format_item(items[1])
+  on_choice(items[1])
+end) == true, "pick_hint should follow the selected hint by default")
+assert(picked_follow == "a", "pick_hint should pass the selected hint label to follow_hint")
+assert(select_prompt == "nvim-browser hint: ", "pick_hint should use a hint picker prompt")
+assert(select_format:find("a link Docs", 1, true), "pick_hint should format hint label, kind, and text")
+
+local picked_focus = nil
+browser.focus_hint = function(label)
+  picked_focus = label
+  return true
+end
+assert(browser.pick_hint(function(items, _, on_choice)
+  on_choice(items[2])
+end, { action = "focus" }) == true, "pick_hint should support focus action")
+assert(picked_focus == "s", "pick_hint should pass selected label to focus_hint")
+
+local picked_hover = nil
+browser.hover_hint = function(label)
+  picked_hover = label
+  return true
+end
+assert(browser.pick_hint({
+  action = "hover",
+  select = function(items, _, on_choice)
+    on_choice(items[1])
+  end,
+}) == true, "pick_hint should support opts.select injection")
+assert(picked_hover == "a", "pick_hint should pass selected label to hover_hint")
+
+local async_error = nil
+local async_on_choice = nil
+browser.follow_hint = function()
+  return false
+end
+assert(browser.pick_hint({
+  select = function(_, _, on_choice)
+    async_on_choice = on_choice
+  end,
+  on_error = function(reason)
+    async_error = reason
+  end,
+}) == true, "pick_hint should return true after launching an async picker")
+async_on_choice({ id = 3, hint_label = "z", kind = "button", label = "Missing" })
+assert(async_error == "action_failed", "pick_hint should report async action failures through on_error")
+
+assert(browser.pick_hint({
+  action = "bogus",
+  select = function()
+    error("select should not be called for invalid picker actions")
+  end,
+}) == false, "pick_hint should reject invalid actions before launching the picker")
+assert(browser.pick_hint_action_available("bogus") == false, "invalid picker actions should be detectable")
+assert(browser.pick_hint_action_available("toggle") == true, "valid picker actions should be detectable")
+
+assert(browser.pick_hint(function(_, _, on_choice)
+  on_choice(nil)
+end) == false, "pick_hint should cancel when no hint is selected")
+
+browser.hints = function()
+  return {}
+end
+assert(browser.pick_hint(function()
+  error("select should not be called without hints")
+end) == false, "pick_hint should return false without active hints")
+
+browser.hints = original_hints
+browser.follow_hint = original_follow_hint
+browser.focus_hint = original_focus_hint
+browser.hover_hint = original_hover_hint
 
 local transient_followed = {}
 browser.follow_hint = function(label)
