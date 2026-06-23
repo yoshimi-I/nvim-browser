@@ -146,11 +146,12 @@ impl Renderer for ChromiumRenderer {
             .navigate_to(&request.url)
             .and_then(|tab| tab.wait_until_navigated())
             .map_err(render_error)?;
-        self.current_url = Some(request.url.clone());
+        let url = self.tab.get_url();
+        self.current_url = Some(url.clone());
         Ok(NavigationResult {
             session_id: request.session_id,
             page_id: request.page_id,
-            url: request.url,
+            url,
         })
     }
 
@@ -191,9 +192,12 @@ impl Renderer for ChromiumRenderer {
     fn reload(&mut self, request: ReloadRequest) -> Result<ReloadResult, RendererError> {
         self.tab.reload(false, None).map_err(render_error)?;
         self.tab.wait_until_navigated().map_err(render_error)?;
+        let url = self.tab.get_url();
+        self.current_url = Some(url.clone());
         Ok(ReloadResult {
             session_id: request.session_id,
             page_id: request.page_id,
+            url,
         })
     }
 

@@ -214,6 +214,8 @@ struct ServeResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     payload: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
 
@@ -267,12 +269,14 @@ impl<R: Renderer> ServeRuntime<R> {
                 id,
                 status: ServeStatus::Ok,
                 payload,
+                url: self.session.active_page().url().map(str::to_string),
                 error: None,
             },
             Err(error) => ServeResponse {
                 id,
                 status: ServeStatus::Error,
                 payload: None,
+                url: self.session.active_page().url().map(str::to_string),
                 error: Some(error.to_string()),
             },
         }
@@ -306,10 +310,12 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.capture_payload().map(Some)
             }
             ServeRequest::Reload { .. } => {
-                self.renderer.reload(ReloadRequest::new(
+                let reload = self.renderer.reload(ReloadRequest::new(
                     self.session.id(),
                     self.session.active_page_id(),
                 ))?;
+                self.session.navigate_active_page(reload.url);
+                self.session.finish_active_page_load();
                 self.capture_payload().map(Some)
             }
             ServeRequest::TextInput { text, .. } => {
@@ -464,6 +470,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         id: 0,
                         status: ServeStatus::Error,
                         payload: None,
+                        url: None,
                         error: Some(error.to_string()),
                     })
                 )?;
@@ -568,6 +575,8 @@ mod tests {
         clicked_points: Vec<(f64, f64)>,
         operations: Vec<&'static str>,
         settled_url: Option<String>,
+        final_navigation_url: Option<String>,
+        final_reload_url: Option<String>,
         shutdown: bool,
     }
 
@@ -583,6 +592,8 @@ mod tests {
                 clicked_points: Vec::new(),
                 operations: Vec::new(),
                 settled_url: None,
+                final_navigation_url: None,
+                final_reload_url: None,
                 shutdown: false,
             }
         }
@@ -593,11 +604,12 @@ mod tests {
             &mut self,
             request: NavigateRequest,
         ) -> Result<NavigationResult, RendererError> {
-            self.url = Some(request.url.clone());
+            let url = self.final_navigation_url.clone().unwrap_or(request.url);
+            self.url = Some(url.clone());
             Ok(NavigationResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
-                url: request.url,
+                url,
             })
         }
 
@@ -634,9 +646,16 @@ mod tests {
         }
 
         fn reload(&mut self, request: ReloadRequest) -> Result<ReloadResult, RendererError> {
+            let url = self
+                .final_reload_url
+                .clone()
+                .or_else(|| self.url.clone())
+                .unwrap_or_else(|| "about:blank".to_string());
+            self.url = Some(url.clone());
             Ok(ReloadResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
+                url,
             })
         }
 
@@ -821,12 +840,29 @@ mod tests {
             id: 7,
             status: ServeStatus::Ok,
             payload: Some("frame".to_string()),
+            url: None,
             error: None,
         };
 
         assert_eq!(
             encode_serve_response(&response),
             r#"{"id":7,"status":"ok","payload":"frame"}"#
+        );
+    }
+
+    #[test]
+    fn serve_response_encodes_current_url_when_present() {
+        let response = ServeResponse {
+            id: 8,
+            status: ServeStatus::Ok,
+            payload: Some("frame".to_string()),
+            url: Some("https://example.com".to_string()),
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r#"{"id":8,"status":"ok","payload":"frame","url":"https://example.com"}"#
         );
     }
 
@@ -850,7 +886,77 @@ mod tests {
 
         assert_eq!(response.id, 3);
         assert_eq!(response.status, ServeStatus::Ok);
+        assert_eq!(response.url, Some("https://example.com".to_string()));
         assert!(response.payload.expect("payload").contains("▀"));
+    }
+
+    #[test]
+    fn serve_runtime_returns_final_url_after_navigation_redirect() {
+        let mut renderer = FakeRenderer::new();
+        renderer.final_navigation_url = Some("https://example.com/final".to_string());
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        let response = runtime.handle(ServeRequest::Navigate {
+            id: 3,
+            url: "https://example.com/redirect".to_string(),
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert_eq!(response.url, Some("https://example.com/final".to_string()));
+        assert_eq!(
+            runtime.session.active_page().url(),
+            Some("https://example.com/final")
+        );
+    }
+
+    #[test]
+    fn serve_runtime_returns_final_url_after_reload_redirect() {
+        let mut renderer = FakeRenderer::new();
+        renderer.final_reload_url = Some("https://example.com/reloaded".to_string());
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com/before".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::Reload { id: 2 });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert_eq!(
+            response.url,
+            Some("https://example.com/reloaded".to_string())
+        );
+        assert_eq!(
+            runtime.session.active_page().url(),
+            Some("https://example.com/reloaded")
+        );
+        assert_eq!(
+            runtime
+                .session
+                .active_page()
+                .last_frame()
+                .expect("frame")
+                .url,
+            "https://example.com/reloaded"
+        );
     }
 
     #[test]
@@ -1038,6 +1144,10 @@ mod tests {
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
+        assert_eq!(
+            response.url,
+            Some("https://example.com/after-submit".to_string())
+        );
         assert_eq!(
             runtime.session.active_page().url(),
             Some("https://example.com/after-submit")

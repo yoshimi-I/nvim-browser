@@ -13,6 +13,8 @@ local state = {
   mode = nil,
   next_request_id = 1,
   stop_timer = nil,
+  current_url = nil,
+  status = nil,
 }
 
 local kitty_placeholder = vim.fn.nr2char(0x10eeee)
@@ -368,6 +370,8 @@ function M.open(command)
   state.stream_buffer = ""
   state.mode = nil
   state.next_request_id = 1
+  state.current_url = nil
+  state.status = nil
   pcall(send_terminal_escape, kitty_delete_escape())
 
   local previous_bufnr = state.bufnr
@@ -415,6 +419,11 @@ function M.open(command)
         end
         if not vim.api.nvim_buf_is_valid(bufnr) then
           return
+        end
+
+        state.status = response.status
+        if response.url ~= nil then
+          state.current_url = response.url
         end
 
         if response.status == "ok" and response.payload ~= nil then
@@ -593,6 +602,8 @@ function M.close()
   state.last_target = nil
   state.stream_buffer = ""
   state.mode = nil
+  state.current_url = nil
+  state.status = nil
   if state.stop_timer ~= nil then
     state.stop_timer:stop()
     state.stop_timer:close()
@@ -701,6 +712,8 @@ function M.state()
     has_window = is_valid_window(),
     has_payload = state.last_payload ~= nil,
     mode = state.mode,
+    current_url = state.current_url,
+    status = state.status,
   }
 end
 

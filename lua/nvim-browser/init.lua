@@ -76,6 +76,14 @@ function M.last_target()
   return state.last_target
 end
 
+function M.current_url()
+  return terminal.state().current_url
+end
+
+function M.status()
+  return terminal.state().status
+end
+
 M.setup()
 
 return M

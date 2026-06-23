@@ -59,6 +59,14 @@ COMMANDS                                           *nvim-browser-commands*
 	Click viewport coordinates in the active browser page and capture a fresh
 	frame.
 
+							*:NBrowserCurrentUrl*
+:NBrowserCurrentUrl
+	Echo the current URL reported by the active browser session.
+
+							*:NBrowserStatus*
+:NBrowserStatus
+	Echo the last serve response status and current URL.
+
 							*:NBrowserPreview*
 :NBrowserPreview
 	Preview the current buffer path.

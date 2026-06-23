@@ -125,10 +125,11 @@ impl ReloadRequest {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ReloadResult {
     pub session_id: SessionId,
     pub page_id: PageId,
+    pub url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -330,6 +331,7 @@ mod tests {
             Ok(ReloadResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
+                url: "https://example.com".to_string(),
             })
         }
 
@@ -422,6 +424,7 @@ mod tests {
         assert_eq!(scroll.delta_y, 240);
         assert_eq!(reload.session_id, session_id);
         assert_eq!(reload.page_id, page_id);
+        assert_eq!(reload.url, "https://example.com");
         assert!(shutdown.is_ok());
         assert!(renderer.shutdown);
     }

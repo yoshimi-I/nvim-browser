@@ -99,6 +99,8 @@ Then run:
 :NBrowserInput hello
 :NBrowserKey Enter
 :NBrowserClick 120 240
+:NBrowserCurrentUrl
+:NBrowserStatus
 :NBrowserToggle
 ```
 

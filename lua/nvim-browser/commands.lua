@@ -72,6 +72,16 @@ function M.register(browser)
     nargs = "+",
   })
 
+  vim.api.nvim_create_user_command("NBrowserCurrentUrl", function()
+    vim.api.nvim_echo({ { browser.current_url() or "" } }, false, {})
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserStatus", function()
+    local status = browser.status() or "unknown"
+    local url = browser.current_url() or ""
+    vim.api.nvim_echo({ { status .. (url ~= "" and (" " .. url) or "") } }, false, {})
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserToggle", function()
     browser.toggle()
   end, {})
