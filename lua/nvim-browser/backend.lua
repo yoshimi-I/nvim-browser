@@ -9,7 +9,7 @@ local function is_image_extension(extension)
 end
 
 local function is_browser_file_extension(extension)
-  return vim.tbl_contains({ "html", "htm", "svg" }, extension)
+  return vim.tbl_contains({ "html", "htm", "svg", "pdf" }, extension)
 end
 
 local function env_value(env, key)

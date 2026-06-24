@@ -8,6 +8,7 @@ pub enum TargetKind {
     WebUrl,
     MarkdownFile,
     HtmlFile,
+    PdfFile,
     ImageFile,
     UnknownFile,
     SearchQuery,
@@ -39,6 +40,7 @@ pub fn target_kind(input: &str) -> TargetKind {
     {
         Some("md") | Some("markdown") => TargetKind::MarkdownFile,
         Some("html") | Some("htm") => TargetKind::HtmlFile,
+        Some("pdf") => TargetKind::PdfFile,
         Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("webp") | Some("svg") => {
             TargetKind::ImageFile
         }
@@ -95,11 +97,25 @@ mod tests {
     }
 
     #[test]
+    fn target_kind_detects_pdf_files() {
+        assert_eq!(target_kind("paper.pdf"), TargetKind::PdfFile);
+        assert_eq!(target_kind("/tmp/REPORT.PDF"), TargetKind::PdfFile);
+    }
+
+    #[test]
     fn inspect_target_serializes_to_json() {
         let json = inspect_target("README.md").to_json();
 
         assert!(json.contains("\"input\":\"README.md\""));
         assert!(json.contains("\"kind\":\"markdown_file\""));
+    }
+
+    #[test]
+    fn inspect_target_serializes_pdf_files() {
+        let json = inspect_target("paper.pdf").to_json();
+
+        assert!(json.contains("\"input\":\"paper.pdf\""));
+        assert!(json.contains("\"kind\":\"pdf_file\""));
     }
 
     #[test]

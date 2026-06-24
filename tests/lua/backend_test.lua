@@ -200,6 +200,60 @@ assert(vim.deep_equal(home_html_command, {
   vim.uri_from_fname(vim.fn.fnamemodify("~/site/index.html", ":p")),
 }), "home-relative HTML paths should be expanded before file URL conversion")
 
+local pdf_command = backend.command_for("nvbrowser", "open", "/tmp/docs/manual.pdf", {
+  graphics = "ansi",
+})
+assert(vim.deep_equal(pdf_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  vim.uri_from_fname("/tmp/docs/manual.pdf"),
+}), "PDF files should route through Chromium serve with file URLs")
+
+local pdf_cdp_profile_command = backend.command_for("nvbrowser", "open", "/tmp/docs/manual.PDF", {
+  graphics = "ansi",
+  cdp_ws_url = "ws://127.0.0.1:9222/devtools/browser/test",
+  user_data_dir = "/tmp/nvbrowser-profile",
+})
+assert(vim.deep_equal(pdf_cdp_profile_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--cdp-ws-url",
+  "ws://127.0.0.1:9222/devtools/browser/test",
+  "--user-data-dir",
+  "/tmp/nvbrowser-profile",
+  "--url",
+  vim.uri_from_fname("/tmp/docs/manual.PDF"),
+}), "PDF file commands should pass CDP websocket endpoints and profile directories")
+
+local relative_pdf_command = backend.command_for("nvbrowser", "open", "docs/manual.pdf", {
+  graphics = "ansi",
+})
+assert(vim.deep_equal(relative_pdf_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  vim.uri_from_fname(vim.fn.fnamemodify("docs/manual.pdf", ":p")),
+}), "relative PDF paths should be converted to absolute file URLs")
+
+local home_pdf_command = backend.command_for("nvbrowser", "open", "~/docs/manual.pdf", {
+  graphics = "ansi",
+})
+assert(vim.deep_equal(home_pdf_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  vim.uri_from_fname(vim.fn.fnamemodify("~/docs/manual.pdf", ":p")),
+}), "home-relative PDF paths should be expanded before file URL conversion")
+
 local file_url_html_command = backend.command_for("nvbrowser", "open", "file:///tmp/site/index.html", {
   graphics = "ansi",
 })

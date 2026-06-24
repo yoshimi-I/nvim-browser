@@ -2,7 +2,7 @@
 
 `nvim-browser` is an experimental browser runtime for Neovim.
 
-The goal is to keep browsing, Markdown preview, and image preview inside the
+The goal is to keep browsing, Markdown/PDF preview, and image preview inside the
 terminal/Neovim workflow instead of jumping to an external browser tab. The
 first target terminal is Ghostty, using terminal graphics as the future display
 surface.
@@ -12,9 +12,10 @@ surface.
 This repository is an early MVP scaffold. Today it includes:
 
 - Rust backend binary: `nvbrowser`
-- target classification for URLs, Markdown, HTML, and images
+- target classification for URLs, Markdown, HTML/PDF, and images
 - styled Markdown-to-HTML rendering with local asset base paths
-- local HTML file previews through the Chromium/CDP browser session path
+- local HTML, SVG, and PDF file previews through the Chromium/CDP browser
+  session path
 - image output through Kitty graphics protocol with fit modes
 - Chromium/CDP browser sessions rendered through Kitty graphics or ANSI output
 - Ghostty-oriented browser previews use full-frame Kitty Unicode image placement
@@ -32,7 +33,7 @@ Planned next steps:
 
 - terminal-multiplexer graphics passthrough support and documentation
 - richer browser interaction for links and form controls
-- PDF, Mermaid, KaTeX, and richer image preview through the same browser runtime
+- Mermaid, KaTeX, and richer image preview through the same browser runtime
 
 ## Architecture
 
@@ -185,7 +186,9 @@ cargo run -p nvbrowser -- capture https://example.com --output /tmp/frame.png --
 cargo run -p nvbrowser -- browse https://example.com
 ```
 
-The `browse` and `capture` commands require Chrome or Chromium. Set
+The `browse`, `capture`, and browser-session previews for local HTML/SVG/PDF
+files require Chrome or Chromium. PDF quality and behavior come from Chrome's
+built-in PDF viewer; nvim-browser does not rasterize PDFs itself. Set
 `NVBROWSER_CHROME` when auto-detection cannot find the browser binary.
 Alternatively, set `NVBROWSER_CDP_WS_URL` or pass `--cdp-ws-url` to attach to an
 existing browser websocket endpoint. Chrome exposes that URL from

@@ -22,6 +22,19 @@ fn inspect_outputs_target_json() {
 }
 
 #[test]
+fn inspect_outputs_pdf_target_json() {
+    let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+    command
+        .args(["inspect", "paper.pdf"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            r#"{"input":"paper.pdf","kind":"pdf_file"}"#,
+        ));
+}
+
+#[test]
 fn render_md_outputs_html_document() {
     let directory = tempdir().expect("tempdir should be created");
     let markdown_path = directory.path().join("README.md");
@@ -1179,6 +1192,91 @@ fn opt_in_e2e_serve_loop_applies_page_zoom() {
 }
 
 #[test]
+fn opt_in_e2e_serve_loop_renders_local_pdf() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let pdf_path = directory.path().join("sample.pdf");
+    let blank_pdf_path = directory.path().join("blank.pdf");
+    std::fs::write(&pdf_path, tiny_pdf()).expect("pdf fixture should be written");
+    std::fs::write(&blank_pdf_path, tiny_blank_pdf()).expect("blank pdf fixture should be written");
+    let pdf_url = file_url(&pdf_path);
+    let blank_pdf_url = file_url(&blank_pdf_path);
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--url",
+            &pdf_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(
+        initial["status"], "ok",
+        "local PDF should render through the real Chromium serve pipeline; response={initial:?}"
+    );
+    assert!(
+        initial["url"]
+            .as_str()
+            .is_some_and(|url| url.ends_with("sample.pdf")),
+        "PDF response should preserve the file URL; response={initial:?}"
+    );
+    assert!(
+        initial["payload"]
+            .as_str()
+            .is_some_and(|payload| payload.contains("\u{1b}[")),
+        "PDF response should include an ANSI frame payload"
+    );
+    let initial_payload = initial["payload"]
+        .as_str()
+        .expect("PDF response should include a frame payload")
+        .to_string();
+
+    let blank = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "navigate",
+        "url": blank_pdf_url
+    }));
+    assert_eq!(
+        blank["status"], "ok",
+        "blank local PDF should render through the real Chromium serve pipeline; response={blank:?}"
+    );
+    let blank_payload = blank["payload"]
+        .as_str()
+        .expect("blank PDF response should include a frame payload");
+    assert_ne!(
+        initial_payload, blank_payload,
+        "PDF fixture text should visibly affect the captured frame payload"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 2, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
+#[test]
 fn opt_in_e2e_serve_loop_adopts_delayed_about_blank_window_open() {
     if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
         return;
@@ -1546,6 +1644,82 @@ fn tiny_png() -> Vec<u8> {
     const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, PNG)
         .expect("embedded PNG should decode")
+}
+
+fn tiny_pdf() -> Vec<u8> {
+    tiny_pdf_with_text(Some("NBrowser PDF"))
+}
+
+fn tiny_blank_pdf() -> Vec<u8> {
+    tiny_pdf_with_text(None)
+}
+
+fn tiny_pdf_with_text(text: Option<&str>) -> Vec<u8> {
+    let stream = text
+        .map(|text| format!("BT /F1 18 Tf 30 120 Td ({text}) Tj ET"))
+        .unwrap_or_default();
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+        &format!("<< /Length {} >>\nstream\n{}\nendstream", stream.len(), stream),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ];
+    let mut pdf = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        writeln!(pdf, "{} 0 obj\n{}\nendobj", index + 1, object)
+            .expect("pdf fixture should write object");
+    }
+    let xref_offset = pdf.len();
+    writeln!(pdf, "xref\n0 {}\n0000000000 65535 f ", offsets.len() + 1)
+        .expect("pdf fixture should write xref header");
+    for offset in offsets {
+        writeln!(pdf, "{offset:010} 00000 n ").expect("pdf fixture should write xref entry");
+    }
+    write!(
+        pdf,
+        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+        objects.len() + 1,
+        xref_offset
+    )
+    .expect("pdf fixture should write trailer");
+    pdf
+}
+
+fn file_url(path: &std::path::Path) -> String {
+    let path = path
+        .canonicalize()
+        .expect("file URL test path should canonicalize");
+    let mut value = path.to_string_lossy().replace('\\', "/");
+    if cfg!(windows) {
+        if let Some(stripped) = value.strip_prefix("//?/") {
+            value = stripped.to_string();
+        }
+        format!(
+            "file:///{}",
+            percent_encode_file_path(value.trim_start_matches('/'))
+        )
+    } else {
+        format!("file://{}", percent_encode_file_path(&value))
+    }
+}
+
+fn percent_encode_file_path(path: &str) -> String {
+    let mut encoded = String::new();
+    for byte in path.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' | b':' => {
+                encoded.push(byte as char)
+            }
+            _ => {
+                use std::fmt::Write as _;
+                write!(encoded, "%{byte:02X}").expect("percent encoding should write");
+            }
+        }
+    }
+    encoded
 }
 
 fn default_e2e_chrome() -> Option<&'static str> {
