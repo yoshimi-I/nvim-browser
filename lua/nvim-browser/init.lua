@@ -459,6 +459,16 @@ local function enabled_select_options(hint)
   return enabled
 end
 
+local function input_like_hints(hints)
+  local inputs = {}
+  for _, hint in ipairs(hints) do
+    if type(hint) == "table" and (hint.kind == "input" or hint.kind == "text_area" or hint.kind == "editable") then
+      table.insert(inputs, hint)
+    end
+  end
+  return inputs
+end
+
 local function pick_hint_action(action)
   if action == nil or action == "" or action == "follow" then
     return M.follow_hint
@@ -477,6 +487,9 @@ local function pick_hint_action(action)
   end
   if action == "toggle" then
     return M.toggle_hint
+  end
+  if action == "type" or action == "submit" then
+    return M.type_hint
   end
   return nil
 end
@@ -501,14 +514,22 @@ function M.pick_hint(select_or_opts, maybe_opts)
   if #hints == 0 then
     return false
   end
-  local action = pick_hint_action(opts.action or "follow")
+  local action_name = opts.action or "follow"
+  local action = pick_hint_action(action_name)
   if action == nil then
     return false
+  end
+  if action_name == "type" or action_name == "submit" then
+    hints = input_like_hints(hints)
+    if #hints == 0 then
+      return false
+    end
   end
 
   local selected = nil
   local completed = false
   local action_ok = true
+  local input = opts.input or vim.fn.input
   select(hints, {
     prompt = opts.prompt or "nvim-browser hint: ",
     format_item = opts.format_item or hint_picker_label,
@@ -520,7 +541,15 @@ function M.pick_hint(select_or_opts, maybe_opts)
     end
     local identifier = hint_identifier(choice)
     if identifier ~= nil then
-      action_ok = action(identifier) ~= false
+      if action_name == "type" or action_name == "submit" then
+        local text = input("nvim-browser text: ")
+        if text == nil or text == "" then
+          return
+        end
+        action_ok = action(identifier, text, { submit = action_name == "submit" }) ~= false
+      else
+        action_ok = action(identifier) ~= false
+      end
       if not action_ok and type(opts.on_error) == "function" then
         opts.on_error("action_failed")
       end

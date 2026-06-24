@@ -192,9 +192,23 @@ local browser = {
   end,
   pick_hint = function(select, opts)
     picked_action = opts and opts.action or "follow"
-    select({
+    local items = {
       { id = 1, hint_label = "a", kind = "link", label = "Docs" },
-    }, { prompt = "nvim-browser hint: " }, function() end)
+      { id = 2, hint_label = "s", kind = "input", label = "Search" },
+    }
+    if picked_action == "type" or picked_action == "submit" then
+      items = { items[2] }
+    end
+    select(items, { prompt = "nvim-browser hint: " }, function(choice)
+      if choice ~= nil and (picked_action == "type" or picked_action == "submit") then
+        local value = choice.hint_label .. ":" .. opts.input("nvim-browser text: ")
+        if picked_action == "submit" then
+          submitted_hint = value
+        else
+          typed_hint = value
+        end
+      end
+    end)
     if opts ~= nil and opts.action == "hover" and opts.on_error ~= nil then
       opts.on_error("action_failed")
     end
@@ -207,6 +221,8 @@ local browser = {
       or action == "focus"
       or action == "hover"
       or action == "right-click"
+      or action == "type"
+      or action == "submit"
       or action == "toggle"
   end,
   status = function()
@@ -384,6 +400,69 @@ vim.cmd("NBrowserPickHint right-click")
 assert(picked_action == "right-click", "NBrowserPickHint should pass explicit right-click action")
 local pick_hint_completions = vim.fn.getcompletion("NBrowserPickHint ", "cmdline")
 assert(vim.tbl_contains(pick_hint_completions, "right-click"), "NBrowserPickHint completion should include right-click")
+assert(vim.tbl_contains(pick_hint_completions, "type"), "NBrowserPickHint completion should include type")
+assert(vim.tbl_contains(pick_hint_completions, "submit"), "NBrowserPickHint completion should include submit")
+
+typed_hint = nil
+local pick_type_prompts = {}
+local pick_type_selected_count = nil
+commands.register(browser, {
+  input = function(prompt)
+    table.insert(pick_type_prompts, prompt)
+    return "typed from pick"
+  end,
+  select = function(items, opts, on_choice)
+    table.insert(pick_type_prompts, opts.prompt)
+    pick_type_selected_count = #items
+    on_choice(items[1])
+  end,
+})
+vim.cmd("NBrowserPickHint type")
+assert(typed_hint == "s:typed from pick", "NBrowserPickHint type should type into the selected input-like hint")
+assert(pick_type_selected_count == 1, "NBrowserPickHint type should only offer input-like hints")
+assert(
+  table.concat(pick_type_prompts, "|") == "nvim-browser hint: |nvim-browser text: ",
+  "NBrowserPickHint type should prompt for hint then text"
+)
+
+submitted_hint = nil
+commands.register(browser, {
+  input = function()
+    return "submitted from pick"
+  end,
+  select = function(items, _, on_choice)
+    on_choice(items[1])
+  end,
+})
+vim.cmd("NBrowserPickHint submit")
+assert(submitted_hint == "s:submitted from pick", "NBrowserPickHint submit should submit into the selected input-like hint")
+
+local original_pick_hint = browser.pick_hint
+browser.pick_hint = function(_, opts)
+  picked_action = opts and opts.action or "follow"
+  return false
+end
+local missing_input_warning_count = #warnings
+vim.cmd("NBrowserPickHint type")
+assert(picked_action == "type", "NBrowserPickHint type should pass action when input-like hints are missing")
+assert(
+  warnings[#warnings] == "nvim-browser: hint not found, stale, or browser session is inactive",
+  "NBrowserPickHint type should warn when no input-like hints are available"
+)
+assert(#warnings == missing_input_warning_count + 1, "missing input-like hints should produce one warning")
+browser.pick_hint = original_pick_hint
+
+commands.register(browser, {
+  input = function(prompt, default)
+    prompted = prompt
+    prompt_default = default
+    return "s"
+  end,
+  select = function(items, opts, on_choice)
+    prompted = opts.prompt
+    on_choice(items[1])
+  end,
+})
 
 local invalid_warning_count = #warnings
 vim.cmd("NBrowserPickHint bogus")

@@ -73,6 +73,7 @@ assert(browser.resolve_address_target("") == nil, "address resolver should rejec
 
 local original_hints = browser.hints
 local original_click_hint = browser.click_hint
+local original_type_hint = browser.type_hint
 local original_terminal_right_click_point = terminal.right_click_point
 local original_terminal_right_click_here = terminal.right_click_here
 local original_terminal_right_click_mouse = terminal.right_click_mouse
@@ -192,6 +193,68 @@ assert(browser.pick_hint({
 }) == true, "pick_hint should support opts.select injection")
 assert(picked_hover == "a", "pick_hint should pass selected label to hover_hint")
 
+local typed_from_picker = nil
+browser.type_hint = function(label, text, opts)
+  typed_from_picker = { label = label, text = text, submit = opts ~= nil and opts.submit == true }
+  return true
+end
+local picked_type_items = nil
+assert(browser.pick_hint({
+  action = "type",
+  select = function(items, _, on_choice)
+    picked_type_items = items
+    on_choice(items[1])
+  end,
+  input = function(prompt)
+    assert(prompt == "nvim-browser text: ", "type picker should prompt for text")
+    return "typed via picker"
+  end,
+}) == true, "pick_hint should support picker-based text input")
+assert(#picked_type_items == 1, "type picker should only include input-like hints")
+assert(picked_type_items[1].hint_label == "s", "type picker should include the input hint")
+assert(typed_from_picker.label == "s", "type picker should type into the selected hint")
+assert(typed_from_picker.text == "typed via picker", "type picker should pass prompted text")
+assert(typed_from_picker.submit == false, "type picker should not submit by default")
+
+typed_from_picker = nil
+assert(browser.pick_hint({
+  action = "submit",
+  select = function(items, _, on_choice)
+    on_choice(items[1])
+  end,
+  input = function()
+    return "submitted via picker"
+  end,
+}) == true, "pick_hint should support picker-based submit input")
+assert(typed_from_picker.label == "s", "submit picker should type into the selected hint")
+assert(typed_from_picker.text == "submitted via picker", "submit picker should pass prompted text")
+assert(typed_from_picker.submit == true, "submit picker should request submit mode")
+
+typed_from_picker = nil
+assert(browser.pick_hint({
+  action = "type",
+  select = function(items, _, on_choice)
+    on_choice(items[1])
+  end,
+  input = function()
+    return ""
+  end,
+}) == true, "type picker should no-op on empty text")
+assert(typed_from_picker == nil, "type picker should not call type_hint on empty text")
+
+browser.hints = function()
+  return {
+    { id = 1, hint_label = "a", kind = "link", label = "Docs", href = "https://example.com/docs" },
+  }
+end
+assert(browser.pick_hint({
+  action = "type",
+  select = function()
+    error("select should not be called without input-like hints")
+  end,
+}) == false, "type picker should return false when no input-like hints are available")
+browser.type_hint = original_type_hint
+
 local async_error = nil
 local async_on_choice = nil
 browser.follow_hint = function()
@@ -217,6 +280,8 @@ assert(browser.pick_hint({
 assert(browser.pick_hint_action_available("bogus") == false, "invalid picker actions should be detectable")
 assert(browser.pick_hint_action_available("toggle") == true, "valid picker actions should be detectable")
 assert(browser.pick_hint_action_available("right-click") == true, "right-click picker action should be detectable")
+assert(browser.pick_hint_action_available("type") == true, "type picker action should be detectable")
+assert(browser.pick_hint_action_available("submit") == true, "submit picker action should be detectable")
 
 assert(browser.pick_hint(function(_, _, on_choice)
   on_choice(nil)

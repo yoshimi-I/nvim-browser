@@ -323,9 +323,10 @@ moves to the matching element coordinates.
 `:NBrowserFollowHint {label}` uses a link hint's `href` directly when
 available, which avoids coordinate-click drift and keeps the active browser
 session on the navigated URL; non-link hints fall back to backend hint clicks.
-`:NBrowserPickHint [follow|click|right-click|focus|hover|toggle]` opens a `vim.ui.select`
+`:NBrowserPickHint [follow|click|right-click|focus|hover|toggle|type|submit]` opens a `vim.ui.select`
 picker for the current hints and runs the selected action, defaulting to
-`follow`.
+`follow`. The `type` and `submit` actions show only input-like hints, then
+prompt for text.
 `:NBrowserHintMode` prompts for a label and follows it. In preview buffers, the
 default `f` mapping enters a transient hint mode instead: type the visible hint
 label directly, use additional keys for multi-character labels such as `aa`, or

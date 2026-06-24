@@ -306,9 +306,10 @@ COMMANDS                                           *nvim-browser-commands*
 	to backend hint clicks and capture a fresh frame.
 
 							*:NBrowserPickHint*
-:NBrowserPickHint [follow|click|right-click|focus|hover|toggle]
+:NBrowserPickHint [follow|click|right-click|focus|hover|toggle|type|submit]
 	Open a picker for the latest browser hints and run the selected action.
-	The default action is follow.
+	The default action is follow. The type and submit actions show input-like
+	hints, prompt for text, then type or type-and-submit into the selected hint.
 
 							*:NBrowserTypeHint*
 :NBrowserTypeHint {id-or-label} {text}

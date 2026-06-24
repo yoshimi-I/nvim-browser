@@ -473,6 +473,7 @@ function M.register(browser, opts)
     end
     if browser.pick_hint == nil or not browser.pick_hint(select, {
       action = action,
+      input = input,
       on_error = function()
         warn_hint_unavailable()
       end,
@@ -486,7 +487,7 @@ function M.register(browser, opts)
   end, {
     nargs = "?",
     complete = function()
-      return { "follow", "click", "right-click", "focus", "hover", "toggle" }
+      return { "follow", "click", "right-click", "focus", "hover", "toggle", "type", "submit" }
     end,
   })
 
