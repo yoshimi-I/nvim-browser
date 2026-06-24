@@ -35,6 +35,8 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   `graphics = "auto"` intentionally falls back to ANSI when `ZELLIJ` is set.
 - tmux gets escape passthrough wrapping and is detected explicitly; users still
   need passthrough-capable tmux configuration for high-fidelity graphics.
+  Doctor probes `tmux show -gqv allow-passthrough` and reports `ok` for `on`
+  or `all`; other values warn with the required `set -g allow-passthrough on`.
 - Unknown terminals should use ANSI in auto mode rather than assuming Kitty
   support.
 - ANSI output is a compatibility fallback, not the end-state browser quality.
@@ -96,7 +98,8 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 ## Current Risks
 
 - Multiplexer support is the largest portability risk. Zellij degrades to ANSI;
-  tmux passthrough needs real validation.
+  tmux passthrough can now be diagnosed, but still needs real terminal/session
+  validation.
 - Click accuracy depends on configured terminal cell pixel dimensions. Doctor
   output and future auto-detection should reduce this burden.
 - Quiet input and idle live refresh improve latency by skipping screenshots and

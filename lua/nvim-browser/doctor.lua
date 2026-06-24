@@ -224,6 +224,45 @@ local function default_system(command)
   }
 end
 
+local function trim(value)
+  return tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function uses_kitty_graphics(output)
+  return output == "kitty" or output == "kitty-unicode"
+end
+
+local function read_tmux_allow_passthrough(config)
+  local runner = config._system or default_system
+  local ok, result = pcall(runner, { "tmux", "show", "-gqv", "allow-passthrough" })
+  if not ok or type(result) ~= "table" or result.code ~= 0 then
+    return nil
+  end
+  local value = trim(result.stdout)
+  if value == "" then
+    return nil
+  end
+  return value
+end
+
+local function append_tmux_passthrough_diagnostics(report, config, graphics_resolution, browser_output)
+  if graphics_resolution.multiplexer ~= "tmux" or not uses_kitty_graphics(browser_output) then
+    return
+  end
+
+  local allow_passthrough = read_tmux_allow_passthrough(config)
+  if allow_passthrough == "on" or allow_passthrough == "all" then
+    add_item(report, "ok", "tmux allow-passthrough=" .. allow_passthrough)
+    return
+  end
+
+  if allow_passthrough == nil then
+    add_item(report, "warning", "tmux allow-passthrough unavailable; set -g allow-passthrough on")
+  else
+    add_item(report, "warning", "tmux allow-passthrough=" .. allow_passthrough .. "; set -g allow-passthrough on")
+  end
+end
+
 local function read_backend_diagnostics(config)
   if config.backend_diagnostics == false then
     return nil
@@ -311,6 +350,7 @@ function M.run(config, terminal_state)
   for _, warning in ipairs(graphics_resolution.warnings or {}) do
     add_item(report, "warning", warning)
   end
+  append_tmux_passthrough_diagnostics(report, config, graphics_resolution, browser_output)
 
   if vim.env.ZELLIJ ~= nil and (config.graphics == nil or config.graphics == "auto") then
     add_item(report, "warning", "ZELLIJ detected; auto browser graphics uses ansi because terminal graphics may not pass through the multiplexer")

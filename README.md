@@ -97,6 +97,16 @@ there. tmux keeps Kitty output and relies on tmux passthrough wrapping. Unknown
 terminals use ANSI as the safe fallback. Override with `graphics = "ansi"`,
 `"kitty"`, or `"kitty-unicode"` when needed.
 
+For tmux, enable passthrough in your tmux config before expecting Kitty graphics
+to render:
+
+```tmux
+set -g allow-passthrough on
+```
+
+`:NBrowserDoctor` reports `ok: tmux allow-passthrough=on` or warns when the
+setting is disabled or cannot be probed.
+
 If your terminal font cell size makes browser previews look stretched or click
 targets feel offset, tune the viewport cell pixels:
 
@@ -120,6 +130,7 @@ session:
 `NBrowserDoctor` reports whether Chromium/CDP is available, whether the latest
 browser runtime metadata matches the configured cell-pixel calibration, and
 whether the active preview has click geometry that matches the rendered frame.
+Inside tmux, it also checks `allow-passthrough` when Kitty graphics are selected.
 
 To attach to an already-running Chrome DevTools Protocol browser instead of
 letting `nvbrowser` launch Chrome, pass the browser WebSocket URL:

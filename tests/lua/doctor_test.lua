@@ -112,11 +112,71 @@ local tmux_auto = doctor.run({
   backend_diagnostics = false,
   graphics = "auto",
   image_fit = "original",
+  _system = function(command)
+    assert(table.concat(command, " ") == "tmux show -gqv allow-passthrough", "doctor should probe tmux allow-passthrough")
+    return { code = 0, stdout = "on\n", stderr = "" }
+  end,
 }, {})
 assert(contains_line(tmux_auto, "multiplexer: tmux"), "doctor should report tmux detection")
 assert(contains_line(tmux_auto, "browser output: kitty-unicode"), "tmux auto should preserve Kitty Unicode output")
 assert(contains_line(tmux_auto, "graphics reason: tmux"), "doctor should explain tmux passthrough selection")
 assert(contains_line(tmux_auto, "warning: tmux detected"), "doctor should warn that tmux passthrough must be enabled")
+assert(has_line(tmux_auto, "ok: tmux allow-passthrough=on"), "doctor should report enabled tmux passthrough")
+
+local tmux_disabled = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "kitty-unicode",
+  image_fit = "original",
+  _system = function()
+    return { code = 0, stdout = "off\n", stderr = "" }
+  end,
+}, {})
+assert(has_line(tmux_disabled, "warning: tmux allow-passthrough=off; set -g allow-passthrough on"), "doctor should warn when tmux passthrough is disabled")
+
+local tmux_all = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "kitty-unicode",
+  image_fit = "original",
+  _system = function()
+    return { code = 0, stdout = "all\n", stderr = "" }
+  end,
+}, {})
+assert(has_line(tmux_all, "ok: tmux allow-passthrough=all"), "doctor should accept tmux allow-passthrough=all")
+
+local tmux_empty_probe = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "kitty-unicode",
+  image_fit = "original",
+  _system = function()
+    return { code = 0, stdout = "\n", stderr = "" }
+  end,
+}, {})
+assert(contains_line(tmux_empty_probe, "warning: tmux allow-passthrough unavailable"), "doctor should warn when tmux passthrough output is empty")
+
+local tmux_missing_probe = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "kitty",
+  image_fit = "original",
+  _system = function()
+    return { code = 127, stdout = "", stderr = "tmux not found" }
+  end,
+}, {})
+assert(contains_line(tmux_missing_probe, "warning: tmux allow-passthrough unavailable"), "doctor should warn when the tmux passthrough probe fails")
+
+local tmux_ansi = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "ansi",
+  image_fit = "original",
+  _system = function()
+    error("ansi output should not probe tmux passthrough")
+  end,
+}, {})
+assert(not contains_line(tmux_ansi, "allow-passthrough"), "ANSI output should not report tmux passthrough")
 
 vim.env.TMUX = nil
 vim.env.TERM_PROGRAM = "ghostty"

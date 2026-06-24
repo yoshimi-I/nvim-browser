@@ -531,7 +531,12 @@ COMMANDS                                           *nvim-browser-commands*
 	preview session, Chromium/CDP backend readiness, serve runtime metadata,
 	viewport calibration status, and click calibration diagnostics for the
 	active cursor-addressable preview. The backend readiness check uses
-	`nvbrowser doctor --json` and does not launch Chrome.
+	`nvbrowser doctor --json` and does not launch Chrome. Inside tmux with
+	Kitty graphics selected, it also probes `tmux show -gqv
+	allow-passthrough`; warnings recommend:
+>
+	set -g allow-passthrough on
+<
 
 							*:NBrowserCalibrate*
 :NBrowserCalibrate [cell_width_px cell_height_px]
