@@ -152,6 +152,7 @@ assert(terminal._test.set_browser_buffer_name(deleted_bufnr, "Gone", nil) == fal
 terminal._test.set_last_find_found(true)
 terminal._test.handle_find_text_response({ status = "error" })
 assert(terminal.state().last_find_found == nil, "failed find responses should clear stale find state")
+assert(terminal.state().last_find_match_count == nil, "failed find responses should clear stale find match count")
 
 local warnings = {}
 local original_echo = vim.api.nvim_echo
@@ -161,12 +162,36 @@ vim.api.nvim_echo = function(chunks)
   end
 end
 
-terminal._test.handle_find_text_response({ status = "ok", found = false })
+terminal._test.handle_find_text_response({ status = "ok", found = false, match_count = 0 })
 assert(terminal.state().last_find_found == false, "not-found responses should update find state to false")
+assert(terminal.state().last_find_match_count == 0, "not-found responses should store a zero find match count")
+assert(
+  terminal._test.preview_footer_line(120):match("find: 0 matches"),
+  "preview footer should show zero find matches"
+)
 assert(warnings[#warnings] == "nvim-browser: text was not found", "not-found responses should warn")
 
-terminal._test.handle_find_text_response({ status = "ok", found = true })
+terminal._test.handle_find_text_response({ status = "ok", found = true, match_count = 3 })
 assert(terminal.state().last_find_found == true, "found responses should update find state to true")
+assert(terminal.state().last_find_match_count == 3, "found responses should store a find match count")
+assert(
+  terminal._test.preview_footer_line(120):match("find: 3 matches"),
+  "preview footer should show plural find matches"
+)
+terminal._test.handle_find_text_response({ status = "ok", found = true, match_count = 1 })
+assert(
+  terminal._test.preview_footer_line(120):match("find: 1 match"),
+  "preview footer should show singular find match"
+)
+terminal._test.apply_serve_response({
+  id = 97,
+  status = "ok",
+  payload = "new page frame",
+  url = "https://example.com/new-page",
+  title = "New Page",
+})
+assert(terminal.state().last_find_found == nil, "content-changing responses should clear stale find state")
+assert(terminal.state().last_find_match_count == nil, "content-changing responses should clear stale find match count")
 
 terminal._test.apply_serve_response({
   id = 98,
@@ -2603,7 +2628,7 @@ terminal._test.apply_serve_response({
   url = "https://example.com/before-quiet",
   title = "Before Quiet",
   runtime = {
-    protocol_version = 14,
+    protocol_version = 15,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",
@@ -2652,7 +2677,7 @@ serve_stdout(nil, { vim.json.encode({
     submittable = true,
   },
   runtime = {
-    protocol_version = 14,
+    protocol_version = 15,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",

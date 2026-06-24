@@ -34,6 +34,7 @@ local state = {
   quiet_request_ids = {},
   latest_applied_response_id = 0,
   last_find_found = nil,
+  last_find_match_count = nil,
   last_find_query = nil,
   response_handlers = {},
   metadata_observer = nil,
@@ -382,10 +383,16 @@ end
 local function handle_find_text_response(response)
   if response.status ~= "ok" then
     state.last_find_found = nil
+    state.last_find_match_count = nil
     return
   end
 
   state.last_find_found = response.found == true
+  if response.match_count ~= nil and response.match_count ~= vim.NIL then
+    state.last_find_match_count = math.max(0, math.floor(tonumber(response.match_count) or 0))
+  else
+    state.last_find_match_count = nil
+  end
   if response.found == false then
     vim.api.nvim_echo({ { "nvim-browser: text was not found", "WarningMsg" } }, false, {})
   end
@@ -746,6 +753,10 @@ local function apply_serve_response_metadata(response)
   end
   if response.status == "ok" and response.payload ~= nil then
     state.rendered_frame_geometry = rendered_frame_geometry_from_runtime(response.runtime)
+    if response.found == nil then
+      state.last_find_found = nil
+      state.last_find_match_count = nil
+    end
   end
 end
 
@@ -758,6 +769,11 @@ local function dispatch_serve_response_handler(response)
   end
   if response.found ~= nil then
     state.last_find_found = response.found == true
+    if response.match_count ~= nil and response.match_count ~= vim.NIL then
+      state.last_find_match_count = math.max(0, math.floor(tonumber(response.match_count) or 0))
+    else
+      state.last_find_match_count = nil
+    end
     return true
   end
   return false
@@ -1222,6 +1238,11 @@ local function preview_footer_line(width)
     table.insert(parts, focused)
   end
 
+  if state.last_find_match_count ~= nil then
+    local suffix = state.last_find_match_count == 1 and "match" or "matches"
+    table.insert(parts, "find: " .. tostring(state.last_find_match_count) .. " " .. suffix)
+  end
+
   local runtime = runtime_footer_label(state.runtime_metadata)
   if runtime ~= nil then
     table.insert(parts, runtime)
@@ -1416,6 +1437,7 @@ function M.open(command)
   state.latest_applied_response_id = 0
   state.latest_reader_request_id = nil
   state.last_find_found = nil
+  state.last_find_match_count = nil
   state.last_find_query = nil
   state.response_handlers = {}
   state.element_hints = {}
@@ -1739,6 +1761,7 @@ function M.close()
   state.latest_applied_response_id = 0
   state.latest_reader_request_id = nil
   state.last_find_found = nil
+  state.last_find_match_count = nil
   state.last_find_query = nil
   state.response_handlers = {}
   state.element_hints = {}
@@ -2172,6 +2195,7 @@ function M.find_text(query, opts)
   local backwards = opts.backwards == true
   state.last_find_query = query
   state.last_find_found = nil
+  state.last_find_match_count = nil
   request_resize()
   return send_serve_request({
     type = "find_text",
@@ -2743,6 +2767,7 @@ function M.state()
     live_refresh_request_id = state.live_refresh_request_id,
     stopped_operation = state.stopped_operation,
     last_find_found = state.last_find_found,
+    last_find_match_count = state.last_find_match_count,
     last_find_query = state.last_find_query,
     element_hints = state.element_hints,
     reader_bufnr = state.reader_bufnr,

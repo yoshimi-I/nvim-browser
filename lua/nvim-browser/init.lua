@@ -1555,6 +1555,10 @@ function M.last_find_found()
   return terminal.state().last_find_found
 end
 
+function M.last_find_match_count()
+  return terminal.state().last_find_match_count
+end
+
 function M.hints()
   return terminal.state().element_hints or {}
 end

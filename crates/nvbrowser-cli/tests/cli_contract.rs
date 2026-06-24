@@ -1397,10 +1397,16 @@ fn opt_in_e2e_serve_loop_writes_active_session_screenshot() {
         "path": screenshot_path.to_string_lossy(),
     }));
     assert_eq!(screenshot["status"], "ok");
-    assert!(screenshot["payload"].is_null(), "screenshot responses should not include terminal payloads");
+    assert!(
+        screenshot["payload"].is_null(),
+        "screenshot responses should not include terminal payloads"
+    );
     assert_eq!(screenshot["title"], "Screenshot Fixture");
     let png = std::fs::read(&screenshot_path).expect("screenshot should be written");
-    assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"), "screenshot should be a PNG file");
+    assert!(
+        png.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "screenshot should be a PNG file"
+    );
 
     let quit = serve.request(serde_json::json!({ "id": 2, "type": "quit" }));
     assert_eq!(quit["status"], "ok");

@@ -465,6 +465,8 @@ struct ServeResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     found: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    match_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
 
@@ -703,6 +705,7 @@ struct CapturePayload {
     hints: Vec<ElementHint>,
     hint_error: Option<String>,
     found: Option<bool>,
+    match_count: Option<u32>,
 }
 
 impl<R: Renderer> ServeRuntime<R> {
@@ -721,7 +724,17 @@ impl<R: Renderer> ServeRuntime<R> {
         let id = request.id();
         match self.try_handle(request) {
             Ok(capture) => {
-                let (payload, page, focused, text, selection, hints, hint_error, found) = capture
+                let (
+                    payload,
+                    page,
+                    focused,
+                    text,
+                    selection,
+                    hints,
+                    hint_error,
+                    found,
+                    match_count,
+                ) = capture
                     .map(|capture| {
                         (
                             capture.payload,
@@ -732,9 +745,10 @@ impl<R: Renderer> ServeRuntime<R> {
                             capture.hints,
                             capture.hint_error,
                             capture.found,
+                            capture.match_count,
                         )
                     })
-                    .unwrap_or((None, None, None, None, None, Vec::new(), None, None));
+                    .unwrap_or((None, None, None, None, None, Vec::new(), None, None, None));
                 ServeResponse {
                     id,
                     status: ServeStatus::Ok,
@@ -749,6 +763,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     hints,
                     hint_error,
                     found,
+                    match_count,
                     error: None,
                 }
             }
@@ -766,6 +781,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 hints: Vec::new(),
                 hint_error: None,
                 found: None,
+                match_count: None,
                 error: Some(error.to_string()),
             },
         }
@@ -774,7 +790,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 14,
+            protocol_version: 15,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -1105,6 +1121,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 )?;
                 let mut capture = self.capture_payload(false)?;
                 capture.found = Some(result.found);
+                capture.match_count = result.match_count;
                 Ok(Some(capture))
             }
             ServeRequest::PageText { .. } => {
@@ -1121,6 +1138,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     hints: Vec::new(),
                     hint_error: None,
                     found: None,
+                    match_count: None,
                 }))
             }
             ServeRequest::SelectionText { .. } => {
@@ -1137,6 +1155,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     hints: Vec::new(),
                     hint_error: None,
                     found: None,
+                    match_count: None,
                 }))
             }
             ServeRequest::Screenshot { path, .. } => {
@@ -1206,6 +1225,7 @@ impl<R: Renderer> ServeRuntime<R> {
             hints,
             hint_error,
             found: None,
+            match_count: None,
         })
     }
 
@@ -1238,6 +1258,7 @@ impl<R: Renderer> ServeRuntime<R> {
             hints: Vec::new(),
             hint_error: None,
             found: None,
+            match_count: None,
         })
     }
 
@@ -1418,6 +1439,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         hints: Vec::new(),
                         hint_error: None,
                         found: None,
+                        match_count: None,
                         error: Some(error.to_string()),
                     })
                 )?;
@@ -2247,6 +2269,7 @@ mod tests {
                 query: request.query,
                 backwards: request.backwards,
                 found: true,
+                match_count: Some(3),
             })
         }
 
@@ -2741,6 +2764,7 @@ mod tests {
             hints: Vec::new(),
             hint_error: None,
             found: None,
+            match_count: None,
             error: None,
         };
 
@@ -2779,6 +2803,7 @@ mod tests {
             }],
             hint_error: None,
             found: None,
+            match_count: None,
             error: None,
         };
 
@@ -2804,12 +2829,13 @@ mod tests {
             hints: Vec::new(),
             hint_error: None,
             found: Some(true),
+            match_count: Some(3),
             error: None,
         };
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":12,"status":"ok","payload":"frame","url":"https://example.com","title":"Example","found":true}"#
+            r#"{"id":12,"status":"ok","payload":"frame","url":"https://example.com","title":"Example","found":true,"match_count":3}"#
         );
     }
 
@@ -2836,6 +2862,7 @@ mod tests {
             hints: Vec::new(),
             hint_error: None,
             found: None,
+            match_count: None,
             error: None,
         };
 
@@ -2868,6 +2895,7 @@ mod tests {
             hints: Vec::new(),
             hint_error: None,
             found: None,
+            match_count: None,
             error: None,
         };
 
@@ -2893,6 +2921,7 @@ mod tests {
             hints: Vec::new(),
             hint_error: None,
             found: None,
+            match_count: None,
             error: None,
         };
 
@@ -2925,6 +2954,7 @@ mod tests {
             hints: Vec::new(),
             hint_error: None,
             found: None,
+            match_count: None,
             error: None,
         };
 
@@ -2950,6 +2980,7 @@ mod tests {
             hints: Vec::new(),
             hint_error: None,
             found: None,
+            match_count: None,
             error: None,
         };
 
@@ -2965,7 +2996,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 14,
+                protocol_version: 15,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -2989,12 +3020,13 @@ mod tests {
             hints: Vec::new(),
             hint_error: None,
             found: None,
+            match_count: None,
             error: None,
         };
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":14,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":15,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -3021,7 +3053,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 14);
+        assert_eq!(runtime_info.protocol_version, 15);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -3151,7 +3183,10 @@ mod tests {
         assert_eq!(response.status, ServeStatus::Ok);
         assert_eq!(response.payload, None);
         assert_eq!(response.url, Some("https://example.com".to_string()));
-        assert_eq!(std::fs::read(screenshot_path).expect("screenshot should be written"), tiny_png());
+        assert_eq!(
+            std::fs::read(screenshot_path).expect("screenshot should be written"),
+            tiny_png()
+        );
     }
 
     #[test]
@@ -4412,6 +4447,7 @@ mod tests {
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_some());
         assert_eq!(response.found, Some(true));
+        assert_eq!(response.match_count, Some(3));
         assert_eq!(runtime.renderer.find_queries, vec!["needle"]);
         assert_eq!(runtime.renderer.find_directions, vec![true]);
         assert_eq!(runtime.renderer.captures, 2);

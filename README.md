@@ -395,6 +395,8 @@ status, doctor, and close. Preview buffers map `?` to this picker by default.
 
 `:NBrowserFind {text}` finds text in the active browser page, scrolls to the
 match through the browser's native find behavior, and captures a fresh frame.
+The preview footer shows the latest visible-text match count, such as
+`find: 3 matches`.
 `:NBrowserFindNext` and `:NBrowserFindPrevious` repeat the last browser find
 query forward or backward. In preview buffers, the default `n` and `N` mappings
 repeat the current page find like a normal editor search.

@@ -66,11 +66,11 @@ browser frames into stable row-major image tiles. Tile payloads clear the full
 stable tile ID range before reusing IDs so frame replacement is deterministic
 when a large capture is followed by a smaller one.
 
-The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 14
-adds active-session screenshot export (`screenshot`) alongside click,
-right-click, hover, wheel, focus, form, text, key, reader, selection, and hint
-actions. Most browser actions default to returning a fresh frame payload after
-applying the action. Text input and key press requests also accept
+The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 15
+adds find result visible-text match counts (`match_count`) alongside screenshot,
+click, right-click, hover, wheel, focus, form, text, key, reader, selection, and
+hint actions. Most browser actions default to returning a fresh frame payload
+after applying the action. Text input and key press requests also accept
 `capture = false`; that quiet path applies the CDP input and settles browser
 state without returning a frame. Neovim uses quiet requests inside browser text
 mode to avoid per-key screenshot recapture, then requests an explicit capture

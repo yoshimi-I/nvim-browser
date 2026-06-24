@@ -719,19 +719,26 @@ impl Renderer for ChromiumRenderer {
 
     fn find_text(&mut self, request: FindTextRequest) -> Result<FindTextResult, RendererError> {
         let script = find_text_script(&request.query, request.backwards)?;
-        let found = self
+        let result = self
             .tab
             .evaluate(&script, false)
             .map_err(render_error)?
             .value
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false);
+            .and_then(|value| value.as_str().map(str::to_string))
+            .ok_or_else(|| {
+                RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "find text result was invalid",
+                )
+            })
+            .and_then(|value| parse_find_text_json(&value).map_err(render_error))?;
         Ok(FindTextResult {
             session_id: request.session_id,
             page_id: request.page_id,
             query: request.query,
             backwards: request.backwards,
-            found,
+            found: result.found,
+            match_count: Some(result.match_count),
         })
     }
 
@@ -2264,8 +2271,33 @@ fn parse_focused_element_json(text: &str) -> Result<FocusedElement, serde_json::
 fn find_text_script(query: &str, backwards: bool) -> Result<String, RendererError> {
     let query = serde_json::to_string(query).map_err(render_error)?;
     Ok(format!(
-        "window.find({query}, false, {backwards}, true, false, true, false)"
+        r#"(function() {{
+  const query = {query};
+  const found = window.find(query, false, {backwards}, true, false, true, false);
+  const text = (document.body && document.body.innerText) || "";
+  const needle = String(query).toLocaleLowerCase();
+  const haystack = String(text).toLocaleLowerCase();
+  let match_count = 0;
+  if (needle.length > 0) {{
+    let index = haystack.indexOf(needle);
+    while (index !== -1) {{
+      match_count += 1;
+      index = haystack.indexOf(needle, index + needle.length);
+    }}
+  }}
+  return JSON.stringify({{ found, match_count }});
+}})()"#
     ))
+}
+
+#[derive(Debug, Deserialize)]
+struct FindTextScriptResult {
+    found: bool,
+    match_count: u32,
+}
+
+fn parse_find_text_json(text: &str) -> Result<FindTextScriptResult, serde_json::Error> {
+    serde_json::from_str(text)
 }
 
 #[derive(Debug, Deserialize)]
@@ -2976,14 +3008,29 @@ mod tests {
 
     #[test]
     fn find_text_script_uses_requested_direction() {
-        assert_eq!(
-            find_text_script("needle", false).expect("forward find script should build"),
-            r#"window.find("needle", false, false, true, false, true, false)"#
-        );
-        assert_eq!(
-            find_text_script("needle", true).expect("backward find script should build"),
-            r#"window.find("needle", false, true, true, false, true, false)"#
-        );
+        let forward = find_text_script("needle", false).expect("forward find script should build");
+        assert!(forward.contains(r#"window.find(query, false, false, true, false, true, false)"#));
+        assert!(forward.contains("document.body.innerText"));
+        assert!(forward.contains("match_count"));
+
+        let backward = find_text_script("needle", true).expect("backward find script should build");
+        assert!(backward.contains(r#"window.find(query, false, true, true, false, true, false)"#));
+    }
+
+    #[test]
+    fn find_text_script_escapes_query_as_json() {
+        let script = find_text_script(r#"quote " and \ slash"#, false).expect("find script should build");
+
+        assert!(script.contains(r#"const query = "quote \" and \\ slash";"#));
+    }
+
+    #[test]
+    fn parse_find_text_json_preserves_match_count() {
+        let parsed = parse_find_text_json(r#"{"found":true,"match_count":2}"#)
+            .expect("find text result should parse");
+
+        assert!(parsed.found);
+        assert_eq!(parsed.match_count, 2);
     }
 
     #[test]

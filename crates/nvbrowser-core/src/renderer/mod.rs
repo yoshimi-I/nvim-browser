@@ -584,6 +584,7 @@ pub struct FindTextResult {
     pub query: String,
     pub backwards: bool,
     pub found: bool,
+    pub match_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -1028,6 +1029,7 @@ mod tests {
                 query: request.query,
                 backwards: request.backwards,
                 found: true,
+                match_count: Some(3),
             })
         }
 
@@ -1248,6 +1250,7 @@ mod tests {
         assert_eq!(find.query, "needle");
         assert!(find.backwards);
         assert!(find.found);
+        assert_eq!(find.match_count, Some(3));
     }
 
     #[test]
