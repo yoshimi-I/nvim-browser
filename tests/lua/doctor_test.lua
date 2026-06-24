@@ -18,6 +18,15 @@ local function contains_line(report, pattern)
   return false
 end
 
+local function has_line(report, expected)
+  for _, line in ipairs(report.lines) do
+    if line == expected then
+      return true
+    end
+  end
+  return false
+end
+
 local function count_lines(report, pattern)
   local count = 0
   for _, line in ipairs(report.lines) do
@@ -39,7 +48,7 @@ local zellij_auto = doctor.run({
   image_fit = "original",
 }, {})
 assert(contains_line(zellij_auto, "browser output: ansi"), "auto graphics under Zellij should choose ANSI browser output")
-assert(contains_line(zellij_auto, "image output: ansi"), "auto graphics under Zellij should choose ANSI image output")
+assert(has_line(zellij_auto, "image target output: ansi"), "auto image targets under Zellij should choose ANSI browser output")
 assert(contains_line(zellij_auto, "terminal: unknown"), "doctor should report detected terminal")
 assert(contains_line(zellij_auto, "multiplexer: zellij"), "doctor should report detected multiplexer")
 assert(contains_line(zellij_auto, "graphics reason: Zellij"), "doctor should explain auto graphics selection")
@@ -60,7 +69,10 @@ local outside_zellij = doctor.run({
   },
 }, {})
 assert(contains_line(outside_zellij, "browser output: kitty-unicode"), "auto graphics outside Zellij should choose Kitty Unicode")
-assert(contains_line(outside_zellij, "image output: kitty"), "auto graphics in Ghostty should choose Kitty image output")
+assert(
+  has_line(outside_zellij, "image target output: kitty-unicode"),
+  "auto image targets in Ghostty should choose Kitty Unicode browser output"
+)
 assert(contains_line(outside_zellij, "terminal: ghostty"), "doctor should report Ghostty detection")
 assert(contains_line(outside_zellij, "graphics reason: Ghostty"), "doctor should explain Ghostty graphics support")
 assert(contains_line(outside_zellij, "viewport cell px: 9x15"), "doctor should report configured viewport cell pixel size")

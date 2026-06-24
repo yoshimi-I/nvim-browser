@@ -14,9 +14,9 @@ This repository is an early MVP scaffold. Today it includes:
 - Rust backend binary: `nvbrowser`
 - target classification for URLs, Markdown, HTML/PDF, and images
 - styled Markdown-to-HTML rendering with local asset base paths
-- local HTML, SVG, and PDF file previews through the Chromium/CDP browser
+- local HTML, SVG, PDF, and raster image file previews through the Chromium/CDP browser
   session path
-- image output through Kitty graphics protocol with fit modes
+- standalone CLI image output through Kitty graphics protocol with fit modes
 - Chromium/CDP browser sessions rendered through Kitty graphics or ANSI output
 - Ghostty-oriented browser previews use full-frame Kitty Unicode image placement
   with cursor-addressable placeholder cells
@@ -33,7 +33,7 @@ Planned next steps:
 
 - terminal-multiplexer graphics passthrough support and documentation
 - richer browser interaction for links and form controls
-- Mermaid, KaTeX, and richer image preview through the same browser runtime
+- Mermaid, KaTeX, and richer document preview features
 
 ## Architecture
 
@@ -74,7 +74,6 @@ With lazy.nvim:
   config = function()
     require("nvim-browser").setup({
       graphics = "auto",
-      image_fit = "contain",
     })
   end,
 }
@@ -91,11 +90,12 @@ require("nvim-browser").setup({
 ```
 
 With `graphics = "auto"`, nvim-browser resolves graphics from the terminal
-environment. Ghostty, Kitty, and WezTerm use `kitty-unicode` for browser frames
-and `kitty` for raster images. Zellij falls back to ANSI because Kitty graphics
-passthrough is unreliable there. tmux keeps Kitty output and relies on tmux
-passthrough wrapping. Unknown terminals use ANSI as the safe fallback. Override
-with `graphics = "ansi"`, `"kitty"`, or `"kitty-unicode"` when needed.
+environment. Ghostty, Kitty, and WezTerm use `kitty-unicode` for browser frames;
+the standalone `nvbrowser show-image` CLI uses `kitty` for raster images.
+Zellij falls back to ANSI because Kitty graphics passthrough is unreliable
+there. tmux keeps Kitty output and relies on tmux passthrough wrapping. Unknown
+terminals use ANSI as the safe fallback. Override with `graphics = "ansi"`,
+`"kitty"`, or `"kitty-unicode"` when needed.
 
 If your terminal font cell size makes browser previews look stretched or click
 targets feel offset, tune the viewport cell pixels:
@@ -271,10 +271,9 @@ Then run:
 
 Markdown files are rendered with a docs-oriented browser shell and a local
 `<base>` path so relative images can resolve from the Markdown file directory.
-HTML and SVG files are opened through Chromium using `file://` URLs.
-Raster image previews support `original`, `contain`, `width`, and `height` fit modes.
-Configure Neovim's default with
-`require("nvim-browser").setup({ image_fit = "contain" })`.
+HTML, SVG, PDF, and raster image files are opened through Chromium using
+`file://` URLs. The standalone `nvbrowser show-image` CLI still supports
+`original`, `contain`, `width`, and `height` fit modes.
 
 `:NBrowserClickHere` maps the preview cursor to browser viewport pixels. It is
 available for ANSI and Kitty Unicode browser previews. Active browser previews

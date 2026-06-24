@@ -32,7 +32,6 @@ Example lazy.nvim setup:
   config = function()
     require("nvim-browser").setup({
       graphics = "auto",
-      image_fit = "contain",
     })
   end,
 }
@@ -46,11 +45,12 @@ require("nvim-browser").setup({
 })
 <
 With graphics="auto", nvim-browser resolves graphics from the terminal
-environment. Ghostty, Kitty, and WezTerm use kitty-unicode for browser frames
-and kitty for raster images. Zellij falls back to ANSI because Kitty graphics
-passthrough is unreliable there. tmux keeps Kitty output and relies on tmux
-passthrough wrapping. Unknown terminals use ANSI as the safe fallback. Override
-with graphics="ansi", "kitty", or "kitty-unicode" when needed.
+environment. Ghostty, Kitty, and WezTerm use kitty-unicode for browser frames;
+the standalone nvbrowser show-image CLI uses kitty for raster images. Zellij
+falls back to ANSI because Kitty graphics passthrough is unreliable there. tmux
+keeps Kitty output and relies on tmux passthrough wrapping. Unknown terminals
+use ANSI as the safe fallback. Override with graphics="ansi", "kitty", or
+"kitty-unicode" when needed.
 
 To keep cookies, localStorage, and login state across launched Chromium
 sessions, opt in to a dedicated profile directory. nvim-browser never defaults
@@ -99,10 +99,9 @@ COMMANDS                                           *nvim-browser-commands*
         are rendered through a browser-styled HTML shell with local relative
         asset support. HTML files, SVG files, PDF files, and HTTP/HTTPS URLs
         start a Chromium-backed browser session for the current POC. PDF
-        rendering uses Chrome's built-in PDF viewer. Raster image files
-        are emitted with Kitty graphics protocol escape sequences or ANSI
-        output and can use original, contain, width, or height fit modes for the
-        preview pane.
+        rendering uses Chrome's built-in PDF viewer. Raster image files are
+        opened through Chromium using file:// URLs so they reuse the same
+        preview surface and session lifecycle.
 
 							*:NBrowserReload*
 :NBrowserReload

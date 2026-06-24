@@ -98,7 +98,7 @@ function M.run(config, terminal_state)
 
   local graphics_resolution = backend.resolve_graphics(config)
   local browser_output = command_output(backend.command_for(config.binary or "nvbrowser", "open", "https://example.com", config))
-  local image_output = command_output(backend.command_for(config.binary or "nvbrowser", "open", "/tmp/nvim-browser-doctor.png", config))
+  local image_target_output = command_output(backend.command_for(config.binary or "nvbrowser", "open", "/tmp/nvim-browser-doctor.png", config))
   local report = {
     items = {},
     lines = {
@@ -109,7 +109,7 @@ function M.run(config, terminal_state)
       "multiplexer: " .. tostring(graphics_resolution.multiplexer or "unknown"),
       "viewport cell px: " .. tostring(cell.width) .. "x" .. tostring(cell.height),
       "browser output: " .. browser_output,
-      "image output: " .. image_output,
+      "image target output: " .. image_target_output,
       "graphics reason: " .. tostring(graphics_resolution.reason or "unknown"),
       "environment: ZELLIJ=" .. tostring(vim.env.ZELLIJ or "") .. " TERM=" .. tostring(vim.env.TERM or ""),
       active_session_line(terminal_state),

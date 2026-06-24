@@ -54,9 +54,10 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 
 ## Current POC Capabilities
 
-- Opens URLs, Markdown files, HTML/SVG/PDF files, and raster images. PDF files
-  use Chrome's built-in PDF viewer through the Chromium/CDP browser session
-  path; nvim-browser does not rasterize PDFs itself.
+- Opens URLs, Markdown files, HTML/SVG/PDF files, and raster images. PDF and
+  raster image files use Chrome's built-in file viewers through the
+  Chromium/CDP browser session path; nvim-browser does not rasterize PDFs
+  itself.
 - Runs persistent Chromium/CDP browser sessions over a JSONL `serve` protocol.
 - Supports navigation, reload, stop, back/forward, browser-like preview scroll
   motions, repeatable find next/previous, focused input, key presses, selector

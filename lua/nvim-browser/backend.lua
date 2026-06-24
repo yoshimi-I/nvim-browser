@@ -4,12 +4,8 @@ local function extension_for(target)
   return vim.fn.fnamemodify(target, ":e"):lower()
 end
 
-local function is_image_extension(extension)
-  return vim.tbl_contains({ "png", "jpg", "jpeg", "gif", "webp" }, extension)
-end
-
 local function is_browser_file_extension(extension)
-  return vim.tbl_contains({ "html", "htm", "svg", "pdf" }, extension)
+  return vim.tbl_contains({ "html", "htm", "svg", "pdf", "png", "jpg", "jpeg", "gif", "webp" }, extension)
 end
 
 local function env_value(env, key)
@@ -113,10 +109,6 @@ function M.resolve_graphics(opts, env)
   return resolution
 end
 
-local function image_graphics_output(opts)
-  return M.resolve_graphics(opts).image_output
-end
-
 local function is_browser_url(target)
   return target:match("^https?://") or target:match("^file://")
 end
@@ -172,18 +164,6 @@ function M.command_for(binary, action, target, opts)
     table.insert(command, "--url")
     table.insert(command, vim.uri_from_fname(vim.fn.fnamemodify(target, ":p")))
     return command
-  end
-
-  if is_image_extension(extension) then
-    return {
-      binary,
-      "show-image",
-      target,
-      "--output",
-      image_graphics_output(opts),
-      "--fit",
-      (opts and opts.image_fit) or "original",
-    }
   end
 
   return { binary, "inspect", target }
