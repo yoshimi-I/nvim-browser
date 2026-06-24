@@ -989,6 +989,7 @@ end
 
 local send_pending_request
 local send_capture_request
+local send_page_state_request
 
 stop_live_refresh_timer = function()
   state.live_refresh_generation = state.live_refresh_generation + 1
@@ -1060,12 +1061,12 @@ local function start_live_refresh_timer(generation)
       if state.pending_operation ~= nil or state.live_refresh_request_id ~= nil or state.scroll_coalesce_request ~= nil then
         return
       end
-      send_capture_request()
+      send_page_state_request()
     end)
   end)
 end
 
-send_capture_request = function(opts)
+local function send_live_refresh_request(request, opts)
   opts = opts or {}
   if opts.force == true then
     cancel_in_flight_capture()
@@ -1073,13 +1074,21 @@ send_capture_request = function(opts)
   if state.live_refresh_request_id ~= nil then
     return false
   end
-  local ok, id = send_serve_request({ type = "capture" }, function()
+  local ok, id = send_serve_request(request, function()
     state.live_refresh_request_id = nil
   end)
   if ok then
     state.live_refresh_request_id = id
   end
   return ok
+end
+
+send_capture_request = function(opts)
+  return send_live_refresh_request({ type = "capture" }, opts)
+end
+
+send_page_state_request = function(opts)
+  return send_live_refresh_request({ type = "page_state" }, opts)
 end
 
 local function ensure_resize_autocmd()
@@ -1824,6 +1833,9 @@ function M.open(command)
         end
         state.quiet_request_ids[response.id] = nil
         local is_protocol_error = response.id == 0 and response.status == "error"
+        if is_protocol_error and state.live_refresh_request_id ~= nil then
+          clear_in_flight_capture()
+        end
         if response.id == state.live_refresh_request_id and state.pending_operation ~= nil then
           dispatch_serve_response_handler(response)
           if state.live_refresh_request_id == response.id then

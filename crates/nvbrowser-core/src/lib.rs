@@ -12,11 +12,12 @@ pub use renderer::{
     FocusHintRequest, FocusSelectorRequest, FocusedElement, FocusedElementRequest, FrameArtifact,
     HistoryNavigationRequest, HistoryNavigationResult, HoverHintRequest, HoverPointRequest,
     InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
-    PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
-    ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
-    RightClickHintRequest, RightClickPointRequest, ScrollRequest, ScrollResult, SelectHintRequest,
-    SelectOptionHint, SelectionTextRequest, SelectionTextResult, ShutdownResult, TextInputRequest,
-    ToggleHintRequest, UploadHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
+    PageMetadata, PageMetadataRequest, PageMetrics, PageMetricsRequest, PageTextRequest,
+    PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer,
+    RendererError, RendererErrorKind, RightClickHintRequest, RightClickPointRequest, ScrollRequest,
+    ScrollResult, SelectHintRequest, SelectOptionHint, SelectionTextRequest, SelectionTextResult,
+    ShutdownResult, TextInputRequest, ToggleHintRequest, UploadHintRequest, WheelPointRequest,
+    ZoomRequest, ZoomResult,
 };
 pub use session::{
     BrowserSession, FrameId, FrameMetadata, LoadingState, PageId, PageState, SessionId, Viewport,

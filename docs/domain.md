@@ -78,8 +78,9 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   the latest completed file path in the JSONL response plus footer/status,
   keeps an indexed session list for `:NBrowserDownloads`, and can reopen
   completed downloads through the normal browser open path.
-- Performs live recapture while idle and suppresses background recapture while a
-  navigation-like operation is pending.
+- Performs lightweight live page-state refresh while idle and suppresses
+  background refresh while a navigation-like operation is pending. Manual
+  `:NBrowserRefresh` and browser actions still capture fresh frames.
 - Extracts a reader buffer from the current browser page and resolves reader
   links against the page URL.
 - Hover interactions are first-class browser input, not DOM-only simulation:
@@ -96,11 +97,11 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   tmux passthrough needs real validation.
 - Click accuracy depends on configured terminal cell pixel dimensions. Doctor
   output and future auto-detection should reduce this burden.
-- Quiet input improves text latency by skipping screenshots and hint
-  recomputation, but successful quiet responses still return lightweight
+- Quiet input and idle live refresh improve latency by skipping screenshots and
+  hint recomputation, but successful lightweight responses still return
   URL/title, page-metrics, and focused-element metadata. The current frame and
-  hints remain visible until Enter, exit, or a later captured response refreshes
-  them.
+  hints remain visible until Enter, exit, manual refresh, or a later captured
+  response refreshes them.
 - Chromium target lifecycle is a core reliability area. `target=_blank`,
   `window.open`, and delayed `about:blank` navigations should stay covered by
   opt-in E2E because real pages commonly create and navigate child targets

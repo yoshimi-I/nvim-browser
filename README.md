@@ -25,7 +25,7 @@ This repository is an early MVP scaffold. Today it includes:
 - Neovim commands for opening, navigating, reloading, stopping pending loads, history, scrolling, finding text, text input, keys, selector focus, point clicks, right-clicks, point hovers, and hinted element actions
 - browser element hints overlaid on cursor-addressable previews
 - persistent Neovim preview surface reuse
-- current URL, title, scroll progress, status, runtime diagnostics, preview footer, live recapture, and preview buffer naming from the active browser session
+- current URL, title, scroll progress, status, runtime diagnostics, preview footer, lightweight live state refresh, and preview buffer naming from the active browser session
 - CLI integration tests for backend command contracts
 - initial OSS packaging and CI
 
@@ -160,8 +160,9 @@ download per interaction response and keeps a session-local list available via
 `:NBrowserDownloads` with 1-based indexes; it does not provide progress UI,
 cancellation, or filename prompts.
 
-Active browser previews recapture the page every 1500ms by default so async
-page updates and SPA state changes appear in Neovim without manual refresh.
+Active browser previews refresh lightweight page state every 1500ms by default
+so URL, title, scroll, focus, and download metadata stay current without
+constant screenshots. Use `:NBrowserRefresh` when you want a fresh frame.
 Disable it or tune the interval with:
 
 ```lua
@@ -348,9 +349,10 @@ browser session, including a 1-based index, filename, and full path.
 `:NBrowserOpenDownload` opens a completed download by index or with a picker.
 
 While a browser session is idle, nvim-browser periodically sends a lightweight
-capture request to keep the preview current. It does not send background
-captures while a navigation-like operation is pending, and it stops the timer
-when the browser preview is stopped, closed, or replaced.
+page-state request to keep metadata current without repainting the preview
+image. It does not send background requests while a navigation-like operation is
+pending, and it stops the timer when the browser preview is stopped, closed, or
+replaced.
 
 Navigation-like operations show immediate `loading | ... | Esc stop` feedback
 in the preview footer before Chromium returns a frame. Run `:NBrowserStop`, or

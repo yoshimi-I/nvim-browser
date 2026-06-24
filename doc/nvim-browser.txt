@@ -89,9 +89,10 @@ require("nvim-browser").setup({
 })
 <
 
-Active browser previews recapture the page every 1500ms by default. This keeps
-async page updates visible in Neovim without manual refresh. Disable it or tune
-the interval with:
+Active browser previews refresh lightweight page state every 1500ms by
+default. This keeps URL, title, scroll, focus, and download metadata current
+without constant screenshots. Use :NBrowserRefresh when you want a fresh frame.
+Disable it or tune the interval with:
 >
 require("nvim-browser").setup({
   live_refresh = {
@@ -487,9 +488,10 @@ COMMANDS                                           *nvim-browser-commands*
 	URL. Non-default zoom is reported as "zoom=125%".
 	Navigation-like operations show immediate "loading | ... | Esc stop"
 	feedback in this footer before Chromium returns a new frame.
-	Idle browser previews periodically send capture requests to keep async
-	page updates visible. Background captures are skipped while an operation is
-	pending and stop when the browser preview is stopped, closed, or replaced.
+	Idle browser previews periodically send lightweight page-state requests to
+	keep metadata current without repainting the preview image. Background
+	requests are skipped while an operation is pending and stop when the
+	browser preview is stopped, closed, or replaced.
 
 							*:NBrowserDownloads*
 :NBrowserDownloads

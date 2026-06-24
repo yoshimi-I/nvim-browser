@@ -1668,43 +1668,61 @@ fake_timers[1].callback()
 assert(vim.wait(1000, function()
   for _, request in ipairs(sent_requests) do
     local ok, decoded = pcall(vim.json.decode, request.payload)
-    if ok and decoded.type == "capture" then
+    if ok and decoded.type == "page_state" then
       return true
     end
   end
   return false
-end), "live refresh timer should send capture requests for active serve sessions")
-local live_capture_id = terminal.state().live_refresh_request_id
-assert(live_capture_id ~= nil, "live refresh should track an in-flight capture request")
+end), "live refresh timer should send page-state requests for active serve sessions")
+local live_page_state_id = terminal.state().live_refresh_request_id
+assert(live_page_state_id ~= nil, "live refresh should track an in-flight page-state request")
 assert(terminal._test.response_handler_count() == 1, "live refresh should register one response handler")
+serve_stdout(nil, { vim.json.encode({
+  id = 0,
+  status = "error",
+  error = "unknown variant `page_state`",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id == nil
+end), "protocol errors should clear in-flight live refresh requests")
+assert(terminal._test.response_handler_count() == 0, "protocol errors should clear the live refresh response handler")
+sent_requests = {}
+assert(terminal.refresh() == true, "manual refresh should still work after a live refresh protocol error")
+terminal._test.clear_in_flight_capture()
+
+sent_requests = {}
+fake_timers[1].callback()
+assert(vim.wait(1000, function()
+  live_page_state_id = terminal.state().live_refresh_request_id
+  return live_page_state_id ~= nil and last_request_of_type("page_state") ~= nil
+end), "live refresh should recover after a protocol error is cleared")
 
 sent_requests = {}
 assert(terminal.scroll(120, 0) == true, "scroll input should be accepted for coalescing")
 assert(terminal.scroll(120, 0) == true, "second scroll input should be accepted for coalescing")
 assert(terminal.scroll(120, 0) == true, "third scroll input should be accepted for coalescing")
 assert(#nvim_browser_requests_of_type("scroll") == 0, "rapid scroll input should be delayed for coalescing")
-assert(terminal.state().live_refresh_request_id == nil, "queued scroll should invalidate stale live captures")
+assert(terminal.state().live_refresh_request_id == nil, "queued scroll should invalidate stale live page-state requests")
 fake_timers[1].callback()
 vim.wait(50)
-_G.nvim_browser_live_capture_while_scroll_queued_seen = false
+_G.nvim_browser_live_page_state_while_scroll_queued_seen = false
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
-  if ok and decoded.type == "capture" then
-    _G.nvim_browser_live_capture_while_scroll_queued_seen = true
+  if ok and decoded.type == "page_state" then
+    _G.nvim_browser_live_page_state_while_scroll_queued_seen = true
   end
 end
-assert(not _G.nvim_browser_live_capture_while_scroll_queued_seen, "live refresh should not capture while scroll input is queued")
+assert(not _G.nvim_browser_live_page_state_while_scroll_queued_seen, "live refresh should not request page_state while scroll input is queued")
 serve_stdout(nil, { vim.json.encode({
-  id = live_capture_id,
+  id = live_page_state_id,
   status = "ok",
-  payload = "stale before coalesced scroll frame",
   url = "https://example.com/stale-before-scroll",
   title = "Stale Before Scroll",
 }), "" })
 _G.nvim_browser_stale_before_scroll_applied = vim.wait(200, function()
   return terminal.state().current_title == "Stale Before Scroll"
 end)
-assert(not _G.nvim_browser_stale_before_scroll_applied, "capture response made stale by queued scroll should not update metadata")
+assert(not _G.nvim_browser_stale_before_scroll_applied, "page-state response made stale by queued scroll should not update metadata")
 assert(nvim_browser_latest_timer() ~= nil, "coalesced scroll should create a trailing timer")
 nvim_browser_latest_timer().callback()
 assert(vim.wait(1000, function()
@@ -1724,14 +1742,14 @@ local point_click_pending_id = terminal.state().pending_operation and terminal.s
 assert(point_click_pending_id ~= nil, "point click should mark the browser click as pending")
 sent_requests = {}
 fake_timers[1].callback()
-local live_capture_during_click_seen = false
+local live_page_state_during_click_seen = false
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
-  if ok and decoded.type == "capture" then
-    live_capture_during_click_seen = true
+  if ok and decoded.type == "page_state" then
+    live_page_state_during_click_seen = true
   end
 end
-assert(not live_capture_during_click_seen, "live refresh should not capture while a click is pending")
+assert(not live_page_state_during_click_seen, "live refresh should not request page_state while a click is pending")
 sent_requests = {}
 assert(terminal.scroll(30, 0) == true, "scroll input should still queue while a click is pending")
 flush_latest_timer()
@@ -1744,7 +1762,7 @@ assert(
 terminal._test.clear_pending_operation(point_click_pending_id)
 
 terminal._test.apply_serve_response({
-  id = live_capture_id,
+  id = live_page_state_id,
   status = "ok",
   page = {
     scroll_y = 0,
@@ -1821,7 +1839,7 @@ local half_page_up_request = last_request_of_type("scroll")
 assert(half_page_up_request.delta_y == -300, "half-page up should negate 50 percent of page viewport height")
 
 terminal._test.apply_serve_response({
-  id = live_capture_id + 1,
+  id = live_page_state_id + 1,
   status = "ok",
   page = {
     scroll_y = 250,
@@ -1845,7 +1863,7 @@ local bottom_request = last_request_of_type("scroll")
 assert(bottom_request.delta_y == 750, "scroll_bottom should scroll to remaining document bottom")
 
 terminal._test.apply_serve_response({
-  id = live_capture_id + 2,
+  id = live_page_state_id + 2,
   status = "ok",
   page = {
     scroll_y = 250.5,
@@ -1876,7 +1894,7 @@ assert(page_up_request ~= nil, "backward page_scroll should send a scroll reques
 assert(page_up_request.delta_y == -540, "backward page_scroll should negate the viewport-based delta")
 
 terminal._test.apply_serve_response({
-  id = live_capture_id + 3,
+  id = live_page_state_id + 3,
   status = "ok",
   page = {
     viewport_height = 0,
@@ -1897,7 +1915,7 @@ flush_latest_timer()
 local runtime_half_page_request = last_request_of_type("scroll")
 assert(runtime_half_page_request.delta_y == 250, "runtime viewport fallback should honor half-page fraction")
 
-terminal._test.apply_serve_response({ id = live_capture_id + 4, status = "ok", runtime = {} })
+terminal._test.apply_serve_response({ id = live_page_state_id + 4, status = "ok", runtime = {} })
 sent_requests = {}
 assert(terminal.page_scroll(1) == true, "page_scroll should fall back when no metadata exists")
 flush_latest_timer()
@@ -1917,26 +1935,25 @@ local fallback_bottom_request = last_request_of_type("scroll")
 assert(fallback_bottom_request.delta_y == 40000, "scroll_bottom fallback should send a large downward scroll")
 
 sent_requests = {}
-assert(terminal.navigate("https://example.com/new") == true, "navigation should be allowed while a live capture is in flight")
+assert(terminal.navigate("https://example.com/new") == true, "navigation should be allowed while a live page-state request is in flight")
 serve_stdout(nil, { vim.json.encode({
-  id = live_capture_id,
+  id = live_page_state_id,
   status = "ok",
-  payload = "stale frame",
   url = "https://example.com/stale",
-  title = "Stale Capture",
+  title = "Stale Page State",
 }), "" })
 assert(vim.wait(1000, function()
   return terminal.state().live_refresh_request_id == nil
-end), "late live capture responses should clear in-flight capture state")
+end), "late live page-state responses should clear in-flight request state")
 assert(
-  terminal.state().current_title ~= "Stale Capture",
-  "late live capture responses should not overwrite navigation-pending preview metadata"
+  terminal.state().current_title ~= "Stale Page State",
+  "late live page-state responses should not overwrite navigation-pending preview metadata"
 )
 assert(
   terminal.state().pending_operation ~= nil,
-  "late live capture responses should not clear navigation pending feedback"
+  "late live page-state responses should not clear navigation pending feedback"
 )
-assert(terminal._test.response_handler_count() == 0, "stale live capture handling should remove the capture response handler")
+assert(terminal._test.response_handler_count() == 0, "stale live page-state handling should remove the response handler")
 terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
 
 sent_requests = {}
@@ -1975,14 +1992,14 @@ sent_requests = {}
 terminal._test.set_pending_operation({ id = 777, label = "loading", target = "https://example.com/pending" })
 fake_timers[1].callback()
 vim.wait(50)
-local capture_while_pending = false
+local page_state_while_pending = false
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
-  if ok and decoded.type == "capture" then
-    capture_while_pending = true
+  if ok and decoded.type == "page_state" then
+    page_state_while_pending = true
   end
 end
-assert(not capture_while_pending, "live refresh should not send capture while an operation is pending")
+assert(not page_state_while_pending, "live refresh should not send page_state while an operation is pending")
 terminal._test.clear_pending_operation(777)
 
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.org" })
@@ -2445,7 +2462,7 @@ assert(fake_timers[1].stopped == true and fake_timers[1].closed == true, "disabl
 sent_requests = {}
 fake_timers[1].callback()
 vim.wait(50)
-assert(#sent_requests == 0, "stopped live refresh timer callbacks should not send capture after disabling")
+assert(#sent_requests == 0, "stopped live refresh timer callbacks should not send requests after disabling")
 _G.nvim_browser_timer_count_before_reenable = #fake_timers
 terminal.configure({ live_refresh = { enabled = true, interval_ms = 25 } })
 assert(
@@ -2457,34 +2474,36 @@ assert(_G.nvim_browser_reenabled_live_timer.starts[1].timeout == 25, "live refre
 sent_requests = {}
 fake_timers[1].callback()
 vim.wait(50)
-assert(#sent_requests == 0, "old live refresh timer callbacks should not send capture after reconfiguration")
+assert(#sent_requests == 0, "old live refresh timer callbacks should not send requests after reconfiguration")
 
 sent_requests = {}
 _G.nvim_browser_reenabled_live_timer.callback()
-local reconfigured_capture_id = nil
+local reconfigured_page_state_id = nil
 assert(vim.wait(1000, function()
-  reconfigured_capture_id = terminal.state().live_refresh_request_id
-  return reconfigured_capture_id ~= nil
-end), "reconfigured live refresh should still track capture requests")
+  reconfigured_page_state_id = terminal.state().live_refresh_request_id
+  return reconfigured_page_state_id ~= nil
+end), "reconfigured live refresh should still track page-state requests")
+assert(last_request_of_type("page_state") ~= nil, "timer-driven live refresh should request page_state metadata")
+assert(last_request_of_type("capture") == nil, "timer-driven live refresh should avoid full frame capture")
 terminal.configure({ live_refresh = { enabled = false } })
 assert(
-  terminal.state().live_refresh_request_id == reconfigured_capture_id,
-  "disabling live refresh should not forget an already in-flight capture"
+  terminal.state().live_refresh_request_id == reconfigured_page_state_id,
+  "disabling live refresh should not forget an already in-flight page-state request"
 )
 assert(terminal.navigate("https://example.com/after-reconfigure") == true, "navigation should still work after live refresh reconfiguration")
 serve_stdout(nil, { vim.json.encode({
-  id = reconfigured_capture_id,
+  id = reconfigured_page_state_id,
   status = "ok",
-  payload = "stale after reconfigure",
   url = "https://example.com/stale-after-reconfigure",
   title = "Stale After Reconfigure",
+  page = { scroll_y = 12, viewport_height = 480, document_height = 960 },
 }), "" })
 assert(vim.wait(1000, function()
   return terminal.state().live_refresh_request_id == nil
-end), "stale capture after reconfigure should clear in-flight capture state")
+end), "stale page-state after reconfigure should clear in-flight request state")
 assert(
   terminal.state().current_title ~= "Stale After Reconfigure",
-  "stale capture after reconfigure should not overwrite pending navigation metadata"
+  "stale page-state after reconfigure should not overwrite pending navigation metadata"
 )
 terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
 terminal.configure({ live_refresh = { enabled = true, interval_ms = 25 } })
@@ -3451,6 +3470,8 @@ jobstart_calls = {}
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--markdown", "/tmp/quiet-reset.md" })
 sent_requests = {}
 assert(terminal.refresh() == true, "new serve session should be able to request capture")
+assert(last_request_of_type("capture") ~= nil, "manual refresh should request a full capture")
+assert(last_request_of_type("page_state") == nil, "manual refresh should not use page_state")
 serve_stdout(nil, { vim.json.encode({
   id = terminal.state().live_refresh_request_id,
   status = "ok",

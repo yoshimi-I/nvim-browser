@@ -16,11 +16,12 @@ use nvbrowser_core::{
     DownloadStatus, DragPointRequest, ElementHint, ElementHintsRequest, FindTextRequest,
     FocusHintRequest, FocusSelectorRequest, FocusedElement, FocusedElementRequest, FrameArtifact,
     HistoryNavigationRequest, HoverHintRequest, HoverPointRequest, KeyPressRequest,
-    KittyImageDelete, KittyImageTransfer, NavigateRequest, PageMetrics, PageMetricsRequest,
-    PageTextRequest, PageTextSnapshot, ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer,
-    RendererError, RendererErrorKind, RightClickHintRequest, RightClickPointRequest, ScrollRequest,
-    SelectHintRequest, SelectionTextRequest, SessionId, TextInputRequest, ToggleHintRequest,
-    UploadHintRequest, Viewport, WheelPointRequest, ZoomRequest,
+    KittyImageDelete, KittyImageTransfer, NavigateRequest, PageMetadataRequest, PageMetrics,
+    PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest, RenderFrameRequest,
+    RenderedFrame, Renderer, RendererError, RendererErrorKind, RightClickHintRequest,
+    RightClickPointRequest, ScrollRequest, SelectHintRequest, SelectionTextRequest, SessionId,
+    TextInputRequest, ToggleHintRequest, UploadHintRequest, Viewport, WheelPointRequest,
+    ZoomRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -343,6 +344,9 @@ enum ServeRequest {
         url: String,
     },
     Capture {
+        id: u64,
+    },
+    PageState {
         id: u64,
     },
     Scroll {
@@ -891,7 +895,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 15,
+            protocol_version: 16,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -924,6 +928,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.capture_payload(true).map(Some)
             }
             ServeRequest::Capture { .. } => self.capture_payload(true).map(Some),
+            ServeRequest::PageState { .. } => self.interaction_metadata_payload(true).map(Some),
             ServeRequest::Scroll {
                 delta_x, delta_y, ..
             } => {
@@ -1355,6 +1360,13 @@ impl<R: Renderer> ServeRuntime<R> {
         &mut self,
         include_focused: bool,
     ) -> Result<CapturePayload, Box<dyn std::error::Error>> {
+        if let Some(metadata) = self.renderer.page_metadata(PageMetadataRequest::new(
+            self.session.id(),
+            self.session.active_page_id(),
+        ))? {
+            self.session
+                .navigate_active_page_with_title(metadata.url, metadata.title);
+        }
         let page = self.renderer.page_metrics(PageMetricsRequest::new(
             self.session.id(),
             self.session.active_page_id(),
@@ -1419,6 +1431,7 @@ impl ServeRequest {
         match self {
             ServeRequest::Navigate { id, .. }
             | ServeRequest::Capture { id }
+            | ServeRequest::PageState { id }
             | ServeRequest::Scroll { id, .. }
             | ServeRequest::Zoom { id, .. }
             | ServeRequest::Reload { id }
@@ -2100,6 +2113,17 @@ mod tests {
             }))
         }
 
+        fn page_metadata(
+            &mut self,
+            _request: PageMetadataRequest,
+        ) -> Result<Option<nvbrowser_core::PageMetadata>, RendererError> {
+            self.operations.push("page_metadata");
+            Ok(self.url.clone().map(|url| nvbrowser_core::PageMetadata {
+                url,
+                title: self.next_frame_title.clone(),
+            }))
+        }
+
         fn focused_element(
             &mut self,
             _request: FocusedElementRequest,
@@ -2671,6 +2695,12 @@ mod tests {
                 scale: 1.25
             }
         );
+
+        assert_eq!(
+            parse_serve_request(r#"{"type":"page_state","id":12}"#)
+                .expect("page_state request should parse"),
+            ServeRequest::PageState { id: 12 }
+        );
     }
 
     #[test]
@@ -3228,7 +3258,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 15,
+                protocol_version: 16,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -3259,7 +3289,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":15,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":16,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -3288,7 +3318,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 15);
+        assert_eq!(runtime_info.protocol_version, 16);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -4184,7 +4214,70 @@ mod tests {
         assert_eq!(runtime.renderer.captures, 0);
         assert_eq!(
             runtime.renderer.operations,
-            vec!["text_input", "settle", "focused_element"]
+            vec!["text_input", "settle", "page_metadata", "focused_element"]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_returns_page_state_without_capturing_frame() {
+        let mut renderer = FakeRenderer::new();
+        renderer.focused = Some(FocusedElement {
+            kind: ElementHintKind::Input,
+            label: Some("Search".to_string()),
+            value: Some("hello".to_string()),
+            checked: None,
+            focusable: true,
+            submittable: true,
+        });
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 80,
+                rows: 24,
+                viewport: Viewport::new(800, 480),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+        let navigate = runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com/current".to_string(),
+        });
+        assert_eq!(navigate.status, ServeStatus::Ok);
+        runtime.renderer.url = Some("https://example.com/spa-state".to_string());
+        runtime.renderer.next_frame_title = Some("SPA State".to_string());
+        runtime.renderer.captures = 0;
+        runtime.renderer.operations.clear();
+
+        let response = runtime.handle(ServeRequest::PageState { id: 77 });
+
+        assert_eq!(response.id, 77);
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_none());
+        assert!(response.hints.is_empty());
+        assert_eq!(
+            response.url.as_deref(),
+            Some("https://example.com/spa-state")
+        );
+        assert_eq!(response.title.as_deref(), Some("SPA State"));
+        assert!(response.page.is_some());
+        assert_eq!(
+            response
+                .focused
+                .as_ref()
+                .and_then(|focus| focus.as_ref())
+                .and_then(|focus| focus.label.as_deref()),
+            Some("Search")
+        );
+        assert_eq!(runtime.renderer.captures, 0);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["page_metadata", "focused_element"]
         );
     }
 
@@ -4390,7 +4483,7 @@ mod tests {
         assert_eq!(runtime.renderer.captures, 0);
         assert_eq!(
             runtime.renderer.operations,
-            vec!["key_press", "settle", "focused_element"]
+            vec!["key_press", "settle", "page_metadata", "focused_element"]
         );
     }
 

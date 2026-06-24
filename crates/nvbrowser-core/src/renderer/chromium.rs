@@ -30,12 +30,12 @@ use crate::{
         FocusSelectorRequest, FocusedElement, FocusedElementRequest, FrameArtifact,
         HistoryNavigationRequest, HistoryNavigationResult, HoverHintRequest, HoverPointRequest,
         InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
-        PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
-        ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
-        RendererErrorKind, RightClickHintRequest, RightClickPointRequest, ScrollRequest,
-        ScrollResult, SelectHintRequest, SelectionTextRequest, SelectionTextResult, ShutdownResult,
-        TextInputRequest, ToggleHintRequest, UploadHintRequest, WheelPointRequest, ZoomRequest,
-        ZoomResult,
+        PageMetadata, PageMetadataRequest, PageMetrics, PageMetricsRequest, PageTextRequest,
+        PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer,
+        RendererError, RendererErrorKind, RightClickHintRequest, RightClickPointRequest,
+        ScrollRequest, ScrollResult, SelectHintRequest, SelectionTextRequest, SelectionTextResult,
+        ShutdownResult, TextInputRequest, ToggleHintRequest, UploadHintRequest, WheelPointRequest,
+        ZoomRequest, ZoomResult,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -826,6 +826,16 @@ impl Renderer for ChromiumRenderer {
         _request: PageMetricsRequest,
     ) -> Result<Option<PageMetrics>, RendererError> {
         Ok(self.read_page_metrics())
+    }
+
+    fn page_metadata(
+        &mut self,
+        _request: PageMetadataRequest,
+    ) -> Result<Option<PageMetadata>, RendererError> {
+        let url = self.tab.get_url();
+        let title = self.read_current_title().unwrap_or(None);
+        self.current_url = Some(url.clone());
+        Ok(Some(PageMetadata { url, title }))
     }
 
     fn focused_element(

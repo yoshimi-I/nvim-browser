@@ -105,6 +105,13 @@ pub trait Renderer {
         Ok(None)
     }
 
+    fn page_metadata(
+        &mut self,
+        _request: PageMetadataRequest,
+    ) -> Result<Option<PageMetadata>, RendererError> {
+        Ok(None)
+    }
+
     fn focused_element(
         &mut self,
         _request: FocusedElementRequest,
@@ -194,6 +201,27 @@ pub struct PageMetrics {
     pub viewport_height: f64,
     pub document_width: f64,
     pub document_height: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct PageMetadataRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+}
+
+impl PageMetadataRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId) -> Self {
+        Self {
+            session_id,
+            page_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PageMetadata {
+    pub url: String,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
