@@ -226,6 +226,7 @@ Then run:
 :NBrowserStop
 :NBrowserNavigate https://example.org
 :NBrowserAddress
+:NBrowserOpenUnderCursor
 :NBrowserHistory
 :NBrowserResume
 :NBrowserActions
@@ -295,6 +296,11 @@ Markdown files are rendered with a docs-oriented browser shell and a local
 HTML, SVG, PDF, and raster image files are opened through Chromium using
 `file://` URLs. The standalone `nvbrowser show-image` CLI still supports
 `original`, `contain`, `width`, and `height` fit modes.
+
+`:NBrowserOpenUnderCursor` opens the Markdown link target, raw URL, `file://`
+URL, readable local file path, or host-like text under the cursor, falling back
+to the current line as search text. It navigates an active browser session when
+one exists and otherwise opens a new browser preview.
 
 `:NBrowserClickHere` maps the preview cursor to browser viewport pixels. It is
 available for ANSI and Kitty Unicode browser previews. Active browser previews
@@ -460,10 +466,11 @@ require("nvim-browser").setup({
 
 The default mappings are `<leader>br` reload, `<leader>bh` back, `<leader>bl`
 forward, `<leader>bj` scroll down, `<leader>bk` scroll up, `<leader>ba`
-address, `<leader>b/` find, `<leader>bf` hint mode, `<leader>bt` type into a
-hinted field, `<leader>bs` type and submit, and `<leader>bo` select a hinted
-option, and `<leader>bc` toggle a hinted checkbox/radio. Existing mappings are left
-untouched; choose another prefix or mapping key if one is already in use.
+address, `<leader>bg` open the target under the cursor, `<leader>b/` find,
+`<leader>bf` hint mode, `<leader>bt` type into a hinted field, `<leader>bs`
+type and submit, `<leader>bo` select a hinted option, and `<leader>bc` toggle a
+hinted checkbox/radio. Existing mappings are left untouched; choose another
+prefix or mapping key if one is already in use.
 
 Focused preview buffers also install buffer-local browser controls by default:
 `r` reload, `H` back, `L` forward, `j`/`k` scroll, `<PageDown>/<PageUp>` scroll

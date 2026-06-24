@@ -124,6 +124,10 @@ function M.setup(browser, opts)
     browser.address()
   end, "nvim-browser: address")
 
+  set_mapping(prefix, mapping_lhs(mappings, "open_under_cursor", "g"), function()
+    browser.open_under_cursor()
+  end, "nvim-browser: open target under cursor")
+
   set_mapping(prefix, mapping_lhs(mappings, "find", "/"), function()
     local query = input("nvim-browser find: ")
     if query == nil or query == "" then

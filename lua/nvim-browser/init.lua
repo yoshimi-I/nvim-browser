@@ -219,6 +219,139 @@ local function has_active_browser_session()
     and terminal_state.has_buffer
 end
 
+local function trim_cursor_target(value, opts)
+  opts = opts or {}
+  if value == nil or value == vim.NIL then
+    return nil
+  end
+  value = tostring(value):gsub("^%s+", ""):gsub("%s+$", "")
+  if opts.strip_closing ~= false then
+    value = value:gsub("[%)%]}>.,;]+$", "")
+  else
+    value = value:gsub("[%]}>.,;]+$", "")
+  end
+  value = value:gsub("^[%(<%[{]+", "")
+  if value == "" then
+    return nil
+  end
+  return value
+end
+
+local function unescape_markdown_target(value)
+  if value == nil then
+    return nil
+  end
+  return value:gsub("\\(.)", "%1")
+end
+
+local function cursor_line_and_column()
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local line = vim.api.nvim_get_current_line()
+  return line, (cursor[2] or 0) + 1
+end
+
+local function markdown_link_target_under_cursor(line, column)
+  local offset = 1
+  while offset <= #line do
+    local start_index = line:find("%[", offset)
+    if start_index == nil then
+      return nil
+    end
+    local label_end = start_index + 1
+    while label_end <= #line do
+      local char = line:sub(label_end, label_end)
+      if char == "\\" then
+        label_end = label_end + 2
+      elseif char == "]" then
+        break
+      else
+        label_end = label_end + 1
+      end
+    end
+    if label_end > #line or line:sub(label_end + 1, label_end + 1) ~= "(" then
+      offset = start_index + 1
+      goto continue
+    end
+    local target_start = label_end + 2
+    local index = target_start
+    local depth = 0
+    local target_end = nil
+    while index <= #line do
+      local char = line:sub(index, index)
+      if char == "\\" then
+        index = index + 1
+      elseif char == "(" then
+        depth = depth + 1
+      elseif char == ")" then
+        if depth == 0 then
+          target_end = index - 1
+          break
+        end
+        depth = depth - 1
+      end
+      index = index + 1
+    end
+    if target_end ~= nil then
+      if column >= start_index and column <= index then
+        local target = line:sub(target_start, target_end)
+        target = trim_cursor_target(target:match("^(%S+)") or target, { strip_closing = false })
+        return unescape_markdown_target(target)
+      end
+      offset = index + 1
+    else
+      offset = label_end + 1
+    end
+    ::continue::
+  end
+  return nil
+end
+
+local function url_under_cursor(line, column)
+  local offset = 1
+  while offset <= #line do
+    local start_index, end_index = line:find("%f[%S]%a[%w+.-]*://%S+", offset)
+    if start_index == nil then
+      return nil
+    end
+    if column >= start_index and column <= end_index then
+      return trim_cursor_target(line:sub(start_index, end_index))
+    end
+    offset = end_index + 1
+  end
+  return nil
+end
+
+local function readable_cursor_file(value)
+  value = trim_cursor_target(value)
+  if value == nil then
+    return nil
+  end
+  if vim.fn.filereadable(value) == 1 then
+    return value
+  end
+  local expanded = vim.fn.fnamemodify(value, ":p")
+  if expanded ~= nil and expanded ~= "" and vim.fn.filereadable(expanded) == 1 then
+    return expanded
+  end
+  return nil
+end
+
+local function cfile_under_cursor()
+  local ok, value = pcall(vim.fn.expand, "<cfile>")
+  if not ok then
+    return nil
+  end
+  return trim_cursor_target(value)
+end
+
+local function should_use_cfile_as_target(value)
+  return value ~= nil and (value:find("%.", 1, true) ~= nil or value:find("/", 1, true) ~= nil or value:find(":", 1, true) ~= nil)
+end
+
+local function is_readable_local_target(value)
+  return value ~= nil and not value:match("^%a[%w+.-]*:") and readable_cursor_file(value) ~= nil
+end
+
 local function setup_preview_keymaps()
   local terminal_state = terminal.state()
   if terminal_state.bufnr ~= nil then
@@ -312,6 +445,48 @@ end
 
 function M.resolve_address_target(input)
   return address.resolve(input, M.config.search_url or config.options.search_url)
+end
+
+function M.resolve_cursor_target()
+  local line, column = cursor_line_and_column()
+  local target = markdown_link_target_under_cursor(line, column)
+  if target ~= nil then
+    return target
+  end
+  target = url_under_cursor(line, column)
+  if target ~= nil then
+    return target
+  end
+  local cfile = cfile_under_cursor()
+  target = readable_cursor_file(cfile)
+  if target ~= nil then
+    return target
+  end
+  if should_use_cfile_as_target(cfile) then
+    return cfile
+  end
+  return trim_cursor_target(line)
+end
+
+function M.open_under_cursor()
+  local target = M.resolve_cursor_target()
+  if target == nil then
+    return false
+  end
+  local local_file_target = is_readable_local_target(target)
+  if not local_file_target then
+    target = M.resolve_address_target(target)
+  end
+  if target == nil then
+    return false
+  end
+  if has_active_browser_session() then
+    if local_file_target then
+      target = vim.uri_from_fname(target)
+    end
+    return M.navigate(target)
+  end
+  return M.open(target) ~= false
 end
 
 function M.address(input, opts)

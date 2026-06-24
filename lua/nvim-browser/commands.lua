@@ -119,6 +119,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: address was empty or could not be opened", "WarningMsg" } }, false, {})
   end
 
+  local function warn_open_under_cursor_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: no URL, file, or search text under cursor", "WarningMsg" } }, false, {})
+  end
+
   local function warn_history_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: no browser history available or selected page could not be opened", "WarningMsg" } }, false, {})
   end
@@ -268,6 +272,12 @@ function M.register(browser, opts)
       return history_url_completions(arglead)
     end,
   })
+
+  vim.api.nvim_create_user_command("NBrowserOpenUnderCursor", function()
+    if browser.open_under_cursor == nil or not browser.open_under_cursor() then
+      warn_open_under_cursor_unavailable()
+    end
+  end, {})
 
   vim.api.nvim_create_user_command("NBrowserHistory", function()
     local history_error_reported = false

@@ -69,6 +69,8 @@ assert(type(browser.reader_follow) == "function", "reader_follow API should exis
 assert(type(browser.click_mouse) == "function", "click_mouse API should exist")
 assert(type(browser.stop) == "function", "stop API should exist")
 assert(type(browser.actions) == "function", "actions picker API should exist")
+assert(type(browser.open_under_cursor) == "function", "open-under-cursor API should exist")
+assert(type(browser.resolve_cursor_target) == "function", "cursor target resolver API should exist")
 
 assert(browser.resolve_address_target("https://example.com") == "https://example.com", "address resolver should preserve explicit URLs")
 assert(browser.resolve_address_target("example.com") == "https://example.com", "address resolver should add https to host-like inputs")
@@ -78,6 +80,82 @@ assert(browser.resolve_address_target("127.0.0.1abc") == "https://www.google.com
 assert(browser.resolve_address_target("hello world") == "https://www.google.com/search?q=hello%20world", "address resolver should search plain words")
 assert(browser.resolve_address_target("  docs  ") == "https://www.google.com/search?q=docs", "address resolver should trim input")
 assert(browser.resolve_address_target("") == nil, "address resolver should reject empty input")
+
+_G.nvim_browser_cursor_target_dir = vim.fn.tempname()
+vim.fn.mkdir(_G.nvim_browser_cursor_target_dir, "p")
+_G.nvim_browser_cursor_target_file = _G.nvim_browser_cursor_target_dir .. "/guide.md"
+vim.fn.writefile({ "# Guide" }, _G.nvim_browser_cursor_target_file)
+_G.nvim_browser_cursor_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_set_current_buf(_G.nvim_browser_cursor_buf)
+vim.api.nvim_buf_set_lines(_G.nvim_browser_cursor_buf, 0, -1, false, {
+  "Open [docs](https://example.com/docs) from markdown",
+  "Raw URL https://example.com/raw?x=1.",
+  "File " .. _G.nvim_browser_cursor_target_file,
+  "Host example.org/path",
+  "Search words with spaces",
+  "Parens [wiki](https://en.wikipedia.org/wiki/Foo_(bar))",
+  "File URL file:///tmp/example.html",
+  "Escaped [docs\\]](https://example.com/a\\)b)",
+  "   ",
+})
+vim.api.nvim_win_set_cursor(0, { 1, 9 })
+assert(browser.resolve_cursor_target() == "https://example.com/docs", "cursor resolver should prefer markdown link targets")
+vim.api.nvim_win_set_cursor(0, { 2, 18 })
+assert(browser.resolve_cursor_target() == "https://example.com/raw?x=1", "cursor resolver should trim URL punctuation")
+vim.api.nvim_win_set_cursor(0, { 3, 8 })
+assert(browser.resolve_cursor_target() == _G.nvim_browser_cursor_target_file, "cursor resolver should open readable local files from cfile")
+vim.api.nvim_win_set_cursor(0, { 4, 8 })
+assert(browser.resolve_cursor_target() == "example.org/path", "cursor resolver should return host-like cfile text")
+vim.api.nvim_win_set_cursor(0, { 5, 4 })
+assert(browser.resolve_cursor_target() == "Search words with spaces", "cursor resolver should fall back to trimmed line text for search")
+vim.api.nvim_win_set_cursor(0, { 6, 12 })
+assert(browser.resolve_cursor_target() == "https://en.wikipedia.org/wiki/Foo_(bar)", "cursor resolver should keep balanced parentheses in markdown link targets")
+vim.api.nvim_win_set_cursor(0, { 7, 12 })
+assert(browser.resolve_cursor_target() == "file:///tmp/example.html", "cursor resolver should preserve raw file URLs")
+vim.api.nvim_win_set_cursor(0, { 8, 12 })
+assert(browser.resolve_cursor_target() == "https://example.com/a)b", "cursor resolver should unescape escaped markdown link targets")
+vim.api.nvim_win_set_cursor(0, { 9, 1 })
+assert(browser.resolve_cursor_target() == nil, "cursor resolver should reject empty cursor context")
+
+_G.nvim_browser_opened_under_cursor = nil
+_G.nvim_browser_navigated_under_cursor = nil
+_G.nvim_browser_original_open_under_cursor_open = browser.open
+_G.nvim_browser_original_open_under_cursor_navigate = browser.navigate
+_G.nvim_browser_original_terminal_state_for_cursor = terminal.state
+browser.open = function(target)
+  _G.nvim_browser_opened_under_cursor = target
+  return true
+end
+browser.navigate = function(target)
+  _G.nvim_browser_navigated_under_cursor = target
+  return true
+end
+terminal.state = function()
+  return { mode = nil, job_id = nil, has_buffer = false }
+end
+vim.api.nvim_win_set_cursor(0, { 4, 8 })
+assert(browser.open_under_cursor() == true, "open_under_cursor should open a new preview without an active session")
+assert(_G.nvim_browser_opened_under_cursor == "https://example.org/path", "open_under_cursor should normalize host-like targets through address resolver")
+assert(_G.nvim_browser_navigated_under_cursor == nil, "open_under_cursor should not navigate without an active session")
+_G.nvim_browser_opened_under_cursor = nil
+terminal.state = function()
+  return { mode = "serve", job_id = 11, has_buffer = true }
+end
+vim.api.nvim_win_set_cursor(0, { 1, 9 })
+assert(browser.open_under_cursor() == true, "open_under_cursor should navigate when a browser session is active")
+assert(_G.nvim_browser_navigated_under_cursor == "https://example.com/docs", "open_under_cursor should navigate the active session to resolved targets")
+assert(_G.nvim_browser_opened_under_cursor == nil, "open_under_cursor should not open a replacement preview for active sessions")
+_G.nvim_browser_navigated_under_cursor = nil
+vim.api.nvim_win_set_cursor(0, { 3, 8 })
+assert(browser.open_under_cursor() == true, "open_under_cursor should navigate active sessions to readable local files")
+assert(
+  _G.nvim_browser_navigated_under_cursor == vim.uri_from_fname(_G.nvim_browser_cursor_target_file),
+  "open_under_cursor should convert readable local files to file URLs before active-session navigation"
+)
+browser.open = _G.nvim_browser_original_open_under_cursor_open
+browser.navigate = _G.nvim_browser_original_open_under_cursor_navigate
+terminal.state = _G.nvim_browser_original_terminal_state_for_cursor
+
 assert(type(browser.record_history) == "function", "history recorder API should exist")
 assert(type(browser.history) == "function", "history API should exist")
 assert(type(browser.history_urls) == "function", "history URL API should exist")

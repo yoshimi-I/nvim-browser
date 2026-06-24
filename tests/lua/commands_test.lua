@@ -9,6 +9,7 @@ local prompted = nil
 local prompt_default = nil
 local warnings = {}
 local addressed = nil
+local opened_under_cursor = false
 local history_picked = false
 local actions_picked = false
 local found = nil
@@ -97,6 +98,10 @@ local browser = {
     else
       addressed = input("nvim-browser address: ")
     end
+    return true
+  end,
+  open_under_cursor = function()
+    opened_under_cursor = true
     return true
   end,
   history_urls = function()
@@ -720,6 +725,8 @@ addressed = nil
 vim.cmd("NBrowserAddress hello world")
 assert(addressed == "hello world", "NBrowserAddress should accept address text as command arguments")
 assert(prompted == nil, "NBrowserAddress with arguments should not prompt")
+vim.cmd("NBrowserOpenUnderCursor")
+assert(opened_under_cursor == true, "NBrowserOpenUnderCursor should open the cursor target")
 local address_completions = vim.fn.getcompletion("NBrowserAddress https://example.com/", "cmdline")
 assert(vim.tbl_contains(address_completions, "https://example.com/docs"), "NBrowserAddress completion should include history URLs")
 assert(vim.tbl_contains(address_completions, "https://example.com/blog"), "NBrowserAddress completion should include older history URLs")
@@ -1138,6 +1145,9 @@ local failed_browser = {
   address = function()
     return false
   end,
+  open_under_cursor = function()
+    return false
+  end,
   find_text = function()
     return false
   end,
@@ -1203,6 +1213,13 @@ assert(
 
 vim.cmd("NBrowserAddress")
 assert(warnings[#warnings] == "nvim-browser: address was empty or could not be opened", "NBrowserAddress should warn when address fails")
+local open_under_cursor_warning_count = #warnings
+vim.cmd("NBrowserOpenUnderCursor")
+assert(
+  warnings[#warnings] == "nvim-browser: no URL, file, or search text under cursor",
+  "NBrowserOpenUnderCursor should warn when cursor target resolution fails"
+)
+assert(#warnings == open_under_cursor_warning_count + 1, "NBrowserOpenUnderCursor should warn exactly once on failure")
 
 vim.cmd("NBrowserFind missing")
 assert(warnings[#warnings] == "nvim-browser: text was not found or browser session is inactive", "NBrowserFind should warn when find fails")

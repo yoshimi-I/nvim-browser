@@ -47,6 +47,9 @@ local browser = {
   address = function()
     table.insert(calls, "address")
   end,
+  open_under_cursor = function()
+    table.insert(calls, "open_under_cursor")
+  end,
   find_text = function(query, opts)
     local direction = opts ~= nil and opts.backwards == true and "back" or "forward"
     table.insert(calls, "find:" .. direction .. ":" .. query)
@@ -200,6 +203,7 @@ assert_mapping("\\xl", "enabled keymaps should install forward mapping")
 assert_mapping("\\xj", "enabled keymaps should install scroll-down mapping")
 assert_mapping("\\xk", "enabled keymaps should install scroll-up mapping")
 assert_mapping("\\xa", "enabled keymaps should install address mapping")
+assert_mapping("\\xg", "enabled keymaps should install open-under-cursor mapping")
 assert_mapping("\\x/", "enabled keymaps should install find mapping")
 assert_mapping("\\xf", "enabled keymaps should install hint mapping")
 assert_mapping("\\xt", "enabled keymaps should install hinted input mapping")
@@ -213,6 +217,7 @@ trigger("\\xl")
 trigger("\\xj")
 trigger("\\xk")
 trigger("\\xa")
+trigger("\\xg")
 trigger("\\x/")
 trigger("\\xf")
 trigger("\\xt")
@@ -222,7 +227,7 @@ trigger("\\xc")
 
 assert(
   table.concat(calls, ",")
-    == "reload,back,forward,scroll:250:0,scroll:-250:0,address,find:forward:needle,hints,type_hints:type:global text,type_hints:submit:global text,select_hint:global text,toggle_hint:global text",
+    == "reload,back,forward,scroll:250:0,scroll:-250:0,address,open_under_cursor,find:forward:needle,hints,type_hints:type:global text,type_hints:submit:global text,select_hint:global text,toggle_hint:global text",
   "keymaps should call browser APIs"
 )
 

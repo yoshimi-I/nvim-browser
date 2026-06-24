@@ -62,6 +62,7 @@ M.options = {
       scroll_down = "j",
       scroll_up = "k",
       address = "a",
+      open_under_cursor = "g",
       find = "/",
       hints = "f",
       type_hint_mode = "t",

@@ -132,6 +132,13 @@ COMMANDS                                           *nvim-browser-commands*
 	If a browser session is active, navigate it; otherwise open a new browser
 	preview.
 
+							*:NBrowserOpenUnderCursor*
+:NBrowserOpenUnderCursor
+	Open the Markdown link target, raw URL, file:// URL, readable local file
+	path, or host-like text under the cursor, falling back to the current line
+	as search text. If a browser session is active, navigate it; otherwise open
+	a new browser preview.
+
 							*:NBrowserHistory*
 :NBrowserHistory
 	Open the recent page picker. Recent pages are persisted by default under
@@ -524,6 +531,7 @@ Default normal-mode mappings:
 <leader>bj  scroll down
 <leader>bk  scroll up
 <leader>ba  address prompt
+<leader>bg  open target under cursor
 <leader>b/  find prompt
 <leader>bf  hint mode
 <leader>bt  type into hinted field
