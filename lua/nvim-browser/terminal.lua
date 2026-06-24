@@ -36,6 +36,7 @@ local state = {
   last_find_found = nil,
   last_find_query = nil,
   response_handlers = {},
+  metadata_observer = nil,
   element_hints = {},
   element_hints_geometry = nil,
   cursor_addressable_preview = false,
@@ -717,6 +718,18 @@ local function apply_serve_response_metadata(response)
   end
   if response.title ~= nil then
     state.current_title = response.title ~= vim.NIL and response.title or nil
+  end
+  if
+    type(state.metadata_observer) == "function"
+    and response.status == "ok"
+    and response.url ~= nil
+    and response.url ~= vim.NIL
+    and response.url ~= ""
+  then
+    pcall(state.metadata_observer, {
+      url = state.current_url,
+      title = state.current_title,
+    })
   end
   if response.page ~= nil and response.page ~= vim.NIL then
     state.page_metrics = response.page
@@ -2694,6 +2707,14 @@ function M.configure(opts)
   else
     stop_live_refresh()
   end
+end
+
+function M.set_metadata_observer(observer)
+  if observer ~= nil and type(observer) ~= "function" then
+    return false
+  end
+  state.metadata_observer = observer
+  return true
 end
 
 function M.state()

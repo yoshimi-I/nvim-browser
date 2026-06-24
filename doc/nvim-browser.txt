@@ -122,8 +122,15 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserAddress [url-or-search]
 	Open a URL or search query. With no argument, prompt for a value and
 	prefill the prompt with the current URL when available, falling back to the
-	last target. If a browser session is active, navigate it; otherwise open a
-	new browser preview.
+	last target. Command-line completion includes recent session history URLs.
+	If a browser session is active, navigate it; otherwise open a new browser
+	preview.
+
+							*:NBrowserHistory*
+:NBrowserHistory
+	Open a recent page picker for this Neovim session. Selecting a page
+	navigates the active browser session, or opens a new browser preview when
+	no browser session is active.
 
 							*:NBrowserBack*
 :NBrowserBack

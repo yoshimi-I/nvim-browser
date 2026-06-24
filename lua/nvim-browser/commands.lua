@@ -119,6 +119,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: address was empty or could not be opened", "WarningMsg" } }, false, {})
   end
 
+  local function warn_history_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: no browser history available or selected page could not be opened", "WarningMsg" } }, false, {})
+  end
+
   local function warn_focused_input_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: focused text input failed or browser session is inactive", "WarningMsg" } }, false, {})
   end
@@ -161,6 +165,25 @@ function M.register(browser, opts)
   local function parse_hint_text(args)
     local label, text = (args or ""):match("^(%S+)%s+(.+)$")
     return label, text
+  end
+
+  local function history_url_completions(arglead)
+    if browser.history_urls == nil then
+      return {}
+    end
+    local urls = browser.history_urls()
+    if type(urls) ~= "table" then
+      return {}
+    end
+    local matches = {}
+    arglead = arglead or ""
+    for _, url in ipairs(urls) do
+      url = tostring(url)
+      if arglead == "" or url:sub(1, #arglead) == arglead then
+        table.insert(matches, url)
+      end
+    end
+    return matches
   end
 
   vim.api.nvim_create_user_command("NBrowserOpen", function(opts)
@@ -233,6 +256,29 @@ function M.register(browser, opts)
     end
   end, {
     nargs = "*",
+    complete = function(arglead)
+      return history_url_completions(arglead)
+    end,
+  })
+
+  vim.api.nvim_create_user_command("NBrowserHistory", function()
+    local history_error_reported = false
+    local function report_history_error()
+      if history_error_reported then
+        return
+      end
+      history_error_reported = true
+      warn_history_unavailable()
+    end
+    if browser.pick_history == nil or not browser.pick_history(select, {
+      on_error = function()
+        report_history_error()
+      end,
+    }) then
+      report_history_error()
+    end
+  end, {
+    nargs = 0,
   })
 
   vim.api.nvim_create_user_command("NBrowserBack", function()

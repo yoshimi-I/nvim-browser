@@ -71,6 +71,71 @@ assert(browser.resolve_address_target("127.0.0.1abc") == "https://www.google.com
 assert(browser.resolve_address_target("hello world") == "https://www.google.com/search?q=hello%20world", "address resolver should search plain words")
 assert(browser.resolve_address_target("  docs  ") == "https://www.google.com/search?q=docs", "address resolver should trim input")
 assert(browser.resolve_address_target("") == nil, "address resolver should reject empty input")
+assert(type(browser.record_history) == "function", "history recorder API should exist")
+assert(type(browser.history) == "function", "history API should exist")
+assert(type(browser.history_urls) == "function", "history URL API should exist")
+assert(type(browser.pick_history) == "function", "history picker API should exist")
+
+browser.clear_history()
+browser.record_history("https://example.com/docs", "Docs")
+browser.record_history("https://example.com/blog", "Blog")
+browser.record_history("https://example.com/docs", "Docs Updated")
+local history = browser.history()
+assert(#history == 2, "history should de-duplicate URLs")
+assert(history[1].url == "https://example.com/docs", "history should move repeated URLs to the front")
+assert(history[1].title == "Docs Updated", "history should update repeated URL titles")
+assert(history[2].url == "https://example.com/blog", "history should keep older URLs after newer entries")
+local history_urls = browser.history_urls()
+assert(history_urls[1] == "https://example.com/docs", "history_urls should return URLs in recent order")
+assert(history_urls[2] == "https://example.com/blog", "history_urls should include older URLs")
+history[1].url = "mutated"
+assert(browser.history()[1].url == "https://example.com/docs", "history should return a copy")
+
+local picked_history_items = nil
+local picked_history_prompt = nil
+local picked_history_label = nil
+local addressed_history = nil
+local original_address = browser.address
+browser.address = function(target)
+  addressed_history = target
+  return true
+end
+assert(browser.pick_history({
+  select = function(items, opts, on_choice)
+    picked_history_items = items
+    picked_history_prompt = opts.prompt
+    picked_history_label = opts.format_item(items[1])
+    on_choice(items[1])
+  end,
+}) == true, "history picker should open when history exists")
+assert(#picked_history_items == 2, "history picker should offer recent pages")
+assert(picked_history_prompt == "nvim-browser history: ", "history picker should use a history prompt")
+assert(picked_history_label:find("Docs Updated", 1, true), "history picker should format page titles")
+assert(picked_history_label:find("https://example.com/docs", 1, true), "history picker should format page URLs")
+assert(addressed_history == "https://example.com/docs", "history picker should navigate to the selected URL")
+
+addressed_history = nil
+assert(browser.pick_history({
+  select = function(_, _, on_choice)
+    on_choice(nil)
+  end,
+}) == false, "history picker should return false when canceled")
+assert(addressed_history == nil, "history picker should not navigate when canceled")
+browser.address = original_address
+browser.clear_history()
+assert(browser.pick_history({
+  select = function()
+    error("history picker should not open without entries")
+  end,
+}) == false, "history picker should return false without entries")
+for index = 1, 55 do
+  browser.record_history("https://example.com/page-" .. index, "Page " .. index)
+end
+local limited_history = browser.history()
+assert(#limited_history == 50, "history should keep a bounded number of recent pages")
+assert(limited_history[1].url == "https://example.com/page-55", "history limit should keep the newest page first")
+assert(limited_history[#limited_history].url == "https://example.com/page-6", "history limit should drop the oldest pages")
+browser.clear_history()
 
 local original_hints = browser.hints
 local original_click_hint = browser.click_hint
@@ -117,6 +182,28 @@ local original_terminal_find_previous = terminal.find_previous
 local original_terminal_zoom_in = terminal.zoom_in
 local original_terminal_zoom_out = terminal.zoom_out
 local original_terminal_zoom_reset = terminal.zoom_reset
+local original_terminal_navigate = terminal.navigate
+
+browser.clear_history()
+terminal.navigate = function()
+  return true
+end
+assert(browser.navigate("https://queued.example.com") == true, "navigate should report queued active-session navigation")
+assert(#browser.history() == 0, "navigate should wait for serve metadata before recording active-session history")
+terminal.navigate = original_terminal_navigate
+
+local original_terminal_open = terminal.open
+local opened_command = nil
+terminal.open = function(command)
+  opened_command = command
+end
+browser.clear_history()
+browser.open("/tmp/local page.md")
+assert(opened_command ~= nil, "open should still start a browser preview for local paths")
+assert(#browser.history() == 0, "open should wait for serve metadata before recording local path history")
+browser.open("https://example.com/direct-open")
+assert(browser.history()[1].url == "https://example.com/direct-open", "open should record direct URL targets immediately")
+terminal.open = original_terminal_open
 
 browser.hints = function()
   return {}

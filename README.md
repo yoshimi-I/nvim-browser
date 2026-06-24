@@ -219,6 +219,7 @@ Then run:
 :NBrowserStop
 :NBrowserNavigate https://example.org
 :NBrowserAddress
+:NBrowserHistory
 :NBrowserBack
 :NBrowserForward
 :NBrowserScrollDown 400
@@ -377,8 +378,11 @@ checkbox/radio hint label. Lua mappings can call `require("nvim-browser").hint_m
 `:NBrowserAddress [url-or-search]` works like a small omnibox; host-like input
 opens as a URL, and plain words use the configured search URL. With no
 argument, the prompt is prefilled with the current URL when available, falling
-back to the last target. Lua mappings can call `require("nvim-browser").address()`
-or pass a value directly with `require("nvim-browser").address("example.com")`.
+back to the last target. Command-line completion includes recent session history
+URLs. `:NBrowserHistory` opens a recent page picker for this Neovim session and
+navigates to the selected URL, or opens it when no browser session is active.
+Lua mappings can call `require("nvim-browser").address()` or pass a value
+directly with `require("nvim-browser").address("example.com")`.
 
 `:NBrowserFind {text}` finds text in the active browser page, scrolls to the
 match through the browser's native find behavior, and captures a fresh frame.

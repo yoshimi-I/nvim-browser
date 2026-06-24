@@ -9,7 +9,10 @@ local M = {}
 
 local state = {
   last_target = nil,
+  history = {},
 }
+
+local history_limit = 50
 
 local function plugin_root()
   return vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h")
@@ -34,6 +37,9 @@ end
 function M.setup(opts)
   M.config = config.setup(opts)
   terminal.configure(M.config)
+  terminal.set_metadata_observer(function(metadata)
+    M.record_history(metadata.url, metadata.title)
+  end)
   keymaps.setup(M, M.config.keymaps or {})
 end
 
@@ -55,6 +61,10 @@ local function setup_preview_keymaps()
   end
 end
 
+local function is_direct_history_url(target)
+  return type(target) == "string" and target:match("^[%a][%w+.-]*://") ~= nil
+end
+
 function M.inspect(target)
   target = resolve_target(target)
   state.last_target = target
@@ -70,6 +80,9 @@ end
 function M.open(target)
   target = resolve_target(target)
   state.last_target = target
+  if is_direct_history_url(target) then
+    M.record_history(target)
+  end
   local previous_bufnr = terminal.state().bufnr
   terminal.open(backend.command_for(M.config.binary, "open", target, M.config))
   local current_bufnr = terminal.state().bufnr
@@ -167,7 +180,111 @@ function M.address(input, opts)
   end
   local ok = M.open(target)
   state.last_target = target
+  if ok ~= false then
+    M.record_history(target)
+  end
   return ok ~= false
+end
+
+local function normalize_history_value(value)
+  if value == nil or value == vim.NIL then
+    return nil
+  end
+  value = tostring(value):gsub("^%s+", ""):gsub("%s+$", "")
+  if value == "" then
+    return nil
+  end
+  return value
+end
+
+function M.record_history(url, title)
+  url = normalize_history_value(url)
+  if url == nil then
+    return false
+  end
+  title = normalize_history_value(title)
+  for index = #state.history, 1, -1 do
+    if state.history[index].url == url then
+      table.remove(state.history, index)
+    end
+  end
+  table.insert(state.history, 1, { url = url, title = title })
+  while #state.history > history_limit do
+    table.remove(state.history)
+  end
+  return true
+end
+
+function M.clear_history()
+  state.history = {}
+end
+
+function M.history()
+  local entries = {}
+  for index, entry in ipairs(state.history) do
+    entries[index] = { url = entry.url, title = entry.title }
+  end
+  return entries
+end
+
+function M.history_urls()
+  local urls = {}
+  for _, entry in ipairs(state.history) do
+    table.insert(urls, entry.url)
+  end
+  return urls
+end
+
+local function history_picker_label(entry)
+  if type(entry) ~= "table" then
+    return ""
+  end
+  if entry.title ~= nil and entry.title ~= "" then
+    return entry.title .. " -> " .. entry.url
+  end
+  return entry.url or ""
+end
+
+function M.pick_history(select_or_opts, maybe_opts)
+  local select = vim.ui.select
+  local opts = maybe_opts or {}
+  if type(select_or_opts) == "function" then
+    select = select_or_opts
+  elseif type(select_or_opts) == "table" then
+    opts = select_or_opts
+    if type(opts.select) == "function" then
+      select = opts.select
+    end
+  end
+
+  local entries = M.history()
+  if #entries == 0 then
+    return false
+  end
+  local completed = false
+  local selected = nil
+  local action_ok = true
+  select(entries, {
+    prompt = opts.prompt or "nvim-browser history: ",
+    format_item = opts.format_item or history_picker_label,
+  }, function(choice)
+    completed = true
+    selected = choice
+    if choice == nil then
+      return
+    end
+    action_ok = M.address(choice.url) ~= false
+    if not action_ok and type(opts.on_error) == "function" then
+      opts.on_error("action_failed")
+    end
+  end)
+  if completed and selected == nil then
+    return false
+  end
+  if completed and not action_ok then
+    return false
+  end
+  return true
 end
 
 function M.back()

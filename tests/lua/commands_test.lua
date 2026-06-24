@@ -9,6 +9,7 @@ local prompted = nil
 local prompt_default = nil
 local warnings = {}
 local addressed = nil
+local history_picked = false
 local found = nil
 local found_next = false
 local found_previous = false
@@ -94,6 +95,21 @@ local browser = {
     else
       addressed = input("nvim-browser address: ")
     end
+    return true
+  end,
+  history_urls = function()
+    return { "https://example.com/docs", "https://example.com/blog" }
+  end,
+  pick_history = function(select)
+    history_picked = true
+    select({
+      { url = "https://example.com/docs", title = "Docs" },
+      { url = "https://example.com/blog", title = "Blog" },
+    }, { prompt = "nvim-browser history: " }, function(choice)
+      if choice ~= nil then
+        addressed = choice.url
+      end
+    end)
     return true
   end,
   find_text = function(query, opts)
@@ -686,6 +702,31 @@ addressed = nil
 vim.cmd("NBrowserAddress hello world")
 assert(addressed == "hello world", "NBrowserAddress should accept address text as command arguments")
 assert(prompted == nil, "NBrowserAddress with arguments should not prompt")
+local address_completions = vim.fn.getcompletion("NBrowserAddress https://example.com/", "cmdline")
+assert(vim.tbl_contains(address_completions, "https://example.com/docs"), "NBrowserAddress completion should include history URLs")
+assert(vim.tbl_contains(address_completions, "https://example.com/blog"), "NBrowserAddress completion should include older history URLs")
+
+history_picked = false
+addressed = nil
+prompted = nil
+vim.cmd("NBrowserHistory")
+assert(history_picked == true, "NBrowserHistory should open the history picker")
+assert(prompted == "nvim-browser history: ", "NBrowserHistory should use a history picker prompt")
+assert(addressed == "https://example.com/docs", "NBrowserHistory should navigate to the selected history URL")
+
+local original_pick_history = browser.pick_history
+browser.pick_history = function(_, opts)
+  opts.on_error("action_failed")
+  return false
+end
+local history_warning_count = #warnings
+vim.cmd("NBrowserHistory")
+assert(
+  warnings[#warnings] == "nvim-browser: no browser history available or selected page could not be opened",
+  "NBrowserHistory should warn when the selected page cannot be opened"
+)
+assert(#warnings == history_warning_count + 1, "NBrowserHistory should warn once when picker action fails")
+browser.pick_history = original_pick_history
 
 vim.cmd("NBrowserFind needle")
 assert(found.query == "needle", "NBrowserFind should pass an argument to browser.find_text")

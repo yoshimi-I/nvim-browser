@@ -1118,6 +1118,25 @@ serve_stdout(nil, { vim.json.encode({
 assert(vim.wait(1000, function()
   return terminal.state().current_title == "Example"
 end), "serve frame responses should update preview metadata")
+local observed_metadata = nil
+terminal.set_metadata_observer(function(metadata)
+  observed_metadata = metadata
+end)
+terminal._test.apply_serve_response({
+  id = 100,
+  status = "ok",
+  url = "https://example.com/history",
+  title = "History Page",
+})
+assert(observed_metadata.url == "https://example.com/history", "metadata observer should receive serve response URLs")
+assert(observed_metadata.title == "History Page", "metadata observer should receive serve response titles")
+observed_metadata = nil
+terminal._test.apply_serve_response({
+  id = 101,
+  status = "ok",
+})
+assert(observed_metadata == nil, "metadata observer should ignore responses without explicit URLs")
+terminal.set_metadata_observer(nil)
 local last_good_geometry = terminal.state().rendered_frame_geometry
 assert(last_good_geometry ~= nil, "serve frame responses should store last good geometry")
 assert(#terminal.state().element_hints == 1, "serve frame responses should store element hints")
