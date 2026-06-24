@@ -27,6 +27,8 @@ local state = {
   status_error = nil,
   hint_error = nil,
   pending_operation = nil,
+  navigation_admission_id = nil,
+  navigation_suppressed_request_ids = {},
   live_refresh_timer = nil,
   live_refresh_generation = 0,
   live_refresh_request_id = nil,
@@ -360,6 +362,8 @@ local function send_terminal_escape(payload)
   vim.api.nvim_chan_send(vim.v.stderr, terminal_escape(payload))
 end
 
+local is_navigation_class_request
+
 local function send_serve_request(request, on_response)
   if state.mode ~= "serve" or state.job_id == nil then
     return false
@@ -367,6 +371,9 @@ local function send_serve_request(request, on_response)
 
   request.id = state.next_request_id
   state.next_request_id = state.next_request_id + 1
+  if state.navigation_admission_id ~= nil and not is_navigation_class_request(request) then
+    state.navigation_suppressed_request_ids[request.id] = true
+  end
   if request.capture == false then
     state.quiet_request_ids[request.id] = true
   end
@@ -376,6 +383,7 @@ local function send_serve_request(request, on_response)
   local ok, sent = pcall(vim.fn.chansend, state.job_id, vim.json.encode(request) .. "\n")
   if not ok or sent == 0 then
     state.quiet_request_ids[request.id] = nil
+    state.navigation_suppressed_request_ids[request.id] = nil
     state.response_handlers[request.id] = nil
     return false
   end
@@ -705,6 +713,12 @@ end
 
 local rendered_frame_geometry_from_runtime
 
+local function clear_navigation_admission(id)
+  if state.navigation_admission_id == id then
+    state.navigation_admission_id = nil
+  end
+end
+
 local function apply_serve_response_metadata(response)
   if
     state.pending_operation ~= nil
@@ -712,6 +726,11 @@ local function apply_serve_response_metadata(response)
   then
     state.pending_operation = nil
     state.stopped_operation = nil
+    if response.id == 0 and response.status == "error" then
+      state.navigation_admission_id = nil
+    else
+      clear_navigation_admission(response.id)
+    end
   elseif state.pending_operation == nil then
     state.stopped_operation = nil
   end
@@ -779,6 +798,35 @@ local function dispatch_serve_response_handler(response)
     return true
   end
   return false
+end
+
+is_navigation_class_request = function(request)
+  return type(request) == "table"
+    and (
+      request.type == "navigate"
+      or request.type == "reload"
+      or request.type == "back"
+      or request.type == "forward"
+    )
+end
+
+local function is_stale_serve_response(response)
+  if response.id == 0 and response.status == "error" then
+    return false
+  end
+  if state.navigation_suppressed_request_ids[response.id] then
+    return true
+  end
+  return state.navigation_admission_id ~= nil and response.id ~= state.navigation_admission_id
+end
+
+local function clear_stale_serve_response_bookkeeping(response)
+  state.navigation_suppressed_request_ids[response.id] = nil
+  state.response_handlers[response.id] = nil
+  if state.live_refresh_request_id == response.id then
+    state.live_refresh_request_id = nil
+  end
+  state.quiet_request_ids[response.id] = nil
 end
 
 local stop_live_refresh_timer
@@ -1361,6 +1409,11 @@ end
 function send_pending_request(request, target, label, on_response)
   local ok, id = send_serve_request(request, on_response)
   if ok then
+    if is_navigation_class_request(request) then
+      state.navigation_admission_id = id
+    elseif state.navigation_suppressed_request_ids[id] then
+      return ok
+    end
     mark_pending_operation(id, label or "loading", target)
   end
   return ok
@@ -1475,6 +1528,8 @@ function M.open(command)
   state.stopped_operation = nil
   state.canceled_request_ids = {}
   state.quiet_request_ids = {}
+  state.navigation_admission_id = nil
+  state.navigation_suppressed_request_ids = {}
   state.latest_applied_response_id = 0
   state.latest_reader_request_id = nil
   state.last_find_found = nil
@@ -1540,7 +1595,12 @@ function M.open(command)
         end
         if state.canceled_request_ids[response.id] then
           state.canceled_request_ids[response.id] = nil
+          state.navigation_suppressed_request_ids[response.id] = nil
           state.response_handlers[response.id] = nil
+          return
+        end
+        if is_stale_serve_response(response) then
+          clear_stale_serve_response_bookkeeping(response)
           return
         end
         state.quiet_request_ids[response.id] = nil
@@ -1653,6 +1713,8 @@ function M.open(command)
           state.response_handlers = {}
           state.canceled_request_ids = {}
           state.quiet_request_ids = {}
+          state.navigation_admission_id = nil
+          state.navigation_suppressed_request_ids = {}
           state.runtime_metadata = nil
           state.rendered_frame_geometry = nil
           state.focused_element = nil
@@ -1802,6 +1864,8 @@ function M.close()
   state.stopped_operation = nil
   state.canceled_request_ids = {}
   state.quiet_request_ids = {}
+  state.navigation_admission_id = nil
+  state.navigation_suppressed_request_ids = {}
   state.latest_applied_response_id = 0
   state.latest_reader_request_id = nil
   state.last_find_found = nil
@@ -1863,6 +1927,7 @@ function M.stop()
   local pending = state.pending_operation
   state.canceled_request_ids[pending.id] = true
   state.pending_operation = nil
+  clear_navigation_admission(pending.id)
   state.stopped_operation = {
     id = pending.id,
     target = pending.target,
@@ -2924,6 +2989,9 @@ M._test = {
   kitty_cleanup_escape = kitty_cleanup_escape,
   set_last_find_found = function(value)
     state.last_find_found = value
+  end,
+  set_last_find_query = function(value)
+    state.last_find_query = value
   end,
   set_mode = function(value)
     state.mode = value

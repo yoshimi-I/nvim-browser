@@ -1227,6 +1227,50 @@ assert(
 )
 
 sent_requests = {}
+assert(terminal.navigate("https://example.com/protocol-during-navigation") == true, "test setup should send navigation before protocol error")
+assert(terminal.state().pending_operation ~= nil, "navigation before protocol error should be pending")
+serve_stdout(nil, { vim.json.encode({
+  id = 0,
+  status = "error",
+  error = "invalid serve request during navigation",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().status_error == "invalid serve request during navigation"
+end), "protocol error responses should be surfaced during navigation admission")
+assert(terminal.state().pending_operation == nil, "protocol error responses should clear navigation admission pending operations")
+assert(
+  terminal.state().rendered_frame_geometry == last_good_geometry,
+  "protocol errors during navigation admission should preserve last good geometry"
+)
+sent_requests = {}
+assert(terminal.scroll(42) == true, "normal requests should still be usable after navigation admission protocol errors")
+local post_protocol_scroll_request = last_request_of_type("scroll")
+serve_stdout(nil, { vim.json.encode({
+  id = post_protocol_scroll_request.id,
+  status = "ok",
+  payload = "post protocol scroll frame",
+  url = "https://example.com/post-protocol-scroll",
+  title = "Post Protocol Scroll",
+  hints = {
+    {
+      id = 44,
+      kind = "button",
+      label = "Post Protocol Button",
+      x = 1,
+      y = 2,
+      width = 3,
+      height = 4,
+      clickable = true,
+      focusable = true,
+    },
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Post Protocol Scroll"
+end), "responses after navigation admission protocol errors should apply normally")
+last_good_geometry = terminal.state().rendered_frame_geometry
+
+sent_requests = {}
 assert(terminal.navigate("https://example.com/fail-real") == true, "real navigation should send a pending request")
 local failed_navigation_request = last_request_of_type("navigate")
 assert(failed_navigation_request ~= nil, "real navigation should send a navigate request")
@@ -1773,6 +1817,192 @@ end)
 assert(not older_after_latest_applied, "late older navigation response should not apply after the newer response has completed")
 assert(terminal.state().current_title == "Newer Navigation", "newer navigation metadata should remain current")
 assert(#terminal.state().element_hints == 1, "newer navigation hints should remain current")
+
+terminal._test.clear_pending_operation()
+sent_requests = {}
+assert(terminal.navigate("https://example.com/admitted") == true, "test setup should send an admitted navigation")
+_G.nvim_browser_admitted_navigation_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(_G.nvim_browser_admitted_navigation_id ~= nil, "admitted navigation should be tracked as pending")
+sent_requests = {}
+assert(terminal.scroll(200) == true, "non-navigation requests may still be sent while navigation is pending")
+_G.nvim_browser_newer_scroll_id = last_request_of_type("scroll").id
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_newer_scroll_id,
+  status = "ok",
+  payload = "newer scroll during navigation",
+  url = "https://example.com/scrolled-during-navigation",
+  title = "Scrolled During Navigation",
+  hints = {
+    {
+      id = 101,
+      kind = "button",
+      label = "Scroll Button",
+      x = 1,
+      y = 2,
+      width = 3,
+      height = 4,
+      clickable = true,
+      focusable = true,
+    },
+  },
+}), "" })
+assert(not vim.wait(200, function()
+  return terminal.state().current_title == "Scrolled During Navigation"
+end), "newer non-navigation response should not overwrite navigation-admitted state")
+assert(
+  terminal.state().pending_operation ~= nil and terminal.state().pending_operation.id == _G.nvim_browser_admitted_navigation_id,
+  "newer non-navigation response should not clear the admitted navigation operation"
+)
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_admitted_navigation_id,
+  status = "ok",
+  payload = "admitted navigation frame",
+  url = "https://example.com/admitted",
+  title = "Admitted Navigation",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil and terminal.state().current_title == "Admitted Navigation"
+end), "admitted navigation response should update state and clear pending operation")
+
+terminal._test.clear_pending_operation()
+sent_requests = {}
+assert(terminal.navigate("https://example.com/admitted-zoom") == true, "test setup should send navigation before suppressed zoom")
+_G.nvim_browser_zoom_navigation_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(_G.nvim_browser_zoom_navigation_id ~= nil, "zoom navigation should be tracked as pending")
+sent_requests = {}
+assert(terminal.zoom_in() == true, "pending-class non-navigation requests may still be sent while navigation is pending")
+_G.nvim_browser_suppressed_zoom_id = last_request_of_type("zoom").id
+assert(
+  terminal.state().pending_operation ~= nil and terminal.state().pending_operation.id == _G.nvim_browser_zoom_navigation_id,
+  "suppressed non-navigation pending requests should not replace admitted navigation pending feedback"
+)
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_suppressed_zoom_id,
+  status = "ok",
+  payload = "suppressed zoom frame",
+  url = "https://example.com/suppressed-zoom",
+  title = "Suppressed Zoom",
+}), "" })
+assert(not vim.wait(200, function()
+  return terminal.state().current_title == "Suppressed Zoom"
+end), "suppressed non-navigation pending responses should not update browser state")
+assert(
+  terminal.state().pending_operation ~= nil and terminal.state().pending_operation.id == _G.nvim_browser_zoom_navigation_id,
+  "suppressed non-navigation pending responses should not clear admitted navigation feedback"
+)
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_zoom_navigation_id,
+  status = "ok",
+  payload = "admitted zoom navigation frame",
+  url = "https://example.com/admitted-zoom",
+  title = "Admitted Zoom Navigation",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil and terminal.state().current_title == "Admitted Zoom Navigation"
+end), "admitted navigation should clear pending after suppressed non-navigation pending requests")
+
+terminal._test.clear_pending_operation()
+sent_requests = {}
+assert(terminal.navigate("https://example.com/admitted-find") == true, "test setup should send a navigation before stale find")
+_G.nvim_browser_find_navigation_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(_G.nvim_browser_find_navigation_id ~= nil, "find navigation should be tracked as pending")
+sent_requests = {}
+assert(terminal.find_text("stale") == true, "find requests may still be sent while navigation is pending")
+_G.nvim_browser_stale_find_id = last_request_of_type("find_text").id
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_stale_find_id,
+  status = "ok",
+  found = true,
+  match_count = 9,
+}), "" })
+vim.wait(100)
+assert(terminal.state().last_find_found == nil, "stale find responses should not update footer find state")
+assert(terminal.state().last_find_match_count == nil, "stale find responses should not update footer match count")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_find_navigation_id,
+  status = "ok",
+  payload = "admitted find navigation frame",
+  url = "https://example.com/admitted-find",
+  title = "Admitted Find Navigation",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil and terminal.state().current_title == "Admitted Find Navigation"
+end), "admitted navigation after stale find should still apply")
+terminal._test.set_last_find_query(nil)
+
+terminal._test.clear_pending_operation()
+_G.nvim_browser_nav_class_commands = {
+  {
+    label = "reload",
+    send = function()
+      return terminal.reload()
+    end,
+  },
+  {
+    label = "back",
+    send = function()
+      return terminal.back()
+    end,
+  },
+  {
+    label = "forward",
+    send = function()
+      return terminal.forward()
+    end,
+  },
+}
+for _, scenario in ipairs(_G.nvim_browser_nav_class_commands) do
+  sent_requests = {}
+  assert(scenario.send() == true, "test setup should send " .. scenario.label)
+  _G.nvim_browser_admitted_nav_class_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+  assert(_G.nvim_browser_admitted_nav_class_id ~= nil, scenario.label .. " should be tracked as pending")
+  sent_requests = {}
+  assert(terminal.scroll(123) == true, "non-navigation request should still send while " .. scenario.label .. " is pending")
+  _G.nvim_browser_nav_class_scroll_id = last_request_of_type("scroll").id
+  serve_stdout(nil, { vim.json.encode({
+    id = _G.nvim_browser_nav_class_scroll_id,
+    status = "ok",
+    payload = scenario.label .. " stale scroll frame",
+    url = "https://example.com/" .. scenario.label .. "-scroll",
+    title = scenario.label .. " Scroll",
+  }), "" })
+  assert(not vim.wait(200, function()
+    return terminal.state().current_title == scenario.label .. " Scroll"
+  end), "newer non-navigation response should not overwrite pending " .. scenario.label)
+  assert(
+    terminal.state().pending_operation ~= nil
+      and terminal.state().pending_operation.id == _G.nvim_browser_admitted_nav_class_id,
+    "newer non-navigation response should not clear pending " .. scenario.label
+  )
+  serve_stdout(nil, { vim.json.encode({
+    id = _G.nvim_browser_admitted_nav_class_id,
+    status = "ok",
+    payload = scenario.label .. " admitted frame",
+    url = "https://example.com/" .. scenario.label,
+    title = scenario.label .. " Admitted",
+  }), "" })
+  assert(vim.wait(1000, function()
+    return terminal.state().pending_operation == nil and terminal.state().current_title == scenario.label .. " Admitted"
+  end), "admitted " .. scenario.label .. " response should update state")
+end
+
+terminal._test.clear_pending_operation()
+_G.nvim_browser_last_good_title = terminal.state().current_title
+sent_requests = {}
+assert(terminal.navigate("https://example.com/failing-navigation") == true, "test setup should send a failing navigation")
+_G.nvim_browser_failing_navigation_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_failing_navigation_id,
+  status = "error",
+  error = "navigation failed",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil and terminal.state().status_error == "navigation failed"
+end), "admitted navigation errors should clear pending state and surface the error")
+assert(
+  terminal.state().current_title == _G.nvim_browser_last_good_title,
+  "admitted navigation errors should preserve the last good frame metadata"
+)
 
 sent_requests = {}
 assert(terminal.hover_point(10, 20) == true, "test setup should send an older hover operation")
