@@ -830,7 +830,27 @@ terminal._test.apply_serve_response({
 assert(terminal.state().pending_operation == nil, "matching right click response should clear pending right click state")
 
 footer_click_requests = {}
-assert(terminal.wheel_mouse(120, 0, { winid = image_win, line = 6, column = 25 }) == true, "mouse wheel should send a browser wheel")
+assert(terminal.wheel_mouse(120, 0, { winid = image_win, line = 6, column = 25 }) == true, "mouse wheel should queue a browser wheel")
+assert(terminal.wheel_mouse(120, 0, { winid = image_win, line = 6, column = 25 }) == true, "second mouse wheel should coalesce at the same point")
+assert(terminal.wheel_mouse(-40, 0, { winid = image_win, line = 6, column = 25 }) == true, "third mouse wheel should coalesce deltas at the same point")
+function _G.nvim_browser_footer_wheel_request_count()
+  local count = 0
+  for _, request in ipairs(footer_click_requests) do
+    local ok, decoded = pcall(vim.json.decode, request.payload)
+    if ok and decoded.type == "wheel_point" then
+      count = count + 1
+    end
+  end
+  return count
+end
+assert(nvim_browser_footer_wheel_request_count() == 0, "rapid mouse wheel input should be delayed for coalescing")
+assert(vim.wait(1000, function()
+  return nvim_browser_footer_wheel_request_count() == 1
+end), "coalesced mouse wheel should flush one browser wheel")
+assert(
+  terminal.wheel_point(expected_mouse_point.x, expected_mouse_point.y, nil, 0) == false,
+  "browser wheel should reject missing vertical delta"
+)
 local mouse_wheel_seen = false
 local mouse_wheel_request_id = nil
 for _, request in ipairs(footer_click_requests) do
@@ -840,7 +860,7 @@ for _, request in ipairs(footer_click_requests) do
     and decoded.type == "wheel_point"
     and decoded.x == expected_mouse_point.x
     and decoded.y == expected_mouse_point.y
-    and decoded.delta_y == 120
+    and decoded.delta_y == 200
     and decoded.delta_x == 0
   then
     mouse_wheel_seen = true
@@ -1095,6 +1115,16 @@ function _G.nvim_browser_latest_timer()
   return fake_timers[#fake_timers]
 end
 
+local function flush_latest_timer()
+  local timer = nvim_browser_latest_timer()
+  if timer ~= nil and timer.callback ~= nil then
+    timer.callback()
+    vim.wait(100, function()
+      return timer.closed == true
+    end)
+  end
+end
+
 function _G.nvim_browser_request_sequence()
   local sequence = {}
   for _, request in ipairs(sent_requests) do
@@ -1249,6 +1279,7 @@ assert(
 )
 sent_requests = {}
 assert(terminal.scroll(42) == true, "normal requests should still be usable after navigation admission protocol errors")
+flush_latest_timer()
 local post_protocol_scroll_request = last_request_of_type("scroll")
 serve_stdout(nil, { vim.json.encode({
   id = post_protocol_scroll_request.id,
@@ -1472,6 +1503,46 @@ assert(live_capture_id ~= nil, "live refresh should track an in-flight capture r
 assert(terminal._test.response_handler_count() == 1, "live refresh should register one response handler")
 
 sent_requests = {}
+assert(terminal.scroll(120, 0) == true, "scroll input should be accepted for coalescing")
+assert(terminal.scroll(120, 0) == true, "second scroll input should be accepted for coalescing")
+assert(terminal.scroll(120, 0) == true, "third scroll input should be accepted for coalescing")
+assert(#nvim_browser_requests_of_type("scroll") == 0, "rapid scroll input should be delayed for coalescing")
+assert(terminal.state().live_refresh_request_id == nil, "queued scroll should invalidate stale live captures")
+fake_timers[1].callback()
+vim.wait(50)
+_G.nvim_browser_live_capture_while_scroll_queued_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "capture" then
+    _G.nvim_browser_live_capture_while_scroll_queued_seen = true
+  end
+end
+assert(not _G.nvim_browser_live_capture_while_scroll_queued_seen, "live refresh should not capture while scroll input is queued")
+serve_stdout(nil, { vim.json.encode({
+  id = live_capture_id,
+  status = "ok",
+  payload = "stale before coalesced scroll frame",
+  url = "https://example.com/stale-before-scroll",
+  title = "Stale Before Scroll",
+}), "" })
+_G.nvim_browser_stale_before_scroll_applied = vim.wait(200, function()
+  return terminal.state().current_title == "Stale Before Scroll"
+end)
+assert(not _G.nvim_browser_stale_before_scroll_applied, "capture response made stale by queued scroll should not update metadata")
+assert(nvim_browser_latest_timer() ~= nil, "coalesced scroll should create a trailing timer")
+nvim_browser_latest_timer().callback()
+assert(vim.wait(1000, function()
+  return #nvim_browser_requests_of_type("scroll") == 1
+end), "coalesced scroll should flush one scroll request")
+_G.nvim_browser_coalesced_scroll_request = nvim_browser_requests_of_type("scroll")[1]
+assert(_G.nvim_browser_coalesced_scroll_request.delta_y == 360, "coalesced scroll should accumulate vertical deltas")
+assert(_G.nvim_browser_coalesced_scroll_request.delta_x == 0, "coalesced scroll should preserve horizontal deltas")
+assert(terminal.state().pending_operation ~= nil, "coalesced scroll flush should mark a pending operation")
+assert(terminal.state().pending_operation.label == "scroll", "coalesced scroll pending footer should use a scroll label")
+terminal._test.dispatch_serve_response_handler({ id = _G.nvim_browser_coalesced_scroll_request.id, status = "ok" })
+terminal._test.clear_pending_operation(_G.nvim_browser_coalesced_scroll_request.id)
+
+sent_requests = {}
 assert(terminal.click_point(12, 24) == true, "point click should work while live refresh is enabled")
 local point_click_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
 assert(point_click_pending_id ~= nil, "point click should mark the browser click as pending")
@@ -1485,6 +1556,15 @@ for _, request in ipairs(sent_requests) do
   end
 end
 assert(not live_capture_during_click_seen, "live refresh should not capture while a click is pending")
+sent_requests = {}
+assert(terminal.scroll(30, 0) == true, "scroll input should still queue while a click is pending")
+flush_latest_timer()
+_G.nvim_browser_scroll_while_click_pending = last_request_of_type("scroll")
+assert(_G.nvim_browser_scroll_while_click_pending ~= nil, "queued scroll should flush while a click is pending")
+assert(
+  terminal.state().pending_operation ~= nil and terminal.state().pending_operation.id == point_click_pending_id,
+  "coalesced scroll should not replace an existing pending click operation"
+)
 terminal._test.clear_pending_operation(point_click_pending_id)
 
 terminal._test.apply_serve_response({
@@ -1501,6 +1581,11 @@ terminal._test.apply_serve_response({
 })
 sent_requests = {}
 assert(terminal.page_scroll(1) == true, "page_scroll should send a scroll request")
+assert(#nvim_browser_requests_of_type("scroll") == 0, "page_scroll should use scroll coalescing")
+nvim_browser_latest_timer().callback()
+assert(vim.wait(1000, function()
+  return #nvim_browser_requests_of_type("scroll") == 1
+end), "page_scroll should flush one coalesced scroll request")
 local page_down_request = last_request_of_type("scroll")
 assert(page_down_request ~= nil, "page_scroll should reuse the scroll JSONL request type")
 assert(page_down_request.delta_y == 540, "page_scroll should use 90 percent of page viewport height")
@@ -1544,11 +1629,13 @@ terminal._test.clear_pending_operation(zoom_reset_request.id)
 
 sent_requests = {}
 assert(terminal.page_scroll(1, { fraction = 0.5 }) == true, "page_scroll should support custom viewport fractions")
+flush_latest_timer()
 local half_page_down_request = last_request_of_type("scroll")
 assert(half_page_down_request.delta_y == 300, "half-page down should use 50 percent of page viewport height")
 
 sent_requests = {}
 assert(terminal.page_scroll(-1, { fraction = 0.5 }) == true, "page_scroll should support backward half-page scrolling")
+flush_latest_timer()
 local half_page_up_request = last_request_of_type("scroll")
 assert(half_page_up_request.delta_y == -300, "half-page up should negate 50 percent of page viewport height")
 
@@ -1566,11 +1653,13 @@ terminal._test.apply_serve_response({
 })
 sent_requests = {}
 assert(terminal.scroll_top() == true, "scroll_top should send a scroll request")
+flush_latest_timer()
 local top_request = last_request_of_type("scroll")
 assert(top_request.delta_y == -250, "scroll_top should scroll back by current page scroll position")
 
 sent_requests = {}
 assert(terminal.scroll_bottom() == true, "scroll_bottom should send a scroll request")
+flush_latest_timer()
 local bottom_request = last_request_of_type("scroll")
 assert(bottom_request.delta_y == 750, "scroll_bottom should scroll to remaining document bottom")
 
@@ -1588,16 +1677,19 @@ terminal._test.apply_serve_response({
 })
 sent_requests = {}
 assert(terminal.scroll_top() == true, "scroll_top should handle fractional page metrics")
+flush_latest_timer()
 local fractional_top_request = last_request_of_type("scroll")
 assert(fractional_top_request.delta_y == -251, "scroll_top should round fractional deltas to integer JSONL")
 
 sent_requests = {}
 assert(terminal.scroll_bottom() == true, "scroll_bottom should handle fractional page metrics")
+flush_latest_timer()
 local fractional_bottom_request = last_request_of_type("scroll")
 assert(fractional_bottom_request.delta_y == 750, "scroll_bottom should round fractional deltas to integer JSONL")
 
 sent_requests = {}
 assert(terminal.page_scroll(-1) == true, "page_scroll should support backward scrolling")
+flush_latest_timer()
 local page_up_request = last_request_of_type("scroll")
 assert(page_up_request ~= nil, "backward page_scroll should send a scroll request")
 assert(page_up_request.delta_y == -540, "backward page_scroll should negate the viewport-based delta")
@@ -1614,27 +1706,32 @@ terminal._test.apply_serve_response({
 })
 sent_requests = {}
 assert(terminal.page_scroll(1) == true, "page_scroll should fall back to runtime viewport metadata")
+flush_latest_timer()
 local runtime_page_request = last_request_of_type("scroll")
 assert(runtime_page_request.delta_y == 450, "runtime viewport fallback should handle invalid page metrics")
 
 sent_requests = {}
 assert(terminal.page_scroll(1, { fraction = 0.5 }) == true, "half page scroll should fall back to runtime viewport metadata")
+flush_latest_timer()
 local runtime_half_page_request = last_request_of_type("scroll")
 assert(runtime_half_page_request.delta_y == 250, "runtime viewport fallback should honor half-page fraction")
 
 terminal._test.apply_serve_response({ id = live_capture_id + 4, status = "ok", runtime = {} })
 sent_requests = {}
 assert(terminal.page_scroll(1) == true, "page_scroll should fall back when no metadata exists")
+flush_latest_timer()
 local fallback_page_request = last_request_of_type("scroll")
 assert(fallback_page_request.delta_y == 400, "page_scroll should preserve the existing 400px fallback")
 
 sent_requests = {}
 assert(terminal.scroll_top() == true, "scroll_top should fall back without page metrics")
+flush_latest_timer()
 local fallback_top_request = last_request_of_type("scroll")
 assert(fallback_top_request.delta_y == -40000, "scroll_top fallback should send a large upward scroll")
 
 sent_requests = {}
 assert(terminal.scroll_bottom() == true, "scroll_bottom should fall back without page metrics")
+flush_latest_timer()
 local fallback_bottom_request = last_request_of_type("scroll")
 assert(fallback_bottom_request.delta_y == 40000, "scroll_bottom fallback should send a large downward scroll")
 
@@ -1830,6 +1927,7 @@ _G.nvim_browser_admitted_navigation_id = terminal.state().pending_operation and 
 assert(_G.nvim_browser_admitted_navigation_id ~= nil, "admitted navigation should be tracked as pending")
 sent_requests = {}
 assert(terminal.scroll(200) == true, "non-navigation requests may still be sent while navigation is pending")
+flush_latest_timer()
 _G.nvim_browser_newer_scroll_id = last_request_of_type("scroll").id
 serve_stdout(nil, { vim.json.encode({
   id = _G.nvim_browser_newer_scroll_id,
@@ -1963,6 +2061,7 @@ for _, scenario in ipairs(_G.nvim_browser_nav_class_commands) do
   assert(_G.nvim_browser_admitted_nav_class_id ~= nil, scenario.label .. " should be tracked as pending")
   sent_requests = {}
   assert(terminal.scroll(123) == true, "non-navigation request should still send while " .. scenario.label .. " is pending")
+  flush_latest_timer()
   _G.nvim_browser_nav_class_scroll_id = last_request_of_type("scroll").id
   serve_stdout(nil, { vim.json.encode({
     id = _G.nvim_browser_nav_class_scroll_id,
@@ -2157,16 +2256,21 @@ sent_requests = {}
 fake_timers[1].callback()
 vim.wait(50)
 assert(#sent_requests == 0, "stopped live refresh timer callbacks should not send capture after disabling")
+_G.nvim_browser_timer_count_before_reenable = #fake_timers
 terminal.configure({ live_refresh = { enabled = true, interval_ms = 25 } })
-assert(#fake_timers == 2, "re-enabling live refresh should start a replacement timer for the active serve session")
-assert(fake_timers[2].starts[1].timeout == 25, "live refresh reconfiguration should apply the new interval")
+assert(
+  #fake_timers == _G.nvim_browser_timer_count_before_reenable + 1,
+  "re-enabling live refresh should start a replacement timer for the active serve session"
+)
+_G.nvim_browser_reenabled_live_timer = fake_timers[#fake_timers]
+assert(_G.nvim_browser_reenabled_live_timer.starts[1].timeout == 25, "live refresh reconfiguration should apply the new interval")
 sent_requests = {}
 fake_timers[1].callback()
 vim.wait(50)
 assert(#sent_requests == 0, "old live refresh timer callbacks should not send capture after reconfiguration")
 
 sent_requests = {}
-fake_timers[2].callback()
+_G.nvim_browser_reenabled_live_timer.callback()
 local reconfigured_capture_id = nil
 assert(vim.wait(1000, function()
   reconfigured_capture_id = terminal.state().live_refresh_request_id
@@ -3189,6 +3293,16 @@ assert(
   "failed chansend should not leak response handlers"
 )
 vim.fn.chansend = original_active_chansend
+
+terminal._test.set_timer_factory(function()
+  return nil
+end)
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/no-scroll-timer" })
+terminal._test.clear_in_flight_capture()
+sent_requests = {}
+assert(terminal.scroll(55, 0) == true, "scroll should still work when no timer can be created")
+assert(#nvim_browser_requests_of_type("scroll") == 1, "scroll should send immediately without a coalescing timer")
+assert(nvim_browser_requests_of_type("scroll")[1].delta_y == 55, "immediate scroll fallback should preserve deltas")
 
 terminal._test.set_pending_operation({ id = 4, label = "loading", target = "https://example.com/crash" })
 assert(type(serve_exit) == "function", "serve jobstart should expose an exit callback in tests")

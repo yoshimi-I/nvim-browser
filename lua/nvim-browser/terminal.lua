@@ -32,6 +32,8 @@ local state = {
   live_refresh_timer = nil,
   live_refresh_generation = 0,
   live_refresh_request_id = nil,
+  scroll_coalesce_timer = nil,
+  scroll_coalesce_request = nil,
   stopped_operation = nil,
   canceled_request_ids = {},
   quiet_request_ids = {},
@@ -833,10 +835,14 @@ local stop_live_refresh_timer
 local stop_live_refresh
 local stop_resize_timer
 local stop_text_mode_flush_timer
+local stop_scroll_coalesce_timer
+local clear_scroll_coalesce
+local flush_scroll_coalesce
 
 local function stop_existing_job(force)
   stop_text_mode_flush_timer()
   stop_resize_timer()
+  clear_scroll_coalesce()
   stop_live_refresh()
   if state.job_id == nil then
     return
@@ -867,6 +873,7 @@ local clear_in_flight_capture
 local cancel_in_flight_capture
 local same_preview_geometry
 local resize_coalesce_ms = 50
+local scroll_coalesce_ms = 25
 
 local function request_resize()
   if state.mode ~= "serve" or not is_valid_window() then
@@ -991,7 +998,7 @@ local function start_live_refresh_timer(generation)
       if state.mode ~= "serve" or state.job_id == nil or not is_valid_buffer() then
         return
       end
-      if state.pending_operation ~= nil or state.live_refresh_request_id ~= nil then
+      if state.pending_operation ~= nil or state.live_refresh_request_id ~= nil or state.scroll_coalesce_request ~= nil then
         return
       end
       send_capture_request()
@@ -1419,6 +1426,107 @@ function send_pending_request(request, target, label, on_response)
   return ok
 end
 
+stop_scroll_coalesce_timer = function()
+  if state.scroll_coalesce_timer == nil then
+    return
+  end
+  state.scroll_coalesce_timer:stop()
+  state.scroll_coalesce_timer:close()
+  state.scroll_coalesce_timer = nil
+end
+
+clear_scroll_coalesce = function()
+  stop_scroll_coalesce_timer()
+  state.scroll_coalesce_request = nil
+end
+
+flush_scroll_coalesce = function()
+  local queued = state.scroll_coalesce_request
+  clear_scroll_coalesce()
+  if queued == nil then
+    return false
+  end
+
+  local request
+  if queued.kind == "wheel_point" then
+    request = {
+      type = "wheel_point",
+      x = queued.x,
+      y = queued.y,
+      delta_x = queued.delta_x,
+      delta_y = queued.delta_y,
+    }
+  else
+    request = {
+      type = "scroll",
+      delta_x = queued.delta_x,
+      delta_y = queued.delta_y,
+    }
+  end
+
+  if state.pending_operation ~= nil then
+    return send_serve_request(request)
+  end
+  return send_pending_request(request, queued.target, "scroll")
+end
+
+local function same_scroll_coalesce_target(queued, next_request)
+  if queued == nil or queued.kind ~= next_request.kind then
+    return false
+  end
+  if queued.kind == "wheel_point" then
+    return queued.x == next_request.x and queued.y == next_request.y
+  end
+  return queued.target == next_request.target
+end
+
+local function schedule_scroll_coalesce()
+  stop_scroll_coalesce_timer()
+  local timer = timer_factory()
+  if timer == nil then
+    return flush_scroll_coalesce()
+  end
+  state.scroll_coalesce_timer = timer
+  local ok = pcall(timer.start, timer, scroll_coalesce_ms, 0, function()
+    vim.schedule(function()
+      if state.scroll_coalesce_timer ~= timer then
+        return
+      end
+      state.scroll_coalesce_timer = nil
+      timer:close()
+      flush_scroll_coalesce()
+    end)
+  end)
+  if not ok then
+    state.scroll_coalesce_timer = nil
+    pcall(function()
+      timer:close()
+    end)
+    return flush_scroll_coalesce()
+  end
+  return true
+end
+
+local function queue_scroll_coalesce(next_request)
+  if state.mode ~= "serve" or state.job_id == nil then
+    return false
+  end
+  if state.scroll_coalesce_request ~= nil and not same_scroll_coalesce_target(state.scroll_coalesce_request, next_request) then
+    flush_scroll_coalesce()
+  end
+  local queued = state.scroll_coalesce_request
+  if queued == nil then
+    queued = next_request
+    state.scroll_coalesce_request = queued
+  else
+    queued.delta_x = queued.delta_x + next_request.delta_x
+    queued.delta_y = queued.delta_y + next_request.delta_y
+    queued.target = next_request.target or queued.target
+  end
+  cancel_in_flight_capture()
+  return schedule_scroll_coalesce()
+end
+
 local function apply_payload_to_buffer(bufnr, payload, uses_kitty, uses_kitty_unicode, command, geometry)
   state.last_payload = (uses_kitty or uses_kitty_unicode) and payload or nil
   state.last_payload_is_unicode = uses_kitty_unicode and payload ~= nil
@@ -1525,6 +1633,7 @@ function M.open(command)
   state.hint_error = nil
   state.pending_operation = nil
   state.live_refresh_request_id = nil
+  state.scroll_coalesce_request = nil
   state.stopped_operation = nil
   state.canceled_request_ids = {}
   state.quiet_request_ids = {}
@@ -1704,12 +1813,14 @@ function M.open(command)
           state.job_id = nil
           stop_text_mode_flush_timer()
           stop_resize_timer()
+          clear_scroll_coalesce()
           stop_live_refresh()
           state.mode = nil
           state.serve_output = nil
           state.pending_operation = nil
           state.stopped_operation = nil
           state.live_refresh_request_id = nil
+          state.scroll_coalesce_request = nil
           state.response_handlers = {}
           state.canceled_request_ids = {}
           state.quiet_request_ids = {}
@@ -1860,7 +1971,9 @@ function M.close()
   state.hint_error = nil
   state.pending_operation = nil
   state.live_refresh_request_id = nil
+  state.scroll_coalesce_request = nil
   stop_resize_timer()
+  clear_scroll_coalesce()
   state.stopped_operation = nil
   state.canceled_request_ids = {}
   state.quiet_request_ids = {}
@@ -1921,6 +2034,15 @@ end
 
 function M.stop()
   if state.pending_operation == nil then
+    if state.scroll_coalesce_request ~= nil then
+      clear_scroll_coalesce()
+      state.status_error = nil
+      state.hint_error = nil
+      if is_valid_buffer() then
+        refresh_preview_footer(state.bufnr)
+      end
+      return true
+    end
     return false
   end
 
@@ -1940,6 +2062,7 @@ function M.stop()
   stop_text_mode_flush_timer()
   stop_live_refresh()
   stop_resize_timer()
+  clear_scroll_coalesce()
   hints_overlay.clear(state.bufnr)
   if is_valid_buffer() then
     refresh_preview_footer(state.bufnr)
@@ -1970,10 +2093,11 @@ end
 
 function M.scroll(delta_y, delta_x)
   request_resize()
-  return send_serve_request({
-    type = "scroll",
+  return queue_scroll_coalesce({
+    kind = "scroll",
     delta_x = normalize_scroll_delta(delta_x),
     delta_y = normalize_scroll_delta(delta_y),
+    target = state.current_url or state.last_target or "scroll",
   })
 end
 
@@ -2323,19 +2447,21 @@ end
 function M.wheel_point(x, y, delta_y, delta_x)
   x = tonumber(x)
   y = tonumber(y)
-  delta_y = tonumber(delta_y)
-  delta_x = tonumber(delta_x) or 0
-  if x == nil or y == nil or delta_y == nil then
+  local raw_delta_y = tonumber(delta_y)
+  if x == nil or y == nil or raw_delta_y == nil then
     return false
   end
+  delta_y = normalize_scroll_delta(raw_delta_y)
+  delta_x = normalize_scroll_delta(delta_x)
   request_resize()
-  return send_pending_request({
-    type = "wheel_point",
+  return queue_scroll_coalesce({
+    kind = "wheel_point",
     x = x,
     y = y,
     delta_x = delta_x,
     delta_y = delta_y,
-  }, state.current_url or state.last_target or "scroll", "scroll")
+    target = state.current_url or state.last_target or "scroll",
+  })
 end
 
 function M.type_point(x, y, text, opts)
@@ -2889,6 +3015,7 @@ function M.configure(opts)
   opts = opts or {}
   stop_text_mode_flush_timer()
   stop_resize_timer()
+  clear_scroll_coalesce()
   options = vim.tbl_deep_extend("force", options, {
     live_refresh = opts.live_refresh or {},
     viewport = opts.viewport or {},
@@ -2980,6 +3107,7 @@ M._test = {
     stop_text_mode_flush_timer()
     stop_live_refresh()
     stop_resize_timer()
+    clear_scroll_coalesce()
     timer_factory = factory or function()
       return vim.loop.new_timer()
     end

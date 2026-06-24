@@ -157,6 +157,12 @@ require("nvim-browser").setup({
 })
 ```
 
+Rapid scroll input is coalesced inside Neovim before it reaches the backend, so
+holding scroll keys or using the mouse wheel produces fewer full-frame browser
+captures while preserving the latest accumulated delta. Mouse wheel events over
+cursor-addressable previews still use native CDP wheel events at the mapped
+browser coordinates when geometry is valid.
+
 Release tags use `vMAJOR.MINOR.PATCH`; replace `v0.1.3` with the latest release
 tag when installing. Until `v1.0.0`, plugin and backend compatibility is
 guaranteed only within the same tag or commit; pin the Neovim plugin and
