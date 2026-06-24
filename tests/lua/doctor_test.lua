@@ -443,6 +443,9 @@ local backend_ready = doctor.run({
           chrome_binary = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
           user_data_dir = "/tmp/nvbrowser-profile",
         },
+        protocol = {
+          serve = 19,
+        },
       }),
       stderr = "",
     }
@@ -452,6 +455,114 @@ assert(contains_line(backend_ready, "backend: available via cdp"), "doctor shoul
 assert(contains_line(backend_ready, "backend cdp: ws://127.0.0.1:9222/devtools/browser/test"), "doctor should include CDP URL")
 assert(contains_line(backend_ready, "backend chrome: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), "doctor should include Chrome path")
 assert(contains_line(backend_ready, "backend user data dir: /tmp/nvbrowser-profile"), "doctor should include user data dir")
+assert(contains_line(backend_ready, "ok: backend protocol matches plugin serve protocol=19"), "doctor should report matching backend protocol")
+
+local backend_protocol_mismatch = doctor.run({
+  binary = "nvbrowser-test",
+  graphics = "auto",
+  image_fit = "original",
+  _system = function()
+    return {
+      code = 0,
+      stdout = vim.json.encode({
+        backend = {
+          status = "available",
+          source = "chrome",
+        },
+        protocol = {
+          serve = 18,
+        },
+      }),
+      stderr = "",
+    }
+  end,
+}, {})
+assert(
+  contains_line(backend_protocol_mismatch, "warning: backend protocol mismatch; plugin expects serve protocol=19 but backend reports 18; rebuild or pin nvim-browser and nvbrowser to the same tag or commit"),
+  "doctor should warn when backend protocol differs from the plugin"
+)
+
+local backend_protocol_missing = doctor.run({
+  binary = "nvbrowser-test",
+  graphics = "auto",
+  image_fit = "original",
+  _system = function()
+    return {
+      code = 0,
+      stdout = vim.json.encode({
+        backend = {
+          status = "available",
+          source = "chrome",
+        },
+      }),
+      stderr = "",
+    }
+  end,
+}, {})
+assert(
+  contains_line(backend_protocol_missing, "warning: backend protocol unavailable; plugin expects serve protocol=19; rebuild or pin nvim-browser and nvbrowser to the same tag or commit"),
+  "doctor should warn when backend protocol is missing"
+)
+
+local active_protocol_mismatch = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+}, {
+  mode = "serve",
+  serve_output = "ansi",
+  status = "ok",
+  runtime_metadata = {
+    protocol_version = 18,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = 80, rows = 24 },
+    viewport = { width = 800, height = 480, device_scale_factor = 1 },
+  },
+})
+assert(
+  contains_line(active_protocol_mismatch, "warning: active session protocol mismatch; plugin expects serve protocol=19 but session reports 18; reopen the preview after rebuilding or updating nvbrowser"),
+  "doctor should warn when the active runtime protocol differs from the plugin"
+)
+
+local active_protocol_missing = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+}, {
+  mode = "serve",
+  serve_output = "ansi",
+  status = "ok",
+  runtime_metadata = {
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = 80, rows = 24 },
+    viewport = { width = 800, height = 480, device_scale_factor = 1 },
+  },
+})
+assert(
+  contains_line(active_protocol_missing, "warning: active session protocol unavailable; plugin expects serve protocol=19; reopen the preview after rebuilding or updating nvbrowser"),
+  "doctor should warn when the active runtime protocol is missing"
+)
+
+local active_runtime_missing = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+}, {
+  mode = "serve",
+  serve_output = "ansi",
+  status = "ok",
+})
+assert(
+  contains_line(active_runtime_missing, "warning: active session protocol unavailable; plugin expects serve protocol=19; reopen the preview after rebuilding or updating nvbrowser"),
+  "doctor should warn when active runtime metadata is missing"
+)
 
 local custom_binary_backend = doctor.run({
   binary = "/opt/bin/browser-backend",

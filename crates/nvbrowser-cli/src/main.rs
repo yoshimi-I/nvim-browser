@@ -26,6 +26,8 @@ use nvbrowser_core::{
 };
 use serde::{Deserialize, Serialize};
 
+const SERVE_PROTOCOL_VERSION: u32 = 19;
+
 #[derive(Debug, Parser)]
 #[command(name = "nvbrowser")]
 #[command(about = "Backend runtime for the nvim-browser plugin")]
@@ -316,6 +318,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let report = DoctorReport {
                 backend: chromium_options(cdp_ws_url, user_data_dir, None, None)
                     .backend_diagnostics(),
+                protocol: DoctorProtocolInfo {
+                    serve: SERVE_PROTOCOL_VERSION,
+                },
             };
             if json {
                 println!("{}", serde_json::to_string(&report)?);
@@ -597,6 +602,12 @@ struct ServeRuntimeInfo {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct DoctorReport {
     backend: nvbrowser_core::ChromiumBackendDiagnostics,
+    protocol: DoctorProtocolInfo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+struct DoctorProtocolInfo {
+    serve: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -952,7 +963,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 19,
+            protocol_version: SERVE_PROTOCOL_VERSION,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -3552,7 +3563,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 19,
+                protocol_version: SERVE_PROTOCOL_VERSION,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,

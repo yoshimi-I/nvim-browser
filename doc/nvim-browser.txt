@@ -117,7 +117,10 @@ browser coordinates when geometry is valid.
 
 Release tags use vMAJOR.MINOR.PATCH; replace v0.1.3 with the latest release
 tag when installing. Until v1.0.0, pin the plugin and backend binary to the
-same tag or commit.
+same tag or commit. :NBrowserDoctor compares the plugin's expected serve
+protocol with both the installed backend and any active browser session so
+stale binaries or mismatched lazy.nvim pins are visible before debugging
+browser input.
 
 ==============================================================================
 COMMANDS                                           *nvim-browser-commands*
@@ -563,10 +566,11 @@ COMMANDS                                           *nvim-browser-commands*
 	Echo a diagnostic report for backend binary resolution, selected graphics
 	output, terminal/multiplexer detection, auto-selection reason, active
 	preview session, Chromium/CDP backend readiness, serve runtime metadata,
-	viewport calibration status, and click calibration diagnostics for the
-	active cursor-addressable preview. The backend readiness check uses
-	`nvbrowser doctor --json` and does not launch Chrome. Inside tmux with
-	Kitty graphics selected, it also probes `tmux show -gqv
+	serve protocol compatibility, viewport calibration status, and click
+	calibration diagnostics for the active cursor-addressable preview. The
+	backend readiness and protocol check uses `nvbrowser doctor --json` and
+	does not launch Chrome. Inside tmux with Kitty graphics selected, it also
+	probes `tmux show -gqv
 	allow-passthrough`; warnings recommend:
 >
 	set -g allow-passthrough on

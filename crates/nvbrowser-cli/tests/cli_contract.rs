@@ -310,6 +310,10 @@ fn doctor_outputs_backend_json_without_launching_chrome() {
         chrome_path.to_string_lossy().as_ref()
     );
     assert_eq!(json["backend"]["user_data_dir"], "/tmp/nvbrowser-profile");
+    assert_eq!(
+        json["protocol"]["serve"], 19,
+        "doctor JSON should expose the serve protocol version"
+    );
 }
 
 #[test]

@@ -233,7 +233,10 @@ browser coordinates when geometry is valid.
 Release tags use `vMAJOR.MINOR.PATCH`; replace `v0.1.3` with the latest release
 tag when installing. Until `v1.0.0`, plugin and backend compatibility is
 guaranteed only within the same tag or commit; pin the Neovim plugin and
-`nvbrowser` binary together.
+`nvbrowser` binary together. `:NBrowserDoctor` compares the plugin's expected
+serve protocol with both the installed backend and any active browser session so
+stale binaries or mismatched lazy.nvim pins are visible before debugging
+browser input.
 
 ## Development
 
@@ -271,8 +274,9 @@ existing browser websocket endpoint. Chrome exposes that URL from
 `--remote-debugging-port=9222`.
 Use `NVBROWSER_USER_DATA_DIR` or `--user-data-dir` to opt in to a persistent
 Chromium profile directory for launched browser sessions.
-`nvbrowser doctor --json` reports the detected backend without launching
-Chrome; `:NBrowserDoctor` includes the same readiness check inside Neovim.
+`nvbrowser doctor --json` reports the detected backend and serve protocol
+without launching Chrome; `:NBrowserDoctor` includes the same readiness and
+protocol compatibility check inside Neovim.
 The `capture` command writes raw Chromium viewport PNG frames independently
 from terminal rendering. Use `--output -` for PNG bytes on stdout, and
 `--metadata -` for JSON metadata on stdout when `--output` is a file.

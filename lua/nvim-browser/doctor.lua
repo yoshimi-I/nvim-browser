@@ -3,6 +3,8 @@ local terminal = require("nvim-browser.terminal")
 
 local M = {}
 
+local EXPECTED_SERVE_PROTOCOL_VERSION = 19
+
 local function command_output(command)
   for index, value in ipairs(command) do
     if value == "--output" then
@@ -339,18 +341,19 @@ local function read_backend_diagnostics(config)
   if not decoded_ok or type(decoded) ~= "table" or type(decoded.backend) ~= "table" then
     return nil, "backend diagnostics unavailable"
   end
-  return decoded.backend, nil
+  return decoded, nil
 end
 
 local function append_backend_diagnostics(report, config)
-  local diagnostics, warning = read_backend_diagnostics(config)
-  if diagnostics == nil then
+  local decoded, warning = read_backend_diagnostics(config)
+  if decoded == nil then
     if warning ~= nil then
       add_item(report, "warning", warning)
     end
     return
   end
 
+  local diagnostics = decoded.backend
   local status = diagnostics.status ~= nil and diagnostics.status ~= vim.NIL and tostring(diagnostics.status) or "unknown"
   local source = diagnostics.source ~= nil and diagnostics.source ~= vim.NIL and tostring(diagnostics.source) or nil
   if source ~= nil and source ~= "" and source ~= "none" then
@@ -370,6 +373,70 @@ local function append_backend_diagnostics(report, config)
   if diagnostics.warning ~= nil and diagnostics.warning ~= vim.NIL and diagnostics.warning ~= "" then
     add_item(report, "warning", tostring(diagnostics.warning))
   end
+
+  local protocol = type(decoded.protocol) == "table" and tonumber(decoded.protocol.serve) or nil
+  if protocol == nil then
+    add_item(
+      report,
+      "warning",
+      "backend protocol unavailable; plugin expects serve protocol="
+        .. tostring(EXPECTED_SERVE_PROTOCOL_VERSION)
+        .. "; rebuild or pin nvim-browser and nvbrowser to the same tag or commit"
+    )
+    return
+  end
+  if protocol == EXPECTED_SERVE_PROTOCOL_VERSION then
+    add_item(report, "ok", "backend protocol matches plugin serve protocol=" .. tostring(EXPECTED_SERVE_PROTOCOL_VERSION))
+  else
+    add_item(
+      report,
+      "warning",
+      "backend protocol mismatch; plugin expects serve protocol="
+        .. tostring(EXPECTED_SERVE_PROTOCOL_VERSION)
+        .. " but backend reports "
+        .. tostring(protocol)
+        .. "; rebuild or pin nvim-browser and nvbrowser to the same tag or commit"
+    )
+  end
+end
+
+local function append_active_protocol_diagnostics(report, terminal_state)
+  local runtime = terminal_state and terminal_state.runtime_metadata or nil
+  if type(runtime) ~= "table" then
+    if terminal_state and terminal_state.mode == "serve" then
+      add_item(
+        report,
+        "warning",
+        "active session protocol unavailable; plugin expects serve protocol="
+          .. tostring(EXPECTED_SERVE_PROTOCOL_VERSION)
+          .. "; reopen the preview after rebuilding or updating nvbrowser"
+      )
+    end
+    return
+  end
+  local protocol = tonumber(runtime.protocol_version)
+  if protocol == EXPECTED_SERVE_PROTOCOL_VERSION then
+    return
+  end
+  if protocol == nil then
+    add_item(
+      report,
+      "warning",
+      "active session protocol unavailable; plugin expects serve protocol="
+        .. tostring(EXPECTED_SERVE_PROTOCOL_VERSION)
+        .. "; reopen the preview after rebuilding or updating nvbrowser"
+    )
+    return
+  end
+  add_item(
+    report,
+    "warning",
+    "active session protocol mismatch; plugin expects serve protocol="
+      .. tostring(EXPECTED_SERVE_PROTOCOL_VERSION)
+      .. " but session reports "
+      .. tostring(protocol)
+      .. "; reopen the preview after rebuilding or updating nvbrowser"
+  )
 end
 
 function M.run(config, terminal_state)
@@ -401,6 +468,7 @@ function M.run(config, terminal_state)
   if runtime ~= nil then
     table.insert(report.lines, runtime)
   end
+  append_active_protocol_diagnostics(report, terminal_state)
   table.insert(report.lines, runtime_calibration(config, terminal_state, cell))
   table.insert(report.lines, click_calibration_line(terminal_state, cell))
   local fixture_line = calibration_fixture_line(terminal_state)
