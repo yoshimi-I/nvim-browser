@@ -74,8 +74,9 @@ require("nvim-browser").setup({
 The backend also accepts NVBROWSER_DOWNLOAD_DIR or --download-dir. Completed
 downloads are reported in the preview footer and :NBrowserStatus as
 "download=filename". The current POC reports one completed download per
-interaction response; it does not provide a download list, progress UI,
-cancellation, or filename prompts.
+interaction response and keeps a session-local list available via
+:NBrowserDownloads; it does not provide progress UI, cancellation, or filename
+prompts.
 
 If the terminal font cell size makes previews look stretched or click targets
 feel offset, tune the viewport cell pixels:
@@ -487,6 +488,12 @@ COMMANDS                                           *nvim-browser-commands*
 	Idle browser previews periodically send capture requests to keep async
 	page updates visible. Background captures are skipped while an operation is
 	pending and stop when the browser preview is stopped, closed, or replaced.
+
+							*:NBrowserDownloads*
+:NBrowserDownloads
+	List completed downloads reported during the current browser session,
+	including filename and full path. The list is session-local and resets
+	when the browser preview is closed, replaced, or its serve process exits.
 
 							*:NBrowserReader*
 :NBrowserReader

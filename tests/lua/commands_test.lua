@@ -358,6 +358,12 @@ local browser = {
       status = "completed",
     }
   end,
+  downloads = function()
+    return {
+      { path = "/tmp/downloads/report.pdf", suggested_filename = "report.pdf", status = "completed" },
+      { path = "/tmp/downloads/archive.zip", suggested_filename = "archive.zip", status = "completed" },
+    }
+  end,
   hint_error = function()
     return nil
   end,
@@ -681,6 +687,10 @@ assert(echoed:match("output=kitty%-unicode"), "NBrowserStatus should include run
 assert(echoed:match("viewport=800x600"), "NBrowserStatus should include runtime viewport when available")
 assert(echoed:match("cells=80x24"), "NBrowserStatus should include runtime cell size when available")
 assert(echoed:match("renderer=chromium%-cdp"), "NBrowserStatus should include runtime renderer when available")
+
+vim.cmd("NBrowserDownloads")
+assert(echoed:match("report%.pdf%s+/tmp/downloads/report%.pdf"), "NBrowserDownloads should list completed download filenames and paths")
+assert(echoed:match("archive%.zip%s+/tmp/downloads/archive%.zip"), "NBrowserDownloads should list multiple completed downloads")
 
 vim.cmd("NBrowserReader")
 assert(reader_called == true, "NBrowserReader should call browser.reader")
@@ -1313,6 +1323,9 @@ local failed_browser = {
   type_here = function()
     return false
   end,
+  downloads = function()
+    return {}
+  end,
   stop = function()
     return false
   end,
@@ -1358,6 +1371,9 @@ assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no
 
 vim.cmd("NBrowserYankRegion")
 assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no browser selection is active", "NBrowserYankRegion should warn when region yank fails")
+
+vim.cmd("NBrowserDownloads")
+assert(echoed == "nvim-browser: no completed downloads", "NBrowserDownloads should report an empty download history")
 
 vim.cmd("NBrowserInputMode")
 assert(warnings[#warnings] == "nvim-browser: focused text input failed or browser session is inactive", "NBrowserInputMode should warn when focused text input fails")

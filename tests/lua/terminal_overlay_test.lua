@@ -718,10 +718,48 @@ terminal._test.apply_serve_response({
   },
 })
 assert(terminal.state().latest_download.path == "/tmp/nvbrowser-downloads/report.pdf", "download responses should store latest download metadata")
+assert(#terminal.downloads() == 1, "download responses should append to download history")
+assert(terminal.downloads()[1].path == "/tmp/nvbrowser-downloads/report.pdf", "download history should include completed download paths")
+terminal._test.apply_serve_response({
+  id = 103,
+  status = "ok",
+  download = {
+    path = "/tmp/nvbrowser-downloads/archive.zip",
+    suggested_filename = "archive.zip",
+    status = "completed",
+  },
+})
+local downloads = terminal.downloads()
+assert(#downloads == 2, "download history should retain multiple completed downloads")
+assert(downloads[2].path == "/tmp/nvbrowser-downloads/archive.zip", "download history should keep later downloads in order")
+downloads[1].path = "/tmp/changed.pdf"
+assert(terminal.downloads()[1].path == "/tmp/nvbrowser-downloads/report.pdf", "download history should return a defensive copy")
+assert(terminal.state().latest_download.path == "/tmp/nvbrowser-downloads/archive.zip", "latest download should remain the most recent completed download")
 assert(
-  terminal._test.preview_footer_line(120):find("download=report%.pdf"),
+  terminal._test.preview_footer_line(120):find("download=archive%.zip"),
   "footer should expose the latest completed download filename"
 )
+terminal._test.apply_serve_response({
+  id = 104,
+  status = "ok",
+  download = {
+    path = "/tmp/nvbrowser-downloads/partial.tmp",
+    suggested_filename = "partial.tmp",
+    status = "in_progress",
+  },
+})
+assert(terminal.state().latest_download.path == "/tmp/nvbrowser-downloads/partial.tmp", "latest download should still reflect the last reported download metadata")
+assert(#terminal.downloads() == 2, "download history should only retain completed downloads")
+terminal._test.apply_serve_response({
+  id = 105,
+  status = "ok",
+  download = {
+    path = "/tmp/nvbrowser-downloads/missing-status.bin",
+    suggested_filename = "missing-status.bin",
+  },
+})
+assert(terminal.state().latest_download.path == "/tmp/nvbrowser-downloads/missing-status.bin", "latest download should still reflect download metadata without status")
+assert(#terminal.downloads() == 2, "download history should require completed download status")
 
 terminal._test.set_pending_operation({ id = 202, label = "loading", target = "https://example.com/next" })
 local pending_footer = terminal._test.preview_footer_line(120)
@@ -1980,6 +2018,11 @@ serve_stdout(nil, { vim.json.encode({
   payload = "older navigation frame",
   url = "https://example.com/older",
   title = "Older Navigation",
+  download = {
+    path = "/tmp/nvbrowser-downloads/stale-complete.txt",
+    suggested_filename = "stale-complete.txt",
+    status = "completed",
+  },
   hints = {
     {
       id = 99,
@@ -2005,6 +2048,10 @@ assert(
 assert(
   #terminal.state().element_hints == active_hint_count_before_older_navigation,
   "late older navigation response should not replace active hints"
+)
+assert(
+  terminal.downloads()[#terminal.downloads()].path == "/tmp/nvbrowser-downloads/stale-complete.txt",
+  "late older navigation responses should still record completed downloads"
 )
 serve_stdout(nil, { vim.json.encode({
   id = newer_navigation_id,
@@ -3435,6 +3482,18 @@ vim.fn.chansend = original_active_chansend
 terminal._test.set_timer_factory(function()
   return nil
 end)
+terminal._test.apply_serve_response({
+  id = 701,
+  status = "ok",
+  download = {
+    path = "/tmp/nvbrowser-downloads/before-reset.txt",
+    suggested_filename = "before-reset.txt",
+    status = "completed",
+  },
+})
+assert(#terminal.downloads() > 0, "test setup should have download history before opening a new serve session")
+terminal.open({ "nvbrowser", "show-image", "/tmp/reset-downloads.png", "--output", "ansi" })
+assert(#terminal.downloads() == 0, "replacing the active browser session should reset download history")
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/no-scroll-timer" })
 terminal._test.clear_in_flight_capture()
 sent_requests = {}
@@ -3443,6 +3502,16 @@ assert(#nvim_browser_requests_of_type("scroll") == 1, "scroll should send immedi
 assert(nvim_browser_requests_of_type("scroll")[1].delta_y == 55, "immediate scroll fallback should preserve deltas")
 
 terminal._test.set_pending_operation({ id = 4, label = "loading", target = "https://example.com/crash" })
+terminal._test.apply_serve_response({
+  id = 703,
+  status = "ok",
+  download = {
+    path = "/tmp/nvbrowser-downloads/before-exit.txt",
+    suggested_filename = "before-exit.txt",
+    status = "completed",
+  },
+})
+assert(#terminal.downloads() > 0, "test setup should have download history before serve job exit")
 assert(type(serve_exit) == "function", "serve jobstart should expose an exit callback in tests")
 serve_exit(nil, 17)
 assert(vim.wait(1000, function()
@@ -3450,13 +3519,25 @@ assert(vim.wait(1000, function()
 end), "serve job exit should clear the active job")
 assert(terminal.state().pending_operation == nil, "serve job exit should clear pending operations")
 assert(terminal._test.response_handler_count() == 0, "serve job exit should clear response handlers")
+assert(#terminal.downloads() == 0, "serve job exit should reset download history")
 
+terminal._test.apply_serve_response({
+  id = 702,
+  status = "ok",
+  download = {
+    path = "/tmp/nvbrowser-downloads/before-close.txt",
+    suggested_filename = "before-close.txt",
+    status = "completed",
+  },
+})
+assert(#terminal.downloads() > 0, "test setup should have download history before close")
 terminal._test.set_timer_factory(nil)
 vim.fn.jobstart = original_jobstart
 vim.fn.chansend = original_chansend
 vim.fn.jobstop = original_jobstop
 vim.fn.termopen = original_termopen
 terminal.close()
+assert(#terminal.downloads() == 0, "closing the browser should reset download history")
 
 vim.api.nvim_chan_send = original_nvim_chan_send
 vim.api.nvim_echo = original_echo

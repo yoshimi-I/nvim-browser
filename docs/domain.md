@@ -118,7 +118,8 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   files.
 - Downloads are intentionally a single-report POC surface: if multiple downloads
   complete during one interaction, only one completed file is surfaced. There is
-  no progress UI, cancellation, retry, filename prompt, or download list yet.
+  a session-local completed-download list, but no progress UI, cancellation,
+  retry, filename prompt, or persistence yet.
 - Long-running Chromium lifecycle, stuck navigation cancellation, and late
   response handling remain operational risk areas and should stay covered by
   tests.

@@ -41,6 +41,7 @@ assert(type(browser.yank_region) == "function", "browser region yank API should 
 assert(type(browser.yank_current_url) == "function", "current URL yank API should exist")
 assert(type(browser.yank_hint_url) == "function", "hint URL yank API should exist")
 assert(type(browser.screenshot) == "function", "active browser screenshot API should exist")
+assert(type(browser.downloads) == "function", "download history API should exist")
 assert(type(browser.start_text_mode) == "function", "interactive browser text mode API should exist")
 assert(type(browser.address) == "function", "address API should exist")
 assert(type(browser.resolve_address_target) == "function", "address target resolver should exist")
@@ -928,6 +929,7 @@ local original_terminal_page_scroll = terminal.page_scroll
 local original_terminal_select_region = terminal.select_region
 local original_terminal_yank_selection = terminal.yank_selection
 local original_terminal_yank_region = terminal.yank_region
+original_terminal_downloads = terminal.downloads
 local original_terminal_yank_current_url = terminal.yank_current_url
 local original_terminal_yank_hint_url = terminal.yank_hint_url
 local original_terminal_find_text = terminal.find_text
@@ -1640,17 +1642,17 @@ assert(browser.input_text_mode(function()
 end) == false, "input_text_mode should cancel on empty text")
 
 local unnamed_register = vim.fn.getreg('"')
-local plus_register = vim.fn.getreg("+")
+local a_register = vim.fn.getreg("a")
 vim.fn.setreg('"', "hello from unnamed\nregister")
-vim.fn.setreg("+", "hello from clipboard")
+vim.fn.setreg("a", "hello from register a")
 
 focused_input = nil
 assert(browser.paste_register() == true, "paste_register should paste the unnamed register by default")
 assert(focused_input == "hello from unnamed\nregister", "paste_register should pass unnamed register text to terminal")
 
 focused_input = nil
-assert(browser.paste_register("+") == true, "paste_register should paste an explicit register")
-assert(focused_input == "hello from clipboard", "paste_register should pass explicit register text to terminal")
+assert(browser.paste_register("a") == true, "paste_register should paste an explicit register")
+assert(focused_input == "hello from register a", "paste_register should pass explicit register text to terminal")
 
 focused_input = nil
 vim.fn.setreg("a", "should not paste")
@@ -1661,7 +1663,7 @@ vim.fn.setreg('"', "")
 assert(browser.paste_register() == false, "paste_register should reject empty register contents")
 
 vim.fn.setreg('"', unnamed_register)
-vim.fn.setreg("+", plus_register)
+vim.fn.setreg("a", a_register)
 
 local yanked_register = nil
 terminal.yank_selection = function(register)
@@ -1700,6 +1702,21 @@ assert(browser.yank_region("+", 5, 6, 7, 8) == true, "yank_region should yank in
 assert(
   table.concat(yanked_region, ",") == "+,5,6,7,8",
   "yank_region should pass explicit register and preview-cell coordinates to terminal"
+)
+
+terminal_download_history = {
+  { path = "/tmp/downloads/report.pdf", suggested_filename = "report.pdf", status = "completed" },
+}
+terminal.downloads = function()
+  return terminal_download_history
+end
+downloads = browser.downloads()
+assert(#downloads == 1, "downloads should expose terminal download history")
+assert(downloads[1].path == "/tmp/downloads/report.pdf", "downloads should include completed download paths")
+downloads[1].path = "/tmp/changed.pdf"
+assert(
+  terminal_download_history[1].path == "/tmp/downloads/report.pdf",
+  "downloads should return a defensive copy of terminal metadata"
 )
 
 local screenshot_path = nil
@@ -2219,6 +2236,7 @@ terminal.page_scroll = original_terminal_page_scroll
 terminal.select_region = original_terminal_select_region
 terminal.yank_selection = original_terminal_yank_selection
 terminal.yank_region = original_terminal_yank_region
+terminal.downloads = original_terminal_downloads
 terminal.screenshot = original_terminal_screenshot
 terminal.yank_current_url = original_terminal_yank_current_url
 terminal.yank_hint_url = original_terminal_yank_hint_url

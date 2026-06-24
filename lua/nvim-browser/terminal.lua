@@ -22,6 +22,8 @@ local state = {
   page_metrics = nil,
   focused_element = nil,
   latest_download = nil,
+  download_history = {},
+  download_recorded_response_ids = {},
   runtime_metadata = nil,
   rendered_frame_geometry = nil,
   status = nil,
@@ -728,6 +730,45 @@ end
 
 local rendered_frame_geometry_from_runtime
 
+local function copy_download(download)
+  if type(download) ~= "table" then
+    return nil
+  end
+  local copy = {}
+  for key, value in pairs(download) do
+    if value ~= vim.NIL then
+      copy[key] = value
+    end
+  end
+  return copy
+end
+
+local function download_is_completed(download)
+  return type(download) == "table" and download.status == "completed"
+end
+
+local function copy_download_history()
+  local downloads = {}
+  for _, download in ipairs(state.download_history) do
+    table.insert(downloads, copy_download(download))
+  end
+  return downloads
+end
+
+local function record_completed_download(response)
+  if type(response) ~= "table" or not download_is_completed(response.download) then
+    return
+  end
+  local id = response.id
+  if id ~= nil and id ~= vim.NIL then
+    if state.download_recorded_response_ids[id] then
+      return
+    end
+    state.download_recorded_response_ids[id] = true
+  end
+  table.insert(state.download_history, copy_download(response.download))
+end
+
 local function clear_navigation_admission(id)
   if state.navigation_admission_id == id then
     state.navigation_admission_id = nil
@@ -789,6 +830,7 @@ local function apply_serve_response_metadata(response)
   end
   if response.download ~= nil and response.download ~= vim.NIL then
     state.latest_download = response.download
+    record_completed_download(response)
   end
   if response.status == "ok" and response.payload ~= nil then
     state.rendered_frame_geometry = rendered_frame_geometry_from_runtime(response.runtime)
@@ -1685,6 +1727,8 @@ function M.open(command)
   state.page_metrics = nil
   state.focused_element = nil
   state.latest_download = nil
+  state.download_history = {}
+  state.download_recorded_response_ids = {}
   state.runtime_metadata = nil
   state.rendered_frame_geometry = nil
   state.status = nil
@@ -1761,6 +1805,7 @@ function M.open(command)
         if not vim.api.nvim_buf_is_valid(bufnr) then
           return
         end
+        record_completed_download(response)
         if state.canceled_request_ids[response.id] then
           state.canceled_request_ids[response.id] = nil
           state.navigation_suppressed_request_ids[response.id] = nil
@@ -1889,6 +1934,8 @@ function M.open(command)
           state.rendered_frame_geometry = nil
           state.focused_element = nil
           state.latest_download = nil
+          state.download_history = {}
+          state.download_recorded_response_ids = {}
           state.element_hints = {}
           state.element_hints_geometry = nil
           state.cursor_addressable_preview = false
@@ -2025,6 +2072,8 @@ function M.close()
   state.page_metrics = nil
   state.focused_element = nil
   state.latest_download = nil
+  state.download_history = {}
+  state.download_recorded_response_ids = {}
   state.runtime_metadata = nil
   state.rendered_frame_geometry = nil
   state.status = nil
@@ -2132,6 +2181,8 @@ function M.stop()
   state.serve_output = nil
   state.runtime_metadata = nil
   state.latest_download = nil
+  state.download_history = {}
+  state.download_recorded_response_ids = {}
   state.element_hints = {}
   state.element_hints_geometry = nil
   state.cursor_addressable_preview = false
@@ -3229,6 +3280,7 @@ function M.state()
     page_metrics = state.page_metrics,
     focused_element = state.focused_element,
     latest_download = state.latest_download,
+    download_history = copy_download_history(),
     runtime_metadata = state.runtime_metadata,
     rendered_frame_geometry = state.rendered_frame_geometry,
     status = state.status,
@@ -3243,6 +3295,10 @@ function M.state()
     element_hints = state.element_hints,
     reader_bufnr = state.reader_bufnr,
   }
+end
+
+function M.downloads()
+  return copy_download_history()
 end
 
 M._test = {

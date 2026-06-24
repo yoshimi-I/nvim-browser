@@ -1755,6 +1755,27 @@ function M.latest_download()
   return terminal.state().latest_download
 end
 
+local function copy_downloads(downloads)
+  local copy = {}
+  if type(downloads) ~= "table" then
+    return copy
+  end
+  for _, download in ipairs(downloads) do
+    local item = {}
+    if type(download) == "table" then
+      for key, value in pairs(download) do
+        item[key] = value
+      end
+    end
+    table.insert(copy, item)
+  end
+  return copy
+end
+
+function M.downloads()
+  return copy_downloads(terminal.downloads())
+end
+
 function M.status()
   return terminal.state().status
 end
