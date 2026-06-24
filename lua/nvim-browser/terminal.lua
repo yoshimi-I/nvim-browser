@@ -53,6 +53,7 @@ local state = {
   last_find_query = nil,
   response_handlers = {},
   metadata_observer = nil,
+  download_observer = nil,
   element_hints = {},
   element_hints_geometry = nil,
   cursor_addressable_preview = false,
@@ -1023,7 +1024,11 @@ local function record_completed_download(response)
     state.download_recorded_response_ids[id] = true
   end
   for _, download in ipairs(downloads) do
-    table.insert(state.download_history, copy_download(download))
+    local copied = copy_download(download)
+    table.insert(state.download_history, copied)
+    if type(state.download_observer) == "function" then
+      pcall(state.download_observer, copied)
+    end
   end
 end
 
@@ -3789,6 +3794,14 @@ function M.set_metadata_observer(observer)
     return false
   end
   state.metadata_observer = observer
+  return true
+end
+
+function M.set_download_observer(observer)
+  if observer ~= nil and type(observer) ~= "function" then
+    return false
+  end
+  state.download_observer = observer
   return true
 end
 

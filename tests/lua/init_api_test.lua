@@ -313,6 +313,136 @@ assert(
   "open should not add file URLs to URL history"
 )
 
+_G.nvim_browser_original_terminal_downloads_for_session = terminal.downloads
+terminal.downloads = function()
+  return {}
+end
+_G.nvim_browser_download_session_path = session_dir .. "/downloads-session.json"
+vim.fn.writefile({
+  vim.fn.json_encode({
+    version = 1,
+    last_target = "https://persisted.example/downloads",
+    history = {
+      { url = "https://persisted.example/downloads", title = "Downloads" },
+    },
+    downloads = {
+      {
+        path = "/tmp/downloads/old-report.pdf",
+        suggested_filename = "old-report.pdf",
+        status = "completed",
+      },
+      {
+        path = "/tmp/downloads/dropped-by-limit.pdf",
+        suggested_filename = "dropped-by-limit.pdf",
+        status = "completed",
+      },
+      {
+        path = "/tmp/downloads/old-report.pdf",
+        suggested_filename = "old-report-renamed.pdf",
+        status = "completed",
+      },
+      {
+        path = "/tmp/downloads/archive.zip",
+        suggested_filename = "archive.zip",
+        status = "completed",
+      },
+      {
+        path = "",
+        suggested_filename = "missing-path.pdf",
+        status = "completed",
+      },
+      {
+        path = "/tmp/downloads/partial.tmp",
+        suggested_filename = "partial.tmp",
+        status = "in_progress",
+      },
+      {
+        suggested_filename = "malformed.pdf",
+        status = "completed",
+      },
+    },
+  }),
+}, _G.nvim_browser_download_session_path)
+browser.setup({ session = { persist = true, path = _G.nvim_browser_download_session_path, history_limit = 3 } })
+_G.nvim_browser_persisted_downloads = browser.downloads()
+assert(#_G.nvim_browser_persisted_downloads == 3, "setup should load bounded usable completed downloads")
+assert(
+  _G.nvim_browser_persisted_downloads[1].path == "/tmp/downloads/dropped-by-limit.pdf",
+  "setup should preserve persisted completed download paths"
+)
+assert(
+  _G.nvim_browser_persisted_downloads[2].path == "/tmp/downloads/old-report.pdf"
+    and _G.nvim_browser_persisted_downloads[2].suggested_filename == "old-report-renamed.pdf",
+  "setup should de-duplicate persisted download paths using the newest metadata"
+)
+assert(
+  _G.nvim_browser_persisted_downloads[3].path == "/tmp/downloads/archive.zip",
+  "setup should preserve persisted completed download order"
+)
+_G.nvim_browser_persisted_downloads[1].path = "/tmp/downloads/mutated.pdf"
+assert(
+  browser.downloads()[1].path == "/tmp/downloads/dropped-by-limit.pdf",
+  "persisted downloads should be returned as defensive copies"
+)
+
+terminal._test.apply_serve_response({
+  id = 12301,
+  status = "ok",
+  download = {
+    path = "/tmp/downloads/new-report.pdf",
+    suggested_filename = "new-report.pdf",
+    status = "completed",
+  },
+})
+_G.nvim_browser_saved_download_session = vim.fn.json_decode(table.concat(vim.fn.readfile(_G.nvim_browser_download_session_path), "\n"))
+assert(
+  #_G.nvim_browser_saved_download_session.downloads == 3,
+  "completed browser downloads should be saved into the bounded session file immediately"
+)
+assert(
+  _G.nvim_browser_saved_download_session.downloads[3].path == "/tmp/downloads/new-report.pdf",
+  "saved downloads should append newly completed download paths"
+)
+_G.nvim_browser_merged_downloads = browser.downloads()
+assert(#_G.nvim_browser_merged_downloads == 3, "active and persisted downloads should merge without duplicate paths")
+assert(_G.nvim_browser_merged_downloads[1].path == "/tmp/downloads/old-report.pdf", "bounded downloads should drop the oldest entry when saving a new one")
+assert(_G.nvim_browser_merged_downloads[2].path == "/tmp/downloads/archive.zip", "merged downloads should retain persisted order")
+assert(_G.nvim_browser_merged_downloads[3].path == "/tmp/downloads/new-report.pdf", "merged downloads should include active completed downloads once")
+
+terminal.downloads = function()
+  return {}
+end
+assert(#browser.downloads() == 3, "persisted downloads should remain available after volatile terminal history is cleared")
+
+_G.nvim_browser_persist_disabled_path = session_dir .. "/downloads-disabled.json"
+vim.fn.writefile({
+  vim.fn.json_encode({
+    version = 1,
+    downloads = {
+      {
+        path = "/tmp/downloads/persist-disabled.pdf",
+        suggested_filename = "persist-disabled.pdf",
+        status = "completed",
+      },
+    },
+  }),
+}, _G.nvim_browser_persist_disabled_path)
+browser.setup({ session = { persist = false, path = _G.nvim_browser_persist_disabled_path, history_limit = 3 } })
+assert(#browser.downloads() == 0, "session.persist=false should ignore persisted download history")
+terminal._test.apply_serve_response({
+  id = 12302,
+  status = "ok",
+  download = {
+    path = "/tmp/downloads/not-persisted.pdf",
+    suggested_filename = "not-persisted.pdf",
+    status = "completed",
+  },
+})
+_G.nvim_browser_disabled_session = vim.fn.json_decode(table.concat(vim.fn.readfile(_G.nvim_browser_persist_disabled_path), "\n"))
+assert(#_G.nvim_browser_disabled_session.downloads == 1, "session.persist=false should not write completed downloads")
+terminal.downloads = _G.nvim_browser_original_terminal_downloads_for_session
+browser.setup({ session = { persist = true, path = session_path, history_limit = 2 } })
+
 browser.clear_history()
 saved_session = vim.fn.json_decode(table.concat(vim.fn.readfile(session_path), "\n"))
 assert(#saved_session.history == 0, "clear_history should save an empty history")

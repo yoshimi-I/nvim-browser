@@ -176,9 +176,11 @@ require("nvim-browser").setup({
 The same setting is available to the backend as `NVBROWSER_DOWNLOAD_DIR` or
 `--download-dir`. Completed downloads are reported in the preview footer and
 `:NBrowserStatus` as `download=filename`. The serve protocol can report
-multiple completed downloads from one interaction response and keeps a
-session-local list available via `:NBrowserDownloads` with 1-based indexes; it
-does not provide progress UI, cancellation, or filename prompts.
+multiple completed downloads from one interaction response and keeps a bounded
+list available via `:NBrowserDownloads` with 1-based indexes. Completed
+downloads are persisted in the normal nvim-browser session file when
+`session.persist` is enabled; nvim-browser does not provide progress UI,
+cancellation, or filename prompts.
 JavaScript dialogs are auto-handled so Chromium does not block: alerts are
 accepted, confirm/prompt/beforeunload dialogs are dismissed, and the latest
 handled dialog is reported as `dialog=confirm dismissed: message`.
@@ -371,8 +373,8 @@ echoes the same browser-session state in the command line. Focus metadata is
 reported as `focus=input Search`, `focus=text_area Notes`, and similar compact
 labels after captured browser interactions. Non-default zoom is reported as
 `zoom=125%`.
-`:NBrowserDownloads` lists completed downloads reported during the current
-browser session, including a 1-based index, filename, and full path.
+`:NBrowserDownloads` lists completed downloads reported during the current and
+persisted browser sessions, including a 1-based index, filename, and full path.
 `:NBrowserOpenDownload` opens a completed download by index or with a picker.
 
 While a browser session is idle, nvim-browser periodically sends a lightweight

@@ -11,6 +11,7 @@ local M = {}
 local state = {
   last_target = nil,
   history = {},
+  downloads = {},
   session_warning_messages = {},
   session_loaded_path = nil,
 }
@@ -87,6 +88,53 @@ local function add_history_entry(url, title)
   return true
 end
 
+local function normalize_download_entry(download)
+  if type(download) ~= "table" then
+    return nil
+  end
+  local path = normalize_history_value(download.path)
+  if path == nil then
+    return nil
+  end
+  if download.status ~= "completed" then
+    return nil
+  end
+  local entry = {
+    path = path,
+    status = "completed",
+  }
+  local suggested_filename = normalize_history_value(download.suggested_filename)
+  if suggested_filename ~= nil then
+    entry.suggested_filename = suggested_filename
+  end
+  return entry
+end
+
+local function add_download_entry(download)
+  local entry = normalize_download_entry(download)
+  if entry == nil then
+    return false
+  end
+  for index = #state.downloads, 1, -1 do
+    if state.downloads[index].path == entry.path then
+      table.remove(state.downloads, index)
+    end
+  end
+  table.insert(state.downloads, entry)
+  while #state.downloads > history_limit do
+    table.remove(state.downloads, 1)
+  end
+  return true
+end
+
+local function persisted_downloads()
+  local downloads = {}
+  for _, download in ipairs(state.downloads) do
+    table.insert(downloads, vim.deepcopy(download))
+  end
+  return downloads
+end
+
 local function save_session()
   local opts = session_options()
   if not opts.persist then
@@ -104,6 +152,7 @@ local function save_session()
     version = session_version,
     last_target = normalize_history_value(state.last_target),
     history = M.history(),
+    downloads = persisted_downloads(),
   }
   local encoded_ok, encoded = pcall(vim.fn.json_encode, payload)
   if not encoded_ok then
@@ -158,6 +207,7 @@ local function load_session()
   history_limit = opts.history_limit
   if not opts.persist then
     state.session_loaded_path = nil
+    state.downloads = {}
     return
   end
   local load_signature = session_file_signature(opts.path, opts.history_limit)
@@ -167,6 +217,7 @@ local function load_session()
   state.session_loaded_path = load_signature
   state.last_target = nil
   state.history = {}
+  state.downloads = {}
   local read_ok, lines = pcall(vim.fn.readfile, opts.path)
   if not read_ok or type(lines) ~= "table" or #lines == 0 then
     return
@@ -183,6 +234,11 @@ local function load_session()
       if type(entry) == "table" then
         add_history_entry(entry.url, entry.title)
       end
+    end
+  end
+  if type(decoded.downloads) == "table" then
+    for _, download in ipairs(decoded.downloads) do
+      add_download_entry(download)
     end
   end
 end
@@ -205,6 +261,11 @@ function M.setup(opts)
   terminal.configure(M.config)
   terminal.set_metadata_observer(function(metadata)
     M.record_history(metadata.url, metadata.title)
+  end)
+  terminal.set_download_observer(function(download)
+    if add_download_entry(download) then
+      save_session()
+    end
   end)
   keymaps.setup(M, M.config.keymaps or {})
 end
@@ -1901,7 +1962,27 @@ local function copy_downloads(downloads)
 end
 
 function M.downloads()
-  return copy_downloads(terminal.downloads())
+  local downloads = {}
+  local seen_paths = {}
+
+  local function add(download)
+    local entry = normalize_download_entry(download)
+    if entry == nil or seen_paths[entry.path] then
+      return
+    end
+    seen_paths[entry.path] = true
+    table.insert(downloads, entry)
+  end
+
+  if session_options().persist then
+    for _, download in ipairs(state.downloads) do
+      add(download)
+    end
+  end
+  for _, download in ipairs(copy_downloads(terminal.downloads())) do
+    add(download)
+  end
+  return downloads
 end
 
 local function download_path(download)

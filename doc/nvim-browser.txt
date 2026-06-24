@@ -74,9 +74,10 @@ require("nvim-browser").setup({
 The backend also accepts NVBROWSER_DOWNLOAD_DIR or --download-dir. Completed
 downloads are reported in the preview footer and :NBrowserStatus as
 "download=filename". The serve protocol can report multiple completed
-downloads from one interaction response and keeps a 1-based, session-local
-list available via :NBrowserDownloads and :NBrowserOpenDownload; it does not
-provide progress UI, cancellation, or filename prompts.
+downloads from one interaction response and keeps a bounded, persisted 1-based
+list available via :NBrowserDownloads and :NBrowserOpenDownload when session
+persistence is enabled; it does not provide progress UI, cancellation, or
+filename prompts.
 
 If the terminal font cell size makes previews look stretched or click targets
 feel offset, tune the viewport cell pixels:
@@ -512,10 +513,10 @@ COMMANDS                                           *nvim-browser-commands*
 
 							*:NBrowserDownloads*
 :NBrowserDownloads
-	List completed downloads reported during the current browser session,
-	including a 1-based index, filename, and full path. The list is
-	session-local and resets when the browser preview is closed, replaced, or
-	its serve process exits.
+	List completed downloads reported during the current and persisted browser
+	sessions, including a 1-based index, filename, and full path. The list is
+	bounded by the session history limit and is saved in the normal
+	nvim-browser session file when session persistence is enabled.
 
 							*:NBrowserOpenDownload*
 :NBrowserOpenDownload [index]

@@ -106,8 +106,8 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   viewport, and errors.
 - Saves browser-initiated downloads into a configured `download_dir`, reports
   the latest completed file path in the JSONL response plus footer/status,
-  keeps an indexed session list for `:NBrowserDownloads`, and can reopen
-  completed downloads through the normal browser open path.
+  keeps an indexed persisted-session list for `:NBrowserDownloads`, and can
+  reopen completed downloads through the normal browser open path.
 - Performs lightweight live page-state refresh while idle and suppresses
   background refresh while a navigation-like operation is pending. Manual
   `:NBrowserRefresh` and browser actions still capture fresh frames. Meaningful
@@ -158,8 +158,9 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   files.
 - Downloads are intentionally a completed-report POC surface: multiple
   downloads completed during one interaction can be surfaced in the JSONL
-  response and appended to the session-local completed-download list, but there
-  is no progress UI, cancellation, retry, filename prompt, or persistence yet.
+  response and appended to a bounded completed-download list that persists with
+  the normal Neovim session state when enabled, but there is no progress UI,
+  cancellation, retry, or filename prompt yet.
 - Long-running Chromium lifecycle, stuck navigation cancellation, and late
   response handling remain operational risk areas and should stay covered by
   tests.
