@@ -188,7 +188,8 @@ fn serve_help_documents_cdp_ws_url_flag() {
         .assert()
         .success()
         .stdout(predicate::str::contains("--cdp-ws-url"))
-        .stdout(predicate::str::contains("--user-data-dir"));
+        .stdout(predicate::str::contains("--user-data-dir"))
+        .stdout(predicate::str::contains("--navigation-timeout-ms"));
 }
 
 #[test]
@@ -277,7 +278,8 @@ fn chromium_commands_help_document_user_data_dir_flag() {
             .args([subcommand, "--help"])
             .assert()
             .success()
-            .stdout(predicate::str::contains("--user-data-dir"));
+            .stdout(predicate::str::contains("--user-data-dir"))
+            .stdout(predicate::str::contains("--navigation-timeout-ms"));
     }
 }
 

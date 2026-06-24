@@ -37,12 +37,14 @@ use crate::{
 };
 
 const INTERACTION_SETTLE_STABLE_SAMPLES: usize = 3;
+pub const DEFAULT_NAVIGATION_TIMEOUT_MS: u64 = 20_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChromiumOptions {
     pub cdp_ws_url: Option<String>,
     pub binary: Option<PathBuf>,
     pub user_data_dir: Option<PathBuf>,
+    pub navigation_timeout_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -69,6 +71,7 @@ impl ChromiumOptions {
                 .map(PathBuf::from)
                 .or_else(default_chrome_binary),
             std::env::var_os("NVBROWSER_USER_DATA_DIR").map(PathBuf::from),
+            std::env::var("NVBROWSER_NAVIGATION_TIMEOUT_MS").ok(),
         )
     }
 
@@ -76,11 +79,13 @@ impl ChromiumOptions {
         cdp_ws_url: Option<String>,
         binary: Option<PathBuf>,
         user_data_dir: Option<PathBuf>,
+        navigation_timeout_ms: Option<String>,
     ) -> Self {
         Self {
             cdp_ws_url,
             binary,
             user_data_dir: user_data_dir.and_then(non_empty_path),
+            navigation_timeout_ms: parse_navigation_timeout_ms(navigation_timeout_ms),
         }
     }
 
@@ -154,6 +159,10 @@ impl ChromiumOptions {
                 )
             })
     }
+
+    fn navigation_timeout(&self) -> Duration {
+        Duration::from_millis(self.navigation_timeout_ms)
+    }
 }
 
 #[cfg(unix)]
@@ -196,19 +205,19 @@ pub fn render_url_png(
 ) -> Result<RenderedFrame, RendererError> {
     let browser = open_browser(&options, viewport)?;
     let tab = browser.new_tab().map_err(render_error)?;
+    configure_tab_timeout(&tab, &options);
     install_default_dialog_handler(&tab)?;
     resize_tab(&tab, viewport)?;
+    tab.navigate_to(url)
+        .map_err(|error| navigation_start_error(url, error))?;
+    wait_until_navigated(&tab, url, options.navigation_timeout_ms)?;
     let png = tab
-        .navigate_to(url)
-        .and_then(|tab| tab.wait_until_navigated())
-        .and_then(|tab| {
-            tab.capture_screenshot(
-                CaptureScreenshotFormatOption::Png,
-                None,
-                Some(viewport_clip(viewport)),
-                true,
-            )
-        })
+        .capture_screenshot(
+            CaptureScreenshotFormatOption::Png,
+            None,
+            Some(viewport_clip(viewport)),
+            true,
+        )
         .map_err(render_error)?;
     let url = tab.get_url();
 
@@ -239,12 +248,14 @@ pub struct ChromiumRenderer {
     current_title: Option<String>,
     current_zoom_scale: f64,
     next_frame_id: u64,
+    navigation_timeout_ms: u64,
 }
 
 impl ChromiumRenderer {
     pub fn launch(viewport: Viewport, options: ChromiumOptions) -> Result<Self, RendererError> {
         let browser = open_browser(&options, viewport)?;
         let tab = browser.new_tab().map_err(render_error)?;
+        configure_tab_timeout(&tab, &options);
         install_default_dialog_handler(&tab)?;
         let dialog_handler_target_ids = HashSet::from([tab.get_target_id().clone()]);
         resize_tab(&tab, viewport)?;
@@ -264,6 +275,7 @@ impl ChromiumRenderer {
             current_title: None,
             current_zoom_scale: 1.0,
             next_frame_id: 1,
+            navigation_timeout_ms: options.navigation_timeout_ms,
         })
     }
 
@@ -297,8 +309,8 @@ impl Renderer for ChromiumRenderer {
     fn navigate(&mut self, request: NavigateRequest) -> Result<NavigationResult, RendererError> {
         self.tab
             .navigate_to(&request.url)
-            .and_then(|tab| tab.wait_until_navigated())
-            .map_err(render_error)?;
+            .map_err(|error| navigation_start_error(&request.url, error))?;
+        wait_until_navigated(&self.tab, &request.url, self.navigation_timeout_ms)?;
         let url = self.tab.get_url();
         let title = self.read_current_title().unwrap_or(None);
         self.current_url = Some(url.clone());
@@ -375,8 +387,12 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn reload(&mut self, request: ReloadRequest) -> Result<ReloadResult, RendererError> {
+        let requested_url = self
+            .current_url
+            .clone()
+            .unwrap_or_else(|| self.tab.get_url());
         self.tab.reload(false, None).map_err(render_error)?;
-        self.tab.wait_until_navigated().map_err(render_error)?;
+        wait_until_navigated(&self.tab, &requested_url, self.navigation_timeout_ms)?;
         let url = self.tab.get_url();
         let title = self.read_current_title().unwrap_or(None);
         self.current_url = Some(url.clone());
@@ -886,6 +902,7 @@ impl ChromiumRenderer {
             }
             return Err(error);
         }
+        configure_tab_timeout_ms(&tab, self.navigation_timeout_ms);
         if let Err(error) = tab.activate().map_err(render_error) {
             if is_closed_target_error(&error) {
                 self.pending_page_target_ids.remove(&target_id);
@@ -1090,7 +1107,7 @@ impl ChromiumRenderer {
             })
             .map_err(render_error)?;
         let url = self.wait_for_current_url(&target_url)?;
-        self.tab.wait_until_navigated().map_err(render_error)?;
+        wait_until_navigated(&self.tab, &target_url, self.navigation_timeout_ms)?;
         let title = self.read_current_title().unwrap_or(None);
         self.current_url = Some(url.clone());
         self.current_title = title.clone();
@@ -1177,18 +1194,24 @@ impl ChromiumRenderer {
     }
 
     fn wait_for_current_url(&self, target_url: &str) -> Result<String, RendererError> {
-        for _ in 0..20 {
+        let deadline =
+            std::time::Instant::now() + Duration::from_millis(self.navigation_timeout_ms);
+        loop {
             let url = self.tab.get_url();
             if url == target_url {
                 return Ok(url);
             }
-            thread::sleep(Duration::from_millis(50));
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                let current_url = self.tab.get_url();
+                return Err(navigation_timeout_error(
+                    target_url,
+                    self.navigation_timeout_ms,
+                    format!("current URL is {current_url}"),
+                ));
+            }
+            thread::sleep(Duration::from_millis(50).min(deadline.saturating_duration_since(now)));
         }
-        let current_url = self.tab.get_url();
-        Err(RendererError::new(
-            RendererErrorKind::NavigationFailed,
-            format!("history navigation did not reach {target_url}; current URL is {current_url}"),
-        ))
     }
 }
 
@@ -1979,12 +2002,14 @@ fn build_launch_options(
 }
 
 fn open_browser(options: &ChromiumOptions, viewport: Viewport) -> Result<Browser, RendererError> {
-    match options.browser_source()? {
+    let browser = match options.browser_source()? {
         BrowserSource::Connect(cdp_ws_url) => connect_browser(&cdp_ws_url),
         BrowserSource::Launch(binary) => {
             launch_browser(&binary, viewport, options.user_data_dir.as_deref())
         }
-    }
+    }?;
+    browser.set_default_timeout(options.navigation_timeout());
+    Ok(browser)
 }
 
 fn connect_browser(cdp_ws_url: &str) -> Result<Browser, RendererError> {
@@ -2198,6 +2223,45 @@ fn unix_time_ms() -> u64 {
 
 fn render_error(error: impl std::fmt::Display) -> RendererError {
     RendererError::new(RendererErrorKind::RenderFailed, error.to_string())
+}
+
+fn navigation_start_error(url: &str, error: impl std::fmt::Display) -> RendererError {
+    RendererError::new(
+        RendererErrorKind::NavigationFailed,
+        format!("navigation failed for {url}: {error}"),
+    )
+}
+
+fn navigation_timeout_error(
+    url: &str,
+    timeout_ms: u64,
+    error: impl std::fmt::Display,
+) -> RendererError {
+    RendererError::new(
+        RendererErrorKind::NavigationFailed,
+        format!("navigation timed out after {timeout_ms}ms: {url}: {error}"),
+    )
+}
+
+fn wait_until_navigated(tab: &Tab, url: &str, timeout_ms: u64) -> Result<(), RendererError> {
+    tab.wait_until_navigated()
+        .map(|_| ())
+        .map_err(|error| navigation_timeout_error(url, timeout_ms, error))
+}
+
+fn configure_tab_timeout(tab: &Tab, options: &ChromiumOptions) {
+    configure_tab_timeout_ms(tab, options.navigation_timeout_ms);
+}
+
+fn configure_tab_timeout_ms(tab: &Tab, navigation_timeout_ms: u64) {
+    tab.set_default_timeout(Duration::from_millis(navigation_timeout_ms));
+}
+
+fn parse_navigation_timeout_ms(value: Option<String>) -> u64 {
+    value
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_NAVIGATION_TIMEOUT_MS)
 }
 
 fn render_context_error(context: &str, error: impl std::fmt::Display) -> RendererError {
@@ -2573,6 +2637,7 @@ mod tests {
             Some("ws://127.0.0.1:9222/devtools/browser/test".to_string()),
             None,
             Some(PathBuf::from("/tmp/nvbrowser-profile")),
+            Some("1234".to_string()),
         );
 
         assert_eq!(
@@ -2584,13 +2649,45 @@ mod tests {
             options.user_data_dir,
             Some(PathBuf::from("/tmp/nvbrowser-profile"))
         );
+        assert_eq!(options.navigation_timeout_ms, 1234);
     }
 
     #[test]
     fn chromium_options_from_env_values_ignores_empty_user_data_dir() {
-        let options = ChromiumOptions::from_env_values(None, None, Some(PathBuf::from("")));
+        let options = ChromiumOptions::from_env_values(None, None, Some(PathBuf::from("")), None);
 
         assert_eq!(options.user_data_dir, None);
+        assert_eq!(options.navigation_timeout_ms, 20_000);
+    }
+
+    #[test]
+    fn chromium_options_from_env_values_ignores_invalid_navigation_timeout() {
+        let options =
+            ChromiumOptions::from_env_values(None, None, None, Some("not-a-number".to_string()));
+
+        assert_eq!(options.navigation_timeout_ms, 20_000);
+    }
+
+    #[test]
+    fn navigation_start_error_does_not_report_timeout() {
+        let error = navigation_start_error("https://example.com", "invalid URL");
+
+        assert_eq!(error.kind(), RendererErrorKind::NavigationFailed);
+        assert!(error
+            .message()
+            .contains("navigation failed for https://example.com"));
+        assert!(!error.message().contains("timed out"));
+    }
+
+    #[test]
+    fn navigation_timeout_error_includes_url_and_timeout() {
+        let error = navigation_timeout_error("https://example.com", 1234, "deadline elapsed");
+
+        assert_eq!(error.kind(), RendererErrorKind::NavigationFailed);
+        assert!(error
+            .message()
+            .contains("navigation timed out after 1234ms"));
+        assert!(error.message().contains("https://example.com"));
     }
 
     #[test]
@@ -2619,6 +2716,7 @@ mod tests {
                 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
             )),
             Some(PathBuf::from("/tmp/nvbrowser-profile")),
+            None,
         )
         .backend_diagnostics();
 
@@ -2653,8 +2751,9 @@ mod tests {
             std::fs::set_permissions(&chrome_path, permissions)
                 .expect("chrome fixture should be executable");
         }
-        let diagnostics = ChromiumOptions::from_env_values(None, Some(chrome_path.clone()), None)
-            .backend_diagnostics();
+        let diagnostics =
+            ChromiumOptions::from_env_values(None, Some(chrome_path.clone()), None, None)
+                .backend_diagnostics();
 
         assert_eq!(diagnostics.status, "available");
         assert_eq!(diagnostics.source, "chrome");
@@ -2672,6 +2771,7 @@ mod tests {
         let diagnostics = ChromiumOptions::from_env_values(
             None,
             Some(PathBuf::from("/definitely/not/nvbrowser-chrome")),
+            None,
             None,
         )
         .backend_diagnostics();
@@ -2706,8 +2806,9 @@ mod tests {
                 .expect("chrome fixture should be non-executable");
         }
 
-        let diagnostics = ChromiumOptions::from_env_values(None, Some(chrome_path.clone()), None)
-            .backend_diagnostics();
+        let diagnostics =
+            ChromiumOptions::from_env_values(None, Some(chrome_path.clone()), None, None)
+                .backend_diagnostics();
 
         assert_eq!(diagnostics.status, "missing");
         assert_eq!(diagnostics.source, "none");
@@ -2725,7 +2826,8 @@ mod tests {
 
     #[test]
     fn chromium_backend_diagnostics_reports_missing_backend() {
-        let diagnostics = ChromiumOptions::from_env_values(None, None, None).backend_diagnostics();
+        let diagnostics =
+            ChromiumOptions::from_env_values(None, None, None, None).backend_diagnostics();
 
         assert_eq!(diagnostics.status, "missing");
         assert_eq!(diagnostics.source, "none");
@@ -2761,6 +2863,7 @@ mod tests {
             cdp_ws_url: Some("ws://127.0.0.1:9222/devtools/browser/test".to_string()),
             binary: Some(PathBuf::from("/custom/chrome")),
             user_data_dir: Some(PathBuf::from("/tmp/nvbrowser-profile")),
+            navigation_timeout_ms: DEFAULT_NAVIGATION_TIMEOUT_MS,
         };
 
         assert_eq!(
@@ -2777,6 +2880,7 @@ mod tests {
             cdp_ws_url: None,
             binary: Some(PathBuf::from("/custom/chrome")),
             user_data_dir: Some(PathBuf::from("/tmp/nvbrowser-profile")),
+            navigation_timeout_ms: DEFAULT_NAVIGATION_TIMEOUT_MS,
         };
 
         assert_eq!(
@@ -2793,6 +2897,7 @@ mod tests {
             cdp_ws_url: None,
             binary: None,
             user_data_dir: Some(PathBuf::from("/tmp/nvbrowser-profile")),
+            navigation_timeout_ms: DEFAULT_NAVIGATION_TIMEOUT_MS,
         };
 
         let error = options

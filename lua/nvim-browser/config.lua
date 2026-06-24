@@ -36,6 +36,7 @@ M.options = {
   graphics = "auto",
   image_fit = "original",
   user_data_dir = nil,
+  navigation_timeout_ms = 20000,
   viewport = {
     cell_width_px = 10,
     cell_height_px = 20,

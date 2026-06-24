@@ -34,6 +34,7 @@ assert(
   "setup should preserve a custom backend binary path"
 )
 assert(configured.user_data_dir == nil, "persistent Chromium profile directory should default to nil")
+assert(configured.navigation_timeout_ms == 20000, "navigation timeout should default to 20 seconds")
 assert(configured.session.persist == true, "session recents should persist by default")
 assert(configured.session.history_limit == 50, "session recents should default to the existing history limit")
 assert(
@@ -56,6 +57,8 @@ assert(
   profile_config.user_data_dir == "/tmp/nvbrowser-profile",
   "setup should preserve a persistent Chromium profile directory"
 )
+local timeout_config = config.setup({ navigation_timeout_ms = 1234 })
+assert(timeout_config.navigation_timeout_ms == 1234, "setup should preserve custom navigation timeouts")
 assert(
   configured.preview_keymaps.mappings.wheel_up == "<ScrollWheelUp>",
   "preview-local keymaps should include a wheel-up mouse mapping"

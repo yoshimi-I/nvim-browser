@@ -91,6 +91,34 @@ assert(vim.deep_equal(url_command, {
   "https://example.com",
 }), "web URLs should keep routing through serve --url")
 
+local default_timeout_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
+  graphics = "ansi",
+  navigation_timeout_ms = 20000,
+})
+assert(vim.deep_equal(default_timeout_url_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  "https://example.com",
+}), "default navigation timeout should be omitted so CLI env fallback can still apply")
+
+local timeout_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
+  graphics = "ansi",
+  navigation_timeout_ms = 1234,
+})
+assert(vim.deep_equal(timeout_url_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--navigation-timeout-ms",
+  "1234",
+  "--url",
+  "https://example.com",
+}), "web URL commands should pass configured navigation timeouts")
+
 local cdp_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
   graphics = "ansi",
   cdp_ws_url = "ws://127.0.0.1:9222/devtools/browser/test",
@@ -136,15 +164,18 @@ assert(vim.deep_equal(empty_profile_url_command, {
 
 local html_command = backend.command_for("nvbrowser", "open", "/tmp/site/index page.html", {
   graphics = "ansi",
+  navigation_timeout_ms = 2345,
 })
 assert(vim.deep_equal(html_command, {
   "nvbrowser",
   "serve",
   "--output",
   "ansi",
+  "--navigation-timeout-ms",
+  "2345",
   "--url",
   vim.uri_from_fname("/tmp/site/index page.html"),
-}), "HTML files should route through Chromium serve with file URLs")
+}), "HTML files should route through Chromium serve with file URLs and configured navigation timeouts")
 
 local htm_cdp_command = backend.command_for("nvbrowser", "open", "/tmp/site/index.htm", {
   graphics = "ansi",

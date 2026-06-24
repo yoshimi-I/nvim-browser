@@ -1,4 +1,5 @@
 local M = {}
+local DEFAULT_NAVIGATION_TIMEOUT_MS = 20000
 
 local function extension_for(target)
   return vim.fn.fnamemodify(target, ":e"):lower()
@@ -133,6 +134,18 @@ local function add_user_data_dir(command, opts)
   return command
 end
 
+local function add_navigation_timeout(command, opts)
+  local timeout = opts and tonumber(opts.navigation_timeout_ms) or nil
+  if timeout ~= nil then
+    timeout = math.floor(timeout)
+  end
+  if timeout ~= nil and timeout > 0 and timeout ~= DEFAULT_NAVIGATION_TIMEOUT_MS then
+    table.insert(command, "--navigation-timeout-ms")
+    table.insert(command, tostring(timeout))
+  end
+  return command
+end
+
 function M.command_for(binary, action, target, opts)
   if action == "inspect" then
     return { binary, "inspect", target }
@@ -140,6 +153,7 @@ function M.command_for(binary, action, target, opts)
 
   if is_browser_url(target) then
     local command = { binary, "serve", "--output", browser_graphics_output(opts) }
+    add_navigation_timeout(command, opts)
     add_cdp_ws_url(command, opts)
     add_user_data_dir(command, opts)
     table.insert(command, "--url")
@@ -150,6 +164,7 @@ function M.command_for(binary, action, target, opts)
   local extension = extension_for(target)
   if extension == "md" or extension == "markdown" then
     local command = { binary, "serve", "--output", browser_graphics_output(opts) }
+    add_navigation_timeout(command, opts)
     add_cdp_ws_url(command, opts)
     add_user_data_dir(command, opts)
     table.insert(command, "--markdown")
@@ -159,6 +174,7 @@ function M.command_for(binary, action, target, opts)
 
   if is_browser_file_extension(extension) then
     local command = { binary, "serve", "--output", browser_graphics_output(opts) }
+    add_navigation_timeout(command, opts)
     add_cdp_ws_url(command, opts)
     add_user_data_dir(command, opts)
     table.insert(command, "--url")
