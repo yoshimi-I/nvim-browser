@@ -682,6 +682,17 @@ local function handle_yank_selection_response(register)
   end
 end
 
+local function valid_register(register)
+  return type(register) == "string" and #register == 1
+end
+
+local function set_register(register, value, regtype)
+  if not valid_register(register) or value == nil or value == vim.NIL or value == "" then
+    return false
+  end
+  return pcall(vim.fn.setreg, register, value, regtype or "v")
+end
+
 local rendered_frame_geometry_from_runtime
 
 local function apply_serve_response_metadata(response)
@@ -2166,10 +2177,15 @@ end
 
 function M.yank_selection(register)
   register = register or '"'
-  if type(register) ~= "string" or #register ~= 1 then
+  if not valid_register(register) then
     return false
   end
   return send_serve_request({ type = "selection_text" }, handle_yank_selection_response(register))
+end
+
+function M.yank_current_url(register)
+  register = register or '"'
+  return set_register(register, state.current_url)
 end
 
 function M.reader_follow()
@@ -2412,6 +2428,32 @@ function M.follow_hint(id)
   return send_click_hint_request(hint)
 end
 
+local function active_hint_for_identifier(id)
+  if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
+    return nil
+  end
+  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+    return nil
+  end
+  return find_hint(state.element_hints, id)
+end
+
+local function hint_href_for_identifier(id)
+  local hint = active_hint_for_identifier(id)
+  if hint == nil or hint.href == nil or hint.href == vim.NIL or hint.href == "" then
+    return nil
+  end
+  return tostring(hint.href)
+end
+
+function M.yank_hint_url(id, register)
+  register = register or '"'
+  if not valid_register(register) then
+    return false
+  end
+  return set_register(register, hint_href_for_identifier(id))
+end
+
 function M.type_hint(id, text, opts)
   opts = opts or {}
   if text == nil or text == "" then
@@ -2558,6 +2600,7 @@ end
 M._test = {
   assign_hint_labels = assign_hint_labels,
   find_hint = find_hint,
+  hint_href_for_identifier = hint_href_for_identifier,
   browser_buffer_name = browser_buffer_name,
   set_browser_buffer_name = set_browser_buffer_name,
   apply_hint_overlay = hints_overlay.apply,

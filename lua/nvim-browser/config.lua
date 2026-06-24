@@ -80,6 +80,7 @@ M.options = {
       input_text_mode = "i",
       paste_register = "p",
       yank_selection = "y",
+      yank_current_url = "Y",
       key_enter = "<CR>",
       key_tab = "<Tab>",
       key_shift_tab = "<S-Tab>",

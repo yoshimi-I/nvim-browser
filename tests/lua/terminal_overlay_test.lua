@@ -1874,6 +1874,47 @@ assert(vim.wait(1000, function()
   return #terminal.state().element_hints == 2
 end), "serve hint response should populate element hints")
 
+local saved_register_b = vim.fn.getreg("b")
+vim.fn.setreg("b", "before-url-yank")
+sent_requests = {}
+assert(terminal.yank_current_url("b") == true, "current URL yank should write the active browser URL")
+assert(vim.fn.getreg("b") == "https://example.com", "current URL yank should write the current URL to the requested register")
+assert(#sent_requests == 0, "current URL yank should not send backend requests")
+assert(terminal.yank_current_url("bb") == false, "current URL yank should reject invalid register names")
+
+vim.fn.setreg("b", "before-hint-yank")
+sent_requests = {}
+assert(terminal.yank_hint_url("a", "b") == true, "hint URL yank should match hint labels")
+assert(vim.fn.getreg("b") == "https://example.com/docs", "hint URL yank should write the hinted href")
+assert(#sent_requests == 0, "hint URL yank should not send backend requests")
+
+vim.fn.setreg("b", "before-numeric-hint-yank")
+assert(terminal.yank_hint_url(1, "b") == true, "hint URL yank should match numeric backend ids")
+assert(vim.fn.getreg("b") == "https://example.com/docs", "numeric hint URL yank should write the hinted href")
+
+vim.fn.setreg("b", "preserve-missing-hint")
+assert(terminal.yank_hint_url("missing", "b") == false, "hint URL yank should reject missing hints")
+assert(vim.fn.getreg("b") == "preserve-missing-hint", "missing hints should not mutate registers")
+
+vim.fn.setreg("b", "preserve-non-link-hint")
+assert(terminal.yank_hint_url("s", "b") == false, "hint URL yank should reject hints without href")
+assert(vim.fn.getreg("b") == "preserve-non-link-hint", "non-link hints should not mutate registers")
+
+assert(terminal.yank_hint_url("a", "bb") == false, "hint URL yank should reject invalid register names")
+assert(terminal._test.hint_href_for_identifier("a") == "https://example.com/docs", "test helper should expose hint href lookup")
+assert(terminal._test.hint_href_for_identifier("s") == nil, "test helper should reject hints without href")
+terminal._test.apply_serve_response({ id = 2, status = "ok", url = vim.NIL })
+vim.fn.setreg("b", "preserve-missing-current-url")
+assert(terminal.yank_current_url("b") == false, "current URL yank should reject missing URLs")
+assert(vim.fn.getreg("b") == "preserve-missing-current-url", "missing current URLs should not mutate registers")
+local restored_hints_response = vim.json.decode(hints_response)
+restored_hints_response.id = 3
+serve_stdout(nil, { vim.json.encode(restored_hints_response), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_url == "https://example.com"
+end), "serve hint response should restore current URL after missing URL checks")
+vim.fn.setreg("b", saved_register_b)
+
 sent_requests = {}
 assert(terminal.follow_hint("a") == true, "follow_hint should navigate link hints by href")
 local link_navigate_seen = false

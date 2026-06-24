@@ -219,6 +219,16 @@ COMMANDS                                           *nvim-browser-commands*
 	Read the browser's current selected text and write it into a Neovim
 	register. Defaults to the unnamed register.
 
+							*:NBrowserYankUrl*
+:NBrowserYankUrl [register]
+	Write the active browser page URL into a Neovim register without
+	recapturing the page. Defaults to the unnamed register.
+
+							*:NBrowserYankHintUrl*
+:NBrowserYankHintUrl {id-or-label} [register]
+	Write a hinted link destination from the latest browser frame into a Neovim
+	register. Defaults to the unnamed register.
+
 							*:NBrowserKey*
 :NBrowserKey {key} [modifier ...]
 	Press a Puppeteer-style key name such as Enter, Tab, Backspace, or
@@ -477,6 +487,7 @@ c  toggle hinted checkbox/radio
 i  type into focused element
 p  paste register into focused element
 y  yank browser selection into register
+Y  yank active browser URL into register
 <CR>     press Enter
 <Tab>    press Tab
 <S-Tab>  press Shift-Tab

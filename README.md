@@ -237,6 +237,8 @@ Then run:
 :NBrowserTextMode
 :NBrowserPaste +
 :NBrowserYankSelection +
+:NBrowserYankUrl +
+:NBrowserYankHintUrl a +
 :NBrowserKey Enter
 :NBrowserKey A ctrl
 :NBrowserClick 120 240
@@ -370,6 +372,9 @@ element by sending Enter only when the backend reports the active element as
 submittable.
 `:NBrowserYankSelection [register]` reads the browser's current selected text
 and writes it into a Neovim register, defaulting to the unnamed register.
+`:NBrowserYankUrl [register]` writes the active browser page URL into a Neovim
+register without recapturing the page. `:NBrowserYankHintUrl {id-or-label}
+[register]` writes a hinted link destination from the latest frame.
 `:NBrowserTextMode` enters an interactive browser text mode for the focused
 preview: printable keys are sent as text, `<CR>`, `<Tab>`, `<S-Tab>`, `<BS>`,
 Delete, and arrow keys are forwarded as browser keys, and `<Esc>` exits the text
@@ -421,7 +426,8 @@ repeat find backward, `f` hint mode, `t` type into a hinted field, `s` type and
 submit, `o` select a hinted option, `c` toggle a hinted checkbox/radio, `i`
 type into the focused element with browser text mode, `p` paste the selected
 register into the focused element, `y` yank the browser selection into the
-selected register, `<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
+selected register, `Y` yank the active browser URL into the selected register,
+`<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
 Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` Meta-L
 focus location, arrow keys, `gc` click the browser viewport at the cursor, `gh`
 hover the browser viewport at the cursor, `<Esc>` stop a pending load, left

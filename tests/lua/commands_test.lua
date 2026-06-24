@@ -23,6 +23,8 @@ local submitted_here = nil
 local input_text = nil
 local pasted_register = nil
 local yanked_register = nil
+local yanked_current_url_register = nil
+local yanked_hint_url = nil
 local pressed_key = nil
 local text_mode_called = false
 local doctor_called = false
@@ -104,6 +106,20 @@ local browser = {
       return false
     end
     yanked_register = register or '"'
+    return true
+  end,
+  yank_current_url = function(register)
+    if register == "ab" or register == "!" then
+      return false
+    end
+    yanked_current_url_register = register or '"'
+    return true
+  end,
+  yank_hint_url = function(identifier, register)
+    if identifier == "missing" or identifier == "s" or register == "ab" then
+      return false
+    end
+    yanked_hint_url = { identifier = identifier, register = register or '"' }
     return true
   end,
   press_key = function(key, opts)
@@ -486,6 +502,38 @@ yanked_register = nil
 vim.cmd("NBrowserYankSelection ab")
 assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no browser selection is active", "NBrowserYankSelection should warn on invalid register names")
 assert(yanked_register == nil, "NBrowserYankSelection should not yank invalid register names")
+
+vim.cmd("NBrowserYankUrl")
+assert(yanked_current_url_register == '"', "NBrowserYankUrl should default to the unnamed register")
+
+yanked_current_url_register = nil
+vim.cmd("NBrowserYankUrl +")
+assert(yanked_current_url_register == "+", "NBrowserYankUrl should pass an explicit register")
+
+yanked_current_url_register = nil
+vim.cmd("NBrowserYankUrl ab")
+assert(warnings[#warnings] == "nvim-browser: no current browser URL to yank or register is invalid", "NBrowserYankUrl should warn when URL yank fails")
+assert(yanked_current_url_register == nil, "NBrowserYankUrl should not yank invalid register names")
+
+vim.cmd("NBrowserYankHintUrl a")
+assert(yanked_hint_url.identifier == "a", "NBrowserYankHintUrl should pass hint labels")
+assert(yanked_hint_url.register == '"', "NBrowserYankHintUrl should default to the unnamed register")
+
+yanked_hint_url = nil
+vim.cmd("NBrowserYankHintUrl 1 +")
+assert(yanked_hint_url.identifier == "1", "NBrowserYankHintUrl should pass numeric hint ids as text")
+assert(yanked_hint_url.register == "+", "NBrowserYankHintUrl should pass explicit registers")
+
+yanked_hint_url = nil
+vim.cmd("NBrowserYankHintUrl missing")
+assert(warnings[#warnings] == "nvim-browser: hint URL not found, stale, non-link, or register is invalid", "NBrowserYankHintUrl should warn on missing hints")
+assert(yanked_hint_url == nil, "NBrowserYankHintUrl should not yank missing hints")
+
+vim.cmd("NBrowserYankHintUrl s")
+assert(warnings[#warnings] == "nvim-browser: hint URL not found, stale, non-link, or register is invalid", "NBrowserYankHintUrl should warn on non-link hints")
+
+vim.cmd("NBrowserYankHintUrl a ab")
+assert(warnings[#warnings] == "nvim-browser: hint URL not found, stale, non-link, or register is invalid", "NBrowserYankHintUrl should warn on invalid register names")
 
 vim.cmd("NBrowserKey Enter")
 assert(pressed_key.key == "Enter", "NBrowserKey should pass a key to browser.press_key")

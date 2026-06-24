@@ -90,6 +90,10 @@ local browser = {
     table.insert(calls, "yank:" .. tostring(register))
     return true
   end,
+  yank_current_url = function(register)
+    table.insert(calls, "yank_url:" .. tostring(register))
+    return true
+  end,
   start_text_mode = function()
     table.insert(calls, "text_mode")
     return true
@@ -294,6 +298,7 @@ assert_buffer_mapping(first_bufnr, "s", "buffer-local controls should install hi
 assert_buffer_mapping(first_bufnr, "i", "buffer-local controls should install focused input mode")
 assert_buffer_mapping(first_bufnr, "p", "buffer-local controls should install register paste")
 assert_buffer_mapping(first_bufnr, "y", "buffer-local controls should install browser selection yank")
+assert_buffer_mapping(first_bufnr, "Y", "buffer-local controls should install current URL yank")
 assert_buffer_mapping(first_bufnr, "<CR>", "buffer-local controls should install Enter forwarding")
 assert_buffer_mapping(first_bufnr, "<Tab>", "buffer-local controls should install Tab forwarding")
 assert_buffer_mapping(first_bufnr, "<S-Tab>", "buffer-local controls should install Shift-Tab forwarding")
@@ -343,6 +348,7 @@ trigger_buffer(first_bufnr, "i")
 vim.api.nvim_set_current_buf(first_bufnr)
 vim.cmd([[normal "+p]])
 vim.cmd([[normal "+y]])
+vim.cmd([[normal "+Y]])
 trigger_buffer(first_bufnr, "<CR>")
 trigger_buffer(first_bufnr, "<Tab>")
 trigger_buffer(first_bufnr, "<S-Tab>")
@@ -369,7 +375,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,hover_here,close,click_mouse,wheel:120:0,wheel:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,hover_here,close,click_mouse,wheel:120:0,wheel:-120:0,stop",
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
 
@@ -411,7 +417,8 @@ keymaps.setup_buffer(browser, first_bufnr, {
     click_here = "cc",
     input_text_mode = "I",
     paste_register = "P",
-    yank_selection = "Y",
+    yank_selection = "yy",
+    yank_current_url = "YU",
     key_enter = false,
   },
 })
@@ -430,7 +437,8 @@ assert_buffer_mapping(first_bufnr, "z0", "custom buffer-local zoom-reset mapping
 assert_buffer_mapping(first_bufnr, "cc", "custom buffer-local cursor click mapping should be installed")
 assert_buffer_mapping(first_bufnr, "I", "custom buffer-local focused input mapping should be installed")
 assert_buffer_mapping(first_bufnr, "P", "custom buffer-local paste mapping should be installed")
-assert_buffer_mapping(first_bufnr, "Y", "custom buffer-local browser selection yank mapping should be installed")
+assert_buffer_mapping(first_bufnr, "yy", "custom buffer-local browser selection yank mapping should be installed")
+assert_buffer_mapping(first_bufnr, "YU", "custom buffer-local current URL yank mapping should be installed")
 assert_no_buffer_mapping(first_bufnr, "<CR>", "false buffer-local browser key mappings should disable defaults")
 assert_buffer_mapping(first_bufnr, "<LeftMouse>", "mouse mappings should remain enabled by default after reinstall")
 assert_buffer_mapping(first_bufnr, "<Esc>", "stop mapping should remain enabled by default after reinstall")

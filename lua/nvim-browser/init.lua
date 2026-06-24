@@ -242,6 +242,14 @@ function M.yank_selection(register)
   return terminal.yank_selection(register or '"')
 end
 
+function M.yank_current_url(register)
+  return terminal.yank_current_url(register or '"')
+end
+
+function M.yank_hint_url(id, register)
+  return terminal.yank_hint_url(id, register or '"')
+end
+
 function M.input_text_mode(input)
   input = input or vim.fn.input
   local text = input("nvim-browser text: ")

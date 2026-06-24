@@ -127,6 +127,14 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: browser selection yank failed or no browser selection is active", "WarningMsg" } }, false, {})
   end
 
+  local function warn_current_url_yank_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: no current browser URL to yank or register is invalid", "WarningMsg" } }, false, {})
+  end
+
+  local function warn_hint_url_yank_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: hint URL not found, stale, non-link, or register is invalid", "WarningMsg" } }, false, {})
+  end
+
   local function warn_text_mode_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: text mode requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
   end
@@ -299,6 +307,26 @@ function M.register(browser, opts)
     end
   end, {
     nargs = "?",
+  })
+
+  vim.api.nvim_create_user_command("NBrowserYankUrl", function(opts)
+    local register = opts.args ~= "" and opts.args or nil
+    if not browser.yank_current_url(register) then
+      warn_current_url_yank_unavailable()
+    end
+  end, {
+    nargs = "?",
+  })
+
+  vim.api.nvim_create_user_command("NBrowserYankHintUrl", function(opts)
+    local parts = vim.split(opts.args or "", "%s+", { trimempty = true })
+    local identifier = parts[1]
+    local register = parts[2]
+    if identifier == nil or #parts > 2 or not browser.yank_hint_url(identifier, register) then
+      warn_hint_url_yank_unavailable()
+    end
+  end, {
+    nargs = "+",
   })
 
   vim.api.nvim_create_user_command("NBrowserInputMode", function()

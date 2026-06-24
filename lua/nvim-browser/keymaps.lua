@@ -296,6 +296,10 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.yank_selection(vim.v.register)
   end, "nvim-browser: yank browser selection", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "yank_current_url", "Y"), function()
+    browser.yank_current_url(vim.v.register)
+  end, "nvim-browser: yank current URL", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "key_enter", "<CR>"), function()
     browser.press_key("Enter")
   end, "nvim-browser: press Enter", buffer_opts)

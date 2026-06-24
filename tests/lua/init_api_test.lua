@@ -28,6 +28,8 @@ assert(type(browser.toggle_hint_mode) == "function", "toggle_hint_mode API shoul
 assert(type(browser.input_text_mode) == "function", "focused input text mode API should exist")
 assert(type(browser.paste_register) == "function", "register paste API should exist")
 assert(type(browser.yank_selection) == "function", "browser selection yank API should exist")
+assert(type(browser.yank_current_url) == "function", "current URL yank API should exist")
+assert(type(browser.yank_hint_url) == "function", "hint URL yank API should exist")
 assert(type(browser.start_text_mode) == "function", "interactive browser text mode API should exist")
 assert(type(browser.address) == "function", "address API should exist")
 assert(type(browser.resolve_address_target) == "function", "address target resolver should exist")
@@ -90,6 +92,8 @@ local original_terminal_submit_focused = terminal.submit_focused
 local original_terminal_start_text_mode = terminal.start_text_mode
 local original_terminal_page_scroll = terminal.page_scroll
 local original_terminal_yank_selection = terminal.yank_selection
+local original_terminal_yank_current_url = terminal.yank_current_url
+local original_terminal_yank_hint_url = terminal.yank_hint_url
 local original_terminal_find_text = terminal.find_text
 local original_terminal_find_next = terminal.find_next
 local original_terminal_find_previous = terminal.find_previous
@@ -304,6 +308,23 @@ terminal.follow_hint = function(label)
 end
 assert(browser.follow_hint("a") == "followed", "follow_hint should delegate to terminal follow semantics")
 assert(followed_terminal_hint == "a", "follow_hint should pass the hint label to terminal")
+
+local yanked_current_register = nil
+terminal.yank_current_url = function(register)
+  yanked_current_register = register
+  return "current-yanked"
+end
+assert(browser.yank_current_url("+") == "current-yanked", "yank_current_url should delegate to terminal")
+assert(yanked_current_register == "+", "yank_current_url should pass explicit registers to terminal")
+
+local yanked_hint_url = nil
+terminal.yank_hint_url = function(identifier, register)
+  yanked_hint_url = { identifier = identifier, register = register }
+  return "hint-yanked"
+end
+assert(browser.yank_hint_url("a", "*") == "hint-yanked", "yank_hint_url should delegate to terminal")
+assert(yanked_hint_url.identifier == "a", "yank_hint_url should pass hint identifiers to terminal")
+assert(yanked_hint_url.register == "*", "yank_hint_url should pass explicit registers to terminal")
 
 local clicked_mouse = nil
 terminal.click_mouse = function(mousepos)
@@ -829,6 +850,8 @@ terminal.submit_focused = original_terminal_submit_focused
 terminal.start_text_mode = original_terminal_start_text_mode
 terminal.page_scroll = original_terminal_page_scroll
 terminal.yank_selection = original_terminal_yank_selection
+terminal.yank_current_url = original_terminal_yank_current_url
+terminal.yank_hint_url = original_terminal_yank_hint_url
 terminal.find_text = original_terminal_find_text
 terminal.find_next = original_terminal_find_next
 terminal.find_previous = original_terminal_find_previous
