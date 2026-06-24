@@ -42,6 +42,7 @@ local state = {
   canceled_request_ids = {},
   quiet_request_ids = {},
   latest_applied_response_id = 0,
+  latest_find_request_id = nil,
   last_find_found = nil,
   last_find_match_count = nil,
   last_find_query = nil,
@@ -396,7 +397,28 @@ local function send_serve_request(request, on_response)
   return true, request.id
 end
 
+local function should_apply_find_response(response)
+  if response.id ~= nil and response.id ~= vim.NIL and state.canceled_request_ids[response.id] then
+    return false
+  end
+
+  if
+    response.id ~= nil
+    and response.id ~= vim.NIL
+    and state.latest_find_request_id ~= nil
+    and response.id ~= state.latest_find_request_id
+  then
+    return false
+  end
+
+  return true
+end
+
 local function handle_find_text_response(response)
+  if not should_apply_find_response(response) then
+    return
+  end
+
   if response.status ~= "ok" then
     state.last_find_found = nil
     state.last_find_match_count = nil
@@ -849,7 +871,7 @@ local function dispatch_serve_response_handler(response)
     response_handler(response)
     return true
   end
-  if response.found ~= nil then
+  if response.found ~= nil and should_apply_find_response(response) then
     state.last_find_found = response.found == true
     if response.match_count ~= nil and response.match_count ~= vim.NIL then
       state.last_find_match_count = math.max(0, math.floor(tonumber(response.match_count) or 0))
@@ -1759,6 +1781,7 @@ function M.open(command)
   state.navigation_suppressed_request_ids = {}
   state.latest_applied_response_id = 0
   state.latest_reader_request_id = nil
+  state.latest_find_request_id = nil
   state.last_find_found = nil
   state.last_find_match_count = nil
   state.last_find_query = nil
@@ -2196,6 +2219,9 @@ function M.stop()
   state.hint_error = nil
   state.rendered_frame_geometry = nil
   state.response_handlers[pending.id] = nil
+  if state.latest_find_request_id == pending.id then
+    state.latest_find_request_id = nil
+  end
   state.generation = state.generation + 1
   stop_text_mode_flush_timer()
   stop_live_refresh()
@@ -2668,11 +2694,15 @@ function M.find_text(query, opts)
   state.last_find_found = nil
   state.last_find_match_count = nil
   request_resize()
-  return send_serve_request({
+  local ok, id = send_pending_request({
     type = "find_text",
     query = query,
     backwards = backwards,
-  }, handle_find_text_response)
+  }, query, "find", handle_find_text_response)
+  if ok then
+    state.latest_find_request_id = id
+  end
+  return ok
 end
 
 function M.find_next()

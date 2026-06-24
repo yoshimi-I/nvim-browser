@@ -2410,28 +2410,61 @@ for _, request in ipairs(sent_requests) do
   end
 end
 assert(older_find_id ~= nil, "find request should be sent")
+assert(terminal.state().pending_operation ~= nil, "find_text should mark the find request as pending")
+assert(
+  terminal.state().pending_operation.id == older_find_id,
+  "find_text pending operation should track the find request"
+)
+assert(terminal.state().pending_operation.label == "find", "find_text pending footer should use a find label")
+assert(
+  terminal._test.preview_footer_line(120):match("^find | needle | Esc stop"),
+  "find_text should refresh the footer with immediate pending feedback"
+)
 
 sent_requests = {}
 assert(terminal.find_next() == true, "find_next should repeat the stored query forward")
 local repeat_forward_seen = false
+_G.nvim_browser_repeat_forward_find_id = nil
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "find_text" then
     repeat_forward_seen = decoded.query == "needle" and decoded.backwards == false
+    _G.nvim_browser_repeat_forward_find_id = decoded.id
   end
 end
 assert(repeat_forward_seen, "find_next should send the stored query with forward direction")
+assert(
+  _G.nvim_browser_repeat_forward_find_id ~= nil and _G.nvim_browser_repeat_forward_find_id > older_find_id,
+  "find_next should send a newer find request"
+)
 
 sent_requests = {}
 assert(terminal.find_previous() == true, "find_previous should repeat the stored query backward")
 local repeat_backward_seen = false
+_G.nvim_browser_repeat_backward_find_id = nil
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "find_text" then
     repeat_backward_seen = decoded.query == "needle" and decoded.backwards == true
+    _G.nvim_browser_repeat_backward_find_id = decoded.id
   end
 end
 assert(repeat_backward_seen, "find_previous should send the stored query with backward direction")
+assert(
+  _G.nvim_browser_repeat_backward_find_id ~= nil
+    and _G.nvim_browser_repeat_backward_find_id > _G.nvim_browser_repeat_forward_find_id,
+  "find_previous should send a newer find request"
+)
+
+serve_stdout(nil, { vim.json.encode({
+  id = older_find_id,
+  status = "ok",
+  found = true,
+  match_count = 7,
+}), "" })
+vim.wait(50)
+assert(terminal.state().last_find_found == nil, "older find responses should not update find status after a newer find")
+assert(terminal.state().last_find_match_count == nil, "older find responses should not update find match counts")
 
 sent_requests = {}
 assert(terminal.navigate("https://example.com/after-find") == true, "test setup should send a newer navigation after find")
@@ -2448,13 +2481,13 @@ assert(vim.wait(1000, function()
   return terminal.state().current_title == "After Find Navigation"
 end), "newer navigation after find should apply")
 serve_stdout(nil, { vim.json.encode({
-  id = older_find_id,
+  id = _G.nvim_browser_repeat_backward_find_id,
   status = "ok",
   found = true,
 }), "" })
 assert(vim.wait(1000, function()
   return terminal.state().last_find_found == true
-end), "older handler-only find response should still update find status after newer render response")
+end), "latest handler-only find response should still update find status after newer render response")
 assert(terminal.state().current_title == "After Find Navigation", "older find response should not overwrite current browser metadata")
 
 terminal.configure({ live_refresh = { enabled = false } })
@@ -2644,6 +2677,32 @@ serve_stdout(nil, { cancelled_response, "" })
 assert(vim.wait(1000, function()
   return terminal.state().current_title ~= "Late Page"
 end), "cancelled operation responses should be ignored")
+
+sent_requests = {}
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
+assert(terminal.find_text("cancel me") == true, "test setup should send a cancellable find request")
+_G.nvim_browser_cancellable_find_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(_G.nvim_browser_cancellable_find_id ~= nil, "find_text should be pending before stop")
+assert(terminal.state().pending_operation.label == "find", "cancellable find should use a find pending label")
+assert(terminal.stop() == true, "stop should cancel a pending find request")
+assert(terminal.state().pending_operation == nil, "stop should clear pending find state")
+terminal._test.dispatch_serve_response_handler({
+  id = _G.nvim_browser_cancellable_find_id,
+  status = "ok",
+  found = true,
+  match_count = 9,
+})
+assert(terminal.state().last_find_found ~= true, "stopped find handlers should not update find status")
+assert(terminal.state().last_find_match_count ~= 9, "stopped find handlers should not update find match count")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_cancellable_find_id,
+  status = "ok",
+  found = true,
+  match_count = 9,
+}), "" })
+vim.wait(50)
+assert(terminal.state().last_find_found ~= true, "late cancelled find stdout should not update find status")
+assert(terminal.state().last_find_match_count ~= 9, "late cancelled find stdout should not update find match count")
 
 sent_requests = {}
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
