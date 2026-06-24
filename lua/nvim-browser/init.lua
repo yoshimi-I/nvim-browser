@@ -1111,6 +1111,40 @@ local function action_items(opts, report_error)
       end,
     },
     {
+      label = "Click cursor",
+      run = function()
+        return M.click_here()
+      end,
+    },
+    {
+      label = "Double-click cursor",
+      run = function()
+        return M.double_click_here()
+      end,
+    },
+    {
+      label = "Right-click cursor",
+      run = function()
+        return M.right_click_here()
+      end,
+    },
+    {
+      label = "Hover cursor",
+      run = function()
+        return M.hover_here()
+      end,
+    },
+    {
+      label = "Type at cursor",
+      run = function()
+        local text = (opts.input or vim.fn.input)("nvim-browser type at cursor: ")
+        if text == nil or text == "" then
+          return true
+        end
+        return M.type_here(text)
+      end,
+    },
+    {
       label = "Submit focused",
       run = function()
         return M.submit_focused()

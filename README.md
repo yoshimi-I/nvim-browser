@@ -492,8 +492,9 @@ Lua mappings can call `require("nvim-browser").address()` or pass a value
 directly with `require("nvim-browser").address("example.com")`.
 `:NBrowserActions` opens a compact picker for common browser actions such as
 opening, previewing, inspecting, resuming, address, reload, history movement,
-find, hints, text mode, downloads, screenshot, reader, status, zoom, doctor, and
-close. Preview buffers map `?` to this picker by default.
+find, hints, text mode, cursor click/double-click/right-click/hover/type,
+downloads, screenshot, reader, status, zoom, doctor, and close. Preview buffers
+map `?` to this picker by default.
 
 `:NBrowserFind {text}` finds text in the active browser page, scrolls to the
 match through the browser's native find behavior, and captures a fresh frame.

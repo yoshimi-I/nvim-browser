@@ -652,6 +652,11 @@ local function with_action_stubs(fn)
     zoom_out = browser.zoom_out,
     zoom_reset = browser.zoom_reset,
     submit_focused = browser.submit_focused,
+    click_here = browser.click_here,
+    double_click_here = browser.double_click_here,
+    right_click_here = browser.right_click_here,
+    hover_here = browser.hover_here,
+    type_here = browser.type_here,
   }
   browser.open = function(target)
     table.insert(action_calls, "open:" .. tostring(target))
@@ -769,6 +774,26 @@ local function with_action_stubs(fn)
     table.insert(action_calls, "zoom_reset")
     return true
   end
+  browser.click_here = function()
+    table.insert(action_calls, "click_here")
+    return true
+  end
+  browser.double_click_here = function()
+    table.insert(action_calls, "double_click_here")
+    return true
+  end
+  browser.right_click_here = function()
+    table.insert(action_calls, "right_click_here")
+    return true
+  end
+  browser.hover_here = function()
+    table.insert(action_calls, "hover_here")
+    return true
+  end
+  browser.type_here = function(text)
+    table.insert(action_calls, "type_here:" .. tostring(text))
+    return true
+  end
   fn()
   for name, value in pairs(originals) do
     browser[name] = value
@@ -809,6 +834,11 @@ with_action_stubs(function()
 	    "Find",
 	    "Hints",
 	    "Text mode",
+	    "Click cursor",
+	    "Double-click cursor",
+	    "Right-click cursor",
+	    "Hover cursor",
+	    "Type at cursor",
 	    "Submit focused",
 	    "Open download",
 	    "Screenshot",
@@ -928,6 +958,107 @@ with_action_stubs(function()
 	    end,
 	  }) == true, "Submit focused action should run")
 	  assert(action_calls[#action_calls] == "submit_focused", "Submit focused action should call submit_focused")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Click cursor" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Click cursor action should run")
+	  assert(action_calls[#action_calls] == "click_here", "Click cursor action should call click_here")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Double-click cursor" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Double-click cursor action should run")
+	  assert(action_calls[#action_calls] == "double_click_here", "Double-click cursor action should call double_click_here")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Right-click cursor" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Right-click cursor action should run")
+	  assert(action_calls[#action_calls] == "right_click_here", "Right-click cursor action should call right_click_here")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Hover cursor" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Hover cursor action should run")
+	  assert(action_calls[#action_calls] == "hover_here", "Hover cursor action should call hover_here")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Type at cursor" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	    input = function(prompt)
+	      assert(prompt == "nvim-browser type at cursor: ", "Type at cursor action should prompt for text")
+	      return "typed text"
+	    end,
+	  }) == true, "Type at cursor action should run")
+	  assert(action_calls[#action_calls] == "type_here:typed text", "Type at cursor action should call type_here")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Type at cursor" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	    input = function()
+	      return ""
+	    end,
+	  }) == true, "Type at cursor action should treat empty input as a no-op")
+	  assert(#action_calls == 0, "Type at cursor action should not call type_here on empty input")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Type at cursor" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	    input = function()
+	      return nil
+	    end,
+	  }) == true, "Type at cursor action should treat canceled input as a no-op")
+	  assert(#action_calls == 0, "Type at cursor action should not call type_here on canceled input")
 
 	  action_calls = {}
 	  assert(browser.actions({

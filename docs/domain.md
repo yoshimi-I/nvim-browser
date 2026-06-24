@@ -64,6 +64,9 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Browser previews should stay cursor-addressable where possible. ANSI and Kitty
   Unicode previews support cursor-to-viewport clicks, double-clicks,
   right-clicks, and hint overlays.
+- The action picker should expose common cursor-addressable browser input
+  directly so users can discover click, double-click, right-click, hover, and
+  type-at-cursor without memorizing separate commands.
 - The bottom preview row is reserved for status. Clicks, double-clicks, and
   right-clicks in the footer must not be converted into browser viewport
   coordinates.
