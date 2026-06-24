@@ -1697,6 +1697,8 @@ fn opt_in_e2e_serve_loop_hints_open_shadow_dom_and_same_origin_iframes() {
 
     let directory = tempdir().expect("tempdir should be created");
     let fixture_path = directory.path().join("nested-hints.html");
+    let upload_path = directory.path().join("nested upload.txt");
+    std::fs::write(&upload_path, "nested upload body").expect("upload fixture should be written");
     std::fs::write(
         &fixture_path,
         r##"<!doctype html>
@@ -1713,7 +1715,7 @@ fn opt_in_e2e_serve_loop_hints_open_shadow_dom_and_same_origin_iframes() {
     <div id="shadow-host"></div>
     <iframe
       id="same-frame"
-      srcdoc="<button onclick=&quot;parent.document.getElementById('out').textContent='iframe clicked'&quot;>Frame Go</button><a href=&quot;#frame-docs&quot;>Frame Docs</a><section id=&quot;frame-docs&quot;>Frame docs section</section>">
+      srcdoc="<button onclick=&quot;parent.document.getElementById('out').textContent='iframe clicked'&quot;>Frame Go</button><a href=&quot;#frame-docs&quot;>Frame Docs</a><label>Frame Upload <input type=&quot;file&quot; onchange=&quot;parent.document.getElementById('out').textContent='iframe upload:' + this.files[0].name&quot;></label><section id=&quot;frame-docs&quot;>Frame docs section</section>">
     </iframe>
     <p id="out">nested empty</p>
     <script>
@@ -1723,7 +1725,7 @@ fn opt_in_e2e_serve_loop_hints_open_shadow_dom_and_same_origin_iframes() {
         <a href="#shadow-docs">Shadow Docs</a>
         <button onclick="document.getElementById('out').textContent='shadow clicked'">Shadow Go</button>
         <span id="shadow-upload-label">Shadow Upload</span>
-        <input type="file" aria-labelledby="shadow-upload-label">
+        <input type="file" aria-labelledby="shadow-upload-label" onchange="document.getElementById('out').textContent='shadow upload:' + this.files[0].name">
         <section id="shadow-docs">Shadow docs section</section>
       `;
     </script>
@@ -1781,12 +1783,11 @@ fn opt_in_e2e_serve_loop_hints_open_shadow_dom_and_same_origin_iframes() {
         .find(|hint| hint["kind"] == "button" && hint["label"] == "Shadow Go")
         .and_then(|hint| hint["id"].as_u64())
         .expect("open shadow root button should be hinted");
-    assert!(
-        !hints
-            .iter()
-            .any(|hint| hint["kind"] == "file" && hint["label"] == "Shadow Upload"),
-        "nested file inputs should not be hinted until upload can target nested DOMs; hints={hints:?}"
-    );
+    let shadow_file_id = hints
+        .iter()
+        .find(|hint| hint["kind"] == "file" && hint["label"] == "Shadow Upload")
+        .and_then(|hint| hint["id"].as_u64())
+        .expect("open shadow root file input should be hinted");
     assert!(
         hints.iter().any(|hint| {
             hint["kind"] == "link"
@@ -1802,6 +1803,11 @@ fn opt_in_e2e_serve_loop_hints_open_shadow_dom_and_same_origin_iframes() {
         .find(|hint| hint["kind"] == "button" && hint["label"] == "Frame Go")
         .and_then(|hint| hint["id"].as_u64())
         .expect("same-origin iframe button should be hinted");
+    let frame_file_id = hints
+        .iter()
+        .find(|hint| hint["kind"] == "file" && hint["label"] == "Frame Upload")
+        .and_then(|hint| hint["id"].as_u64())
+        .expect("same-origin iframe file input should be hinted");
 
     let shadow_clicked = serve.request(serde_json::json!({
         "id": 1,
@@ -1837,7 +1843,43 @@ fn opt_in_e2e_serve_loop_hints_open_shadow_dom_and_same_origin_iframes() {
         "page_text should observe iframe button click; response={frame_text:?}"
     );
 
-    let quit = serve.request(serde_json::json!({ "id": 5, "type": "quit" }));
+    let shadow_uploaded = serve.request(serde_json::json!({
+        "id": 5,
+        "type": "upload_hint",
+        "hint_id": shadow_file_id,
+        "paths": [upload_path]
+    }));
+    assert_eq!(
+        shadow_uploaded["status"], "ok",
+        "shadow file upload_hint should succeed; response={shadow_uploaded:?}"
+    );
+    let shadow_upload_text = serve.request(serde_json::json!({ "id": 6, "type": "page_text" }));
+    assert!(
+        shadow_upload_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("shadow upload:nested upload.txt")),
+        "page_text should observe shadow upload change event; response={shadow_upload_text:?}"
+    );
+
+    let frame_uploaded = serve.request(serde_json::json!({
+        "id": 7,
+        "type": "upload_hint",
+        "hint_id": frame_file_id,
+        "paths": [upload_path]
+    }));
+    assert_eq!(
+        frame_uploaded["status"], "ok",
+        "iframe file upload_hint should succeed; response={frame_uploaded:?}"
+    );
+    let frame_upload_text = serve.request(serde_json::json!({ "id": 8, "type": "page_text" }));
+    assert!(
+        frame_upload_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("iframe upload:nested upload.txt")),
+        "page_text should observe iframe upload change event; response={frame_upload_text:?}"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 9, "type": "quit" }));
     assert_eq!(quit["status"], "ok");
 
     serve.wait_success();

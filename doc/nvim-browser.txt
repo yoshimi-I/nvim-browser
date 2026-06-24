@@ -359,8 +359,7 @@ COMMANDS                                           *nvim-browser-commands*
 	Click a browser hint by backend hint id and capture a fresh frame. This
 	avoids viewport coordinate drift for hinted buttons and controls. Hints
 	cover the top document, open shadow roots, and same-origin iframes; closed
-	shadow roots and cross-origin iframe DOMs are not inspected. File upload
-	hints are currently limited to top-document inputs.
+	shadow roots and cross-origin iframe DOMs are not inspected.
 
 							*:NBrowserRightClickHint*
 :NBrowserRightClickHint {id-or-label}

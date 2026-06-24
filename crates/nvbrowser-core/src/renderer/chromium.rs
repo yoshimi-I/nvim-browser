@@ -17,7 +17,7 @@ use headless_chrome::{
         CaptureScreenshotFormatOption, DialogType, SetDownloadBehaviorBehaviorOption,
         Viewport as CdpViewport,
     },
-    protocol::cdp::{Input, Page},
+    protocol::cdp::{Input, Page, DOM},
     types::Bounds,
     Browser, LaunchOptions,
 };
@@ -645,13 +645,24 @@ impl Renderer for ChromiumRenderer {
             .iter()
             .map(|path| path.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
-        let file_path_refs = file_paths.iter().map(String::as_str).collect::<Vec<_>>();
-        let element = self
+        let object_script = upload_hint_object_script(&target.token)?;
+        let object = self
             .tab
-            .find_element(&target.selector)
+            .evaluate(&object_script, true)
             .map_err(render_error)?;
-        element
-            .set_input_files(&file_path_refs)
+        let object_id = object.object_id.ok_or_else(|| {
+            RendererError::new(
+                RendererErrorKind::InvalidState,
+                "hint file upload target did not return an object id",
+            )
+        })?;
+        self.tab
+            .call_method(DOM::SetFileInputFiles {
+                files: file_paths,
+                backend_node_id: None,
+                node_id: None,
+                object_id: Some(object_id),
+            })
             .map_err(render_error)?;
         let change_script = upload_hint_change_script(&target.token)?;
         let changed = self
@@ -1544,7 +1555,6 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
       .filter((element) => !isDisabled(element))
       .filter(isVisible)
       .map((element) => ({ element, root, frameElements, rect: element.getBoundingClientRect() }))
-      .filter(({ element, root, frameElements }) => kindFor(element) !== 'file' || (root === document && frameElements.length === 0))
       .filter(({ rect }) => rect.width > 0 && rect.height > 0)
       .filter(({ rect }) => rect.right >= 0 && rect.bottom >= 0 && rect.left <= viewport.width && rect.top <= viewport.height)
       .map(({ element, root, frameElements, rect }) => {
@@ -1919,11 +1929,40 @@ const UPLOAD_HINT_TARGET_SCRIPT: &str = r#"
     element.scrollIntoView({ block: 'center', inline: 'center' });
   }
   element.setAttribute('data-nvbrowser-upload-token', token);
+  if (entry && typeof entry === 'object') {
+    entry.uploadToken = token;
+  }
   return JSON.stringify({
     ok: true,
-    token,
-    selector: `input[data-nvbrowser-upload-token="${token}"]`
+    token
   });
+})()
+"#;
+
+fn upload_hint_object_script(token: &str) -> Result<String, RendererError> {
+    let token = serde_json::to_string(token).map_err(render_error)?;
+    Ok(UPLOAD_HINT_OBJECT_SCRIPT.replace("__TOKEN__", &token))
+}
+
+const UPLOAD_HINT_OBJECT_SCRIPT: &str = r#"
+(() => {
+  const token = __TOKEN__;
+  const registry = window.__nvbrowserHintRegistry;
+  if (!registry || !(registry.elements instanceof Map)) return null;
+  for (const entry of registry.elements.values()) {
+    const element = entry && (entry.element || entry);
+    const uploadToken = entry && entry.uploadToken;
+    if (
+      element
+      && element.isConnected
+      && uploadToken === token
+      && element.tagName.toLowerCase() === 'input'
+      && (element.getAttribute('type') || 'text').toLowerCase() === 'file'
+    ) {
+      return element;
+    }
+  }
+  return null;
 })()
 "#;
 
@@ -1935,7 +1974,16 @@ fn upload_hint_change_script(token: &str) -> Result<String, RendererError> {
 const UPLOAD_HINT_CHANGE_SCRIPT: &str = r#"
 (() => {
   const token = __TOKEN__;
-  const element = document.querySelector(`input[data-nvbrowser-upload-token="${token}"]`);
+  const registry = window.__nvbrowserHintRegistry;
+  if (!registry || !(registry.elements instanceof Map)) return false;
+  let element = null;
+  for (const entry of registry.elements.values()) {
+    const candidate = entry && (entry.element || entry);
+    if (candidate && candidate.isConnected && entry && entry.uploadToken === token) {
+      element = candidate;
+      break;
+    }
+  }
   if (!element || !element.isConnected) return false;
   if (typeof element.focus === 'function') {
     element.focus({ preventScroll: true });
@@ -2841,7 +2889,6 @@ struct HintPoint {
 struct UploadHintTarget {
     ok: bool,
     token: Option<String>,
-    selector: Option<String>,
     error: Option<String>,
 }
 
@@ -2883,13 +2930,7 @@ fn parse_upload_hint_target_json(
             "hint file upload target did not return a token",
         )
     })?;
-    let selector = target.selector.ok_or_else(|| {
-        RendererError::new(
-            RendererErrorKind::InvalidState,
-            "hint file upload target did not return a selector",
-        )
-    })?;
-    Ok(ResolvedUploadHintTarget { token, selector })
+    Ok(ResolvedUploadHintTarget { token })
 }
 
 fn parse_element_hints_json(text: &str) -> Result<Vec<ElementHint>, RendererError> {
@@ -2899,7 +2940,6 @@ fn parse_element_hints_json(text: &str) -> Result<Vec<ElementHint>, RendererErro
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedUploadHintTarget {
     token: String,
-    selector: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3497,8 +3537,15 @@ mod tests {
         assert!(upload_script.contains("type !== 'file'"));
         assert!(upload_script.contains("!element.multiple"));
         assert!(upload_script.contains("data-nvbrowser-upload-token"));
+        assert!(upload_script.contains("entry.uploadToken = token"));
+        let object_script = upload_hint_object_script("nvbrowser-upload-token")
+            .expect("upload object script should build");
+        assert!(object_script.contains("__nvbrowserHintRegistry"));
+        assert!(object_script.contains("entry.uploadToken"));
+        assert!(object_script.contains("return element"));
         let change_script = upload_hint_change_script("nvbrowser-upload-token")
             .expect("upload change script should build");
+        assert!(change_script.contains("entry.uploadToken"));
         assert!(change_script.contains("dispatchEvent(new Event('input'"));
         assert!(change_script.contains("dispatchEvent(new Event('change'"));
     }
@@ -3514,7 +3561,6 @@ mod tests {
         assert!(ELEMENT_HINTS_SCRIPT.contains("translateRectToViewport"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("clientLeft"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("labelScope.getElementById(id)"));
-        assert!(ELEMENT_HINTS_SCRIPT.contains("kindFor(element) !== 'file'"));
         assert!(
             ELEMENT_HINTS_SCRIPT.contains("registry.elements.set(id, { element, frameElements })")
         );
