@@ -3019,7 +3019,8 @@ mod tests {
 
     #[test]
     fn find_text_script_escapes_query_as_json() {
-        let script = find_text_script(r#"quote " and \ slash"#, false).expect("find script should build");
+        let script =
+            find_text_script(r#"quote " and \ slash"#, false).expect("find script should build");
 
         assert!(script.contains(r#"const query = "quote \" and \\ slash";"#));
     }

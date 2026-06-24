@@ -470,6 +470,13 @@ struct ServeResponse {
     error: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct ServeStartupErrorResponse {
+    id: u64,
+    status: ServeStatus,
+    error: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 struct RuntimeCells {
     columns: u32,
@@ -542,6 +549,15 @@ fn canonicalize_upload_paths(paths: Vec<PathBuf>) -> Result<Vec<PathBuf>, Render
 
 fn encode_serve_response(response: &ServeResponse) -> String {
     serde_json::to_string(response).expect("serve responses should serialize")
+}
+
+fn encode_serve_startup_error_response(error: impl Into<String>) -> String {
+    serde_json::to_string(&ServeStartupErrorResponse {
+        id: 0,
+        status: ServeStatus::Error,
+        error: error.into(),
+    })
+    .expect("serve startup error responses should serialize")
 }
 
 fn write_capture_outputs<W: Write>(
@@ -1395,15 +1411,23 @@ fn kitty_tile_cleanup_escape() -> String {
 
 fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> {
     let initial_url = options.initial_url.clone();
-    let mut runtime = ServeRuntime::new(
-        ChromiumRenderer::launch(
-            options.viewport,
-            chromium_options(options.cdp_ws_url.clone(), options.user_data_dir.clone()),
-        )?,
-        options,
-    );
     let stdout = io::stdout();
     let mut writer = stdout.lock();
+    let renderer = match ChromiumRenderer::launch(
+        options.viewport,
+        chromium_options(options.cdp_ws_url.clone(), options.user_data_dir.clone()),
+    ) {
+        Ok(renderer) => renderer,
+        Err(error) => {
+            let message = error.to_string();
+            if initial_url.is_some() {
+                writeln!(writer, "{}", encode_serve_startup_error_response(&message))?;
+                writer.flush()?;
+            }
+            return Err(message.into());
+        }
+    };
+    let mut runtime = ServeRuntime::new(renderer, options);
 
     if let Some(url) = initial_url {
         writeln!(

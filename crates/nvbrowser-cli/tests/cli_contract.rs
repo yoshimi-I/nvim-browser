@@ -192,6 +192,46 @@ fn serve_help_documents_cdp_ws_url_flag() {
 }
 
 #[test]
+fn serve_initial_startup_failure_writes_jsonl_error_before_exit() {
+    let directory = tempdir().expect("tempdir should be created");
+    let missing_chrome = directory.path().join("missing-chrome");
+    let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+    let output = command
+        .args(["serve", "--output", "ansi", "--url", "https://example.com"])
+        .env("NVBROWSER_CHROME", &missing_chrome)
+        .env_remove("NVBROWSER_CDP_WS_URL")
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    assert_serve_startup_error_jsonl(output);
+}
+
+#[test]
+fn serve_markdown_initial_startup_failure_writes_jsonl_error_before_exit() {
+    let directory = tempdir().expect("tempdir should be created");
+    let markdown_path = directory.path().join("README.md");
+    std::fs::write(&markdown_path, "# Startup\n\nBroken backend.")
+        .expect("markdown fixture should be written");
+    let missing_chrome = directory.path().join("missing-chrome");
+    let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+    let output = command
+        .args(["serve", "--output", "ansi", "--markdown"])
+        .arg(markdown_path)
+        .env("NVBROWSER_CHROME", &missing_chrome)
+        .env_remove("NVBROWSER_CDP_WS_URL")
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    assert_serve_startup_error_jsonl(output);
+}
+
+#[test]
 fn doctor_outputs_backend_json_without_launching_chrome() {
     let directory = tempdir().expect("tempdir should be created");
     let chrome_path = directory.path().join("chrome");
@@ -1876,6 +1916,43 @@ fn opt_in_e2e_serve_loop_toggles_checkbox_and_radio_hints() {
     let quit = serve.request(serde_json::json!({ "id": 5, "type": "quit" }));
     assert_eq!(quit["status"], "ok");
     serve.wait_success();
+}
+
+fn assert_serve_startup_error_jsonl(output: Vec<u8>) {
+    let stdout = String::from_utf8(output).expect("startup error should write utf-8 JSONL");
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "startup failure should write exactly one JSONL response"
+    );
+
+    let json: Value = serde_json::from_str(lines[0]).expect("startup failure should be JSON");
+    assert_eq!(json["id"], 0);
+    assert_eq!(json["status"], "error");
+    assert!(
+        json.get("runtime").is_none(),
+        "startup error should omit runtime"
+    );
+    assert!(
+        json.get("payload").is_none(),
+        "startup error should omit payload"
+    );
+    assert!(json.get("url").is_none(), "startup error should omit url");
+    assert!(
+        json.get("title").is_none(),
+        "startup error should omit title"
+    );
+    assert!(
+        json.get("hints").is_none(),
+        "startup error should omit hints"
+    );
+    assert!(
+        json["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("Chrome") || error.contains("CDP")),
+        "startup error should mention Chrome/CDP backend; response={json:?}"
+    );
 }
 
 fn tiny_png() -> Vec<u8> {
