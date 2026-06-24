@@ -2304,6 +2304,67 @@ end), "stable page-state responses should clear live tracking")
 vim.wait(50)
 assert(#fake_timers == _G.nvim_browser_timer_count_before_stable_page_state, "stable page-state responses should not schedule adaptive captures")
 
+terminal._test.apply_serve_response({
+  id = live_page_state_id + 900,
+  status = "ok",
+  url = "https://example.com/disable-change",
+  title = "Disable Change",
+  dom_epoch = 900,
+})
+assert(terminal.state().dom_epoch == 900, "capture metadata should establish the current DOM epoch baseline")
+
+sent_requests = {}
+_G.nvim_browser_live_timer_after_reenable.callback()
+assert(vim.wait(1000, function()
+  live_page_state_id = terminal.state().live_refresh_request_id
+  return live_page_state_id ~= nil and last_request_of_type("page_state") ~= nil
+end), "live refresh should send a page-state request before same DOM epoch check")
+_G.nvim_browser_timer_count_before_same_dom_epoch = #fake_timers
+serve_stdout(nil, { vim.json.encode({
+  id = live_page_state_id,
+  status = "ok",
+  url = "https://example.com/disable-change",
+  title = "Disable Change",
+  dom_epoch = 900,
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id == nil
+end), "same DOM epoch page-state responses should clear live tracking")
+vim.wait(50)
+assert(
+  #fake_timers == _G.nvim_browser_timer_count_before_same_dom_epoch,
+  "same DOM epoch page-state responses should not schedule adaptive captures"
+)
+
+sent_requests = {}
+_G.nvim_browser_live_timer_after_reenable.callback()
+assert(vim.wait(1000, function()
+  live_page_state_id = terminal.state().live_refresh_request_id
+  return live_page_state_id ~= nil and last_request_of_type("page_state") ~= nil
+end), "live refresh should send a page-state request before changed DOM epoch check")
+serve_stdout(nil, { vim.json.encode({
+  id = live_page_state_id,
+  status = "ok",
+  url = "https://example.com/disable-change",
+  title = "Disable Change",
+  dom_epoch = 901,
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id == nil and terminal.state().dom_epoch == 901
+end), "changed DOM epoch page-state responses should update DOM epoch metadata")
+_G.nvim_browser_dom_epoch_adaptive_capture_timer = nvim_browser_latest_timer()
+assert(
+  _G.nvim_browser_dom_epoch_adaptive_capture_timer ~= _G.nvim_browser_live_timer_after_reenable,
+  "changed DOM epoch without visible metadata changes should schedule adaptive capture"
+)
+sent_requests = {}
+_G.nvim_browser_dom_epoch_adaptive_capture_timer.callback()
+assert(vim.wait(1000, function()
+  local capture = last_request_of_type("capture")
+  return capture ~= nil and terminal.state().live_refresh_request_id == capture.id
+end), "DOM epoch adaptive capture timer should send a tracked full-frame capture")
+terminal._test.clear_in_flight_capture()
+
 sent_requests = {}
 _G.nvim_browser_live_timer_after_reenable.callback()
 assert(vim.wait(1000, function()

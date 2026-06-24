@@ -13,15 +13,16 @@ use nvbrowser_core::{
     render_markdown_document_with_base_url,
     renderer::chromium::{render_url_png, ChromiumOptions},
     tmux_passthrough_escape, BrowserSession, ChromiumRenderer, ClickHintRequest, ClickPointRequest,
-    DialogAction, DialogEvent, DialogKind, DownloadInfo, DownloadStatus, DragPointRequest,
-    ElementHint, ElementHintsRequest, FindTextRequest, FocusHintRequest, FocusSelectorRequest,
-    FocusedElement, FocusedElementRequest, FrameArtifact, HistoryNavigationRequest,
-    HoverHintRequest, HoverPointRequest, KeyPressRequest, KittyImageDelete, KittyImageTransfer,
-    NavigateRequest, PageMetadataRequest, PageMetrics, PageMetricsRequest, PageTextRequest,
-    PageTextSnapshot, ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
-    RendererErrorKind, RightClickHintRequest, RightClickPointRequest, ScrollRequest,
-    SelectHintRequest, SelectionTextRequest, SessionId, TextInputRequest, ToggleHintRequest,
-    UploadHintRequest, Viewport, WheelPointRequest, ZoomRequest,
+    DialogAction, DialogEvent, DialogKind, DomEpochRequest, DownloadInfo, DownloadStatus,
+    DragPointRequest, ElementHint, ElementHintsRequest, FindTextRequest, FocusHintRequest,
+    FocusSelectorRequest, FocusedElement, FocusedElementRequest, FrameArtifact,
+    HistoryNavigationRequest, HoverHintRequest, HoverPointRequest, KeyPressRequest,
+    KittyImageDelete, KittyImageTransfer, NavigateRequest, PageMetadataRequest, PageMetrics,
+    PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest, RenderFrameRequest,
+    RenderedFrame, Renderer, RendererError, RendererErrorKind, RightClickHintRequest,
+    RightClickPointRequest, ScrollRequest, SelectHintRequest, SelectionTextRequest, SessionId,
+    TextInputRequest, ToggleHintRequest, UploadHintRequest, Viewport, WheelPointRequest,
+    ZoomRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -494,6 +495,8 @@ struct ServeResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     payload: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    dom_epoch: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
     title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -807,6 +810,7 @@ struct ServeRuntime<R: Renderer> {
 
 struct CapturePayload {
     payload: Option<String>,
+    dom_epoch: Option<u64>,
     page: Option<PageMetrics>,
     focused: Option<Option<FocusedElement>>,
     text: Option<PageTextSnapshot>,
@@ -841,6 +845,7 @@ impl<R: Renderer> ServeRuntime<R> {
             Ok(capture) => {
                 let (
                     payload,
+                    dom_epoch,
                     page,
                     focused,
                     text,
@@ -857,6 +862,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     .map(|capture| {
                         (
                             capture.payload,
+                            capture.dom_epoch,
                             capture.page,
                             capture.focused,
                             capture.text,
@@ -872,6 +878,7 @@ impl<R: Renderer> ServeRuntime<R> {
                         )
                     })
                     .unwrap_or((
+                        None,
                         None,
                         None,
                         None,
@@ -893,6 +900,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     status: ServeStatus::Ok,
                     runtime: Some(self.runtime_info()),
                     payload,
+                    dom_epoch,
                     url: self.session.active_page().url().map(str::to_string),
                     title: self.session.active_page().title().map(str::to_string),
                     page,
@@ -917,6 +925,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 payload: None,
                 url: self.session.active_page().url().map(str::to_string),
                 title: self.session.active_page().title().map(str::to_string),
+                dom_epoch: None,
                 page: None,
                 focused: None,
                 text: None,
@@ -937,7 +946,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 18,
+            protocol_version: 19,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -1297,6 +1306,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 ))?;
                 Ok(Some(CapturePayload {
                     payload: None,
+                    dom_epoch: None,
                     page: None,
                     focused: None,
                     text: Some(snapshot),
@@ -1318,6 +1328,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 ))?;
                 Ok(Some(CapturePayload {
                     payload: None,
+                    dom_epoch: None,
                     page: None,
                     focused: None,
                     text: None,
@@ -1360,6 +1371,10 @@ impl<R: Renderer> ServeRuntime<R> {
         &mut self,
         include_focused: bool,
     ) -> Result<CapturePayload, Box<dyn std::error::Error>> {
+        let dom_epoch = self.renderer.dom_epoch(DomEpochRequest::new(
+            self.session.id(),
+            self.session.active_page_id(),
+        ))?;
         let frame = self.renderer.render_frame(RenderFrameRequest::new(
             self.session.id(),
             self.session.active_page_id(),
@@ -1392,6 +1407,7 @@ impl<R: Renderer> ServeRuntime<R> {
         let payload = frame_to_payload(frame, self.output, self.columns, Some(self.rows))?;
         Ok(CapturePayload {
             payload: Some(payload),
+            dom_epoch,
             page,
             focused,
             text: None,
@@ -1422,6 +1438,10 @@ impl<R: Renderer> ServeRuntime<R> {
             self.session.id(),
             self.session.active_page_id(),
         ))?;
+        let dom_epoch = self.renderer.dom_epoch(DomEpochRequest::new(
+            self.session.id(),
+            self.session.active_page_id(),
+        ))?;
         let focused = if include_focused {
             Some(
                 self.renderer
@@ -1436,6 +1456,7 @@ impl<R: Renderer> ServeRuntime<R> {
         };
         Ok(CapturePayload {
             payload: None,
+            dom_epoch,
             page,
             focused,
             text: None,
@@ -1636,6 +1657,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         status: ServeStatus::Error,
                         runtime: None,
                         payload: None,
+                        dom_epoch: None,
                         url: None,
                         title: None,
                         page: None,
@@ -2017,6 +2039,8 @@ mod tests {
     struct FakeRenderer {
         url: Option<String>,
         captures: u64,
+        dom_epoch_reads: u64,
+        capture_dom_epoch_reads: Vec<u64>,
         scrolls: Vec<(i32, i32)>,
         zooms: Vec<f64>,
         text_inputs: Vec<String>,
@@ -2054,6 +2078,7 @@ mod tests {
         final_reload_url: Option<String>,
         next_frame_url: Option<String>,
         next_frame_title: Option<String>,
+        next_dom_epoch: Option<u64>,
         next_download: Option<DownloadInfo>,
         next_downloads: Vec<DownloadInfo>,
         next_dialogs: Vec<DialogEvent>,
@@ -2067,6 +2092,8 @@ mod tests {
             Self {
                 url: None,
                 captures: 0,
+                dom_epoch_reads: 0,
+                capture_dom_epoch_reads: Vec::new(),
                 scrolls: Vec::new(),
                 zooms: Vec::new(),
                 text_inputs: Vec::new(),
@@ -2104,6 +2131,7 @@ mod tests {
                 final_reload_url: None,
                 next_frame_url: None,
                 next_frame_title: None,
+                next_dom_epoch: None,
                 next_download: None,
                 next_downloads: Vec::new(),
                 next_dialogs: Vec::new(),
@@ -2143,6 +2171,7 @@ mod tests {
             })?;
             self.operations.push("capture");
             self.captures += 1;
+            self.capture_dom_epoch_reads.push(self.dom_epoch_reads);
             let frame_url = self.next_frame_url.clone().unwrap_or(url.clone());
             let title = self
                 .next_frame_title
@@ -2204,6 +2233,11 @@ mod tests {
                 url,
                 title: self.next_frame_title.clone(),
             }))
+        }
+
+        fn dom_epoch(&mut self, _request: DomEpochRequest) -> Result<Option<u64>, RendererError> {
+            self.dom_epoch_reads += 1;
+            Ok(self.next_dom_epoch)
         }
 
         fn focused_element(
@@ -3105,6 +3139,7 @@ mod tests {
             status: ServeStatus::Ok,
             runtime: None,
             payload: Some("frame".to_string()),
+            dom_epoch: None,
             url: None,
             title: None,
             page: None,
@@ -3135,6 +3170,7 @@ mod tests {
             status: ServeStatus::Ok,
             runtime: None,
             payload: Some("frame".to_string()),
+            dom_epoch: None,
             url: Some("https://example.com".to_string()),
             title: Some("Example Domain".to_string()),
             page: None,
@@ -3178,6 +3214,7 @@ mod tests {
             status: ServeStatus::Ok,
             runtime: None,
             payload: Some("frame".to_string()),
+            dom_epoch: None,
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
@@ -3202,12 +3239,44 @@ mod tests {
     }
 
     #[test]
+    fn serve_response_encodes_dom_epoch_when_present() {
+        let response = ServeResponse {
+            id: 23,
+            status: ServeStatus::Ok,
+            runtime: None,
+            payload: None,
+            dom_epoch: Some(77),
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            page: None,
+            focused: None,
+            text: None,
+            selection: None,
+            hints: Vec::new(),
+            hint_error: None,
+            found: None,
+            match_count: None,
+            download: None,
+            downloads: Vec::new(),
+            dialog: None,
+            dialogs: Vec::new(),
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r#"{"id":23,"status":"ok","dom_epoch":77,"url":"https://example.com","title":"Example"}"#
+        );
+    }
+
+    #[test]
     fn serve_response_encodes_download_when_present() {
         let response = ServeResponse {
             id: 19,
             status: ServeStatus::Ok,
             runtime: None,
             payload: Some("frame".to_string()),
+            dom_epoch: None,
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
@@ -3244,6 +3313,7 @@ mod tests {
             status: ServeStatus::Ok,
             runtime: None,
             payload: Some("frame".to_string()),
+            dom_epoch: None,
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
@@ -3282,6 +3352,7 @@ mod tests {
             status: ServeStatus::Ok,
             runtime: None,
             payload: Some("frame".to_string()),
+            dom_epoch: None,
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: Some(PageMetrics {
@@ -3319,6 +3390,7 @@ mod tests {
             status: ServeStatus::Ok,
             runtime: None,
             payload: Some("frame".to_string()),
+            dom_epoch: None,
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
@@ -3356,6 +3428,7 @@ mod tests {
             status: ServeStatus::Ok,
             runtime: None,
             payload: Some("frame".to_string()),
+            dom_epoch: None,
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
@@ -3386,6 +3459,7 @@ mod tests {
             status: ServeStatus::Ok,
             runtime: None,
             payload: None,
+            dom_epoch: None,
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
@@ -3423,6 +3497,7 @@ mod tests {
             status: ServeStatus::Ok,
             runtime: None,
             payload: None,
+            dom_epoch: None,
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
@@ -3452,7 +3527,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 18,
+                protocol_version: 19,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -3467,6 +3542,7 @@ mod tests {
                 },
             }),
             payload: Some("frame".to_string()),
+            dom_epoch: None,
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
@@ -3486,7 +3562,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":18,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":19,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -3515,7 +3591,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 18);
+        assert_eq!(runtime_info.protocol_version, 19);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -4129,6 +4205,75 @@ mod tests {
         assert_eq!(capture.status, ServeStatus::Ok);
         assert_eq!(capture.url, Some("https://example.com/spa".to_string()));
         assert_eq!(capture.title, Some("https://example.com/spa".to_string()));
+    }
+
+    #[test]
+    fn serve_runtime_reports_dom_epoch_for_page_state_and_capture() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+        runtime.handle(ServeRequest::Navigate {
+            id: 3,
+            url: "https://example.com".to_string(),
+        });
+
+        runtime.renderer.next_dom_epoch = Some(41);
+        let page_state = runtime.handle(ServeRequest::PageState { id: 4 });
+
+        assert_eq!(page_state.status, ServeStatus::Ok);
+        assert_eq!(page_state.dom_epoch, Some(41));
+
+        runtime.renderer.next_dom_epoch = Some(42);
+        let capture = runtime.handle(ServeRequest::Capture { id: 5 });
+
+        assert_eq!(capture.status, ServeStatus::Ok);
+        assert_eq!(capture.dom_epoch, Some(42));
+    }
+
+    #[test]
+    fn serve_runtime_samples_dom_epoch_before_capturing_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+        runtime.handle(ServeRequest::Navigate {
+            id: 3,
+            url: "https://example.com".to_string(),
+        });
+        runtime.renderer.next_dom_epoch = Some(11);
+
+        let capture = runtime.handle(ServeRequest::Capture { id: 4 });
+
+        assert_eq!(capture.status, ServeStatus::Ok);
+        assert_eq!(capture.dom_epoch, Some(11));
+        assert_eq!(
+            runtime.renderer.capture_dom_epoch_reads,
+            vec![1, 2],
+            "initial and explicit captures should sample the DOM epoch before taking each screenshot baseline"
+        );
     }
 
     #[test]

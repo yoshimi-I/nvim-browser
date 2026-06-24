@@ -21,6 +21,7 @@ local state = {
   resize_timer = nil,
   current_url = nil,
   current_title = nil,
+  dom_epoch = nil,
   page_metrics = nil,
   focused_element = nil,
   latest_download = nil,
@@ -1093,6 +1094,11 @@ local function apply_serve_response_metadata(response)
   if response.title ~= nil then
     state.current_title = response.title ~= vim.NIL and response.title or nil
   end
+  if response.dom_epoch ~= nil and response.dom_epoch ~= vim.NIL then
+    state.dom_epoch = tonumber(response.dom_epoch)
+  elseif response.dom_epoch == vim.NIL then
+    state.dom_epoch = nil
+  end
   if
     type(state.metadata_observer) == "function"
     and response.status == "ok"
@@ -1388,6 +1394,9 @@ local function page_state_needs_capture(response)
     return true
   end
   if response_field_changed(response, "title", state.current_title) then
+    return true
+  end
+  if response_field_changed(response, "dom_epoch", state.dom_epoch) then
     return true
   end
   local page = response.page
@@ -2265,6 +2274,7 @@ function M.open(command)
   state.next_request_id = 1
   state.current_url = nil
   state.current_title = nil
+  state.dom_epoch = nil
   state.page_metrics = nil
   state.focused_element = nil
   state.latest_download = nil
@@ -2645,6 +2655,7 @@ function M.close()
   state.last_serve_command = nil
   state.current_url = nil
   state.current_title = nil
+  state.dom_epoch = nil
   state.page_metrics = nil
   state.focused_element = nil
   state.latest_download = nil
@@ -2784,6 +2795,7 @@ hard_stop_pending_operation = function(reason)
   }
   state.status_error = nil
   state.hint_error = nil
+  state.dom_epoch = nil
   state.rendered_frame_geometry = nil
   state.rendered_frame_url = nil
   state.response_handlers[pending.id] = nil
@@ -4057,6 +4069,7 @@ function M.state()
     last_target = state.last_target,
     current_url = state.current_url,
     current_title = state.current_title,
+    dom_epoch = state.dom_epoch,
     page_metrics = state.page_metrics,
     focused_element = state.focused_element,
     latest_download = state.latest_download,

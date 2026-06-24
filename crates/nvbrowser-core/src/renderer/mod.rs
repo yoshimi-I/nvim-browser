@@ -112,6 +112,10 @@ pub trait Renderer {
         Ok(None)
     }
 
+    fn dom_epoch(&mut self, _request: DomEpochRequest) -> Result<Option<u64>, RendererError> {
+        Ok(None)
+    }
+
     fn focused_element(
         &mut self,
         _request: FocusedElementRequest,
@@ -222,6 +226,21 @@ impl PageMetadataRequest {
 pub struct PageMetadata {
     pub url: String,
     pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct DomEpochRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+}
+
+impl DomEpochRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId) -> Self {
+        Self {
+            session_id,
+            page_id,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

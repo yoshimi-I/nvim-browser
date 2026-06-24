@@ -25,17 +25,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     renderer::{
-        ClickHintRequest, ClickPointRequest, DialogAction, DialogEvent, DialogKind, DownloadInfo,
-        DragPointRequest, ElementHint, ElementHintsRequest, FindTextRequest, FindTextResult,
-        FocusHintRequest, FocusSelectorRequest, FocusedElement, FocusedElementRequest,
-        FrameArtifact, HistoryNavigationRequest, HistoryNavigationResult, HoverHintRequest,
-        HoverPointRequest, InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest,
-        NavigationResult, PageMetadata, PageMetadataRequest, PageMetrics, PageMetricsRequest,
-        PageTextRequest, PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest,
-        RenderedFrame, Renderer, RendererError, RendererErrorKind, RightClickHintRequest,
-        RightClickPointRequest, ScrollRequest, ScrollResult, SelectHintRequest,
-        SelectionTextRequest, SelectionTextResult, ShutdownResult, TextInputRequest,
-        ToggleHintRequest, UploadHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
+        ClickHintRequest, ClickPointRequest, DialogAction, DialogEvent, DialogKind,
+        DomEpochRequest, DownloadInfo, DragPointRequest, ElementHint, ElementHintsRequest,
+        FindTextRequest, FindTextResult, FocusHintRequest, FocusSelectorRequest, FocusedElement,
+        FocusedElementRequest, FrameArtifact, HistoryNavigationRequest, HistoryNavigationResult,
+        HoverHintRequest, HoverPointRequest, InputResult, InteractionSettleResult, KeyPressRequest,
+        NavigateRequest, NavigationResult, PageMetadata, PageMetadataRequest, PageMetrics,
+        PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest, ReloadResult,
+        RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
+        RightClickHintRequest, RightClickPointRequest, ScrollRequest, ScrollResult,
+        SelectHintRequest, SelectionTextRequest, SelectionTextResult, ShutdownResult,
+        TextInputRequest, ToggleHintRequest, UploadHintRequest, WheelPointRequest, ZoomRequest,
+        ZoomResult,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -216,6 +217,7 @@ pub fn render_url_png(
     let tab = browser.new_tab().map_err(render_error)?;
     configure_tab_timeout(&tab, &options);
     install_default_dialog_handler(&tab, None)?;
+    install_dom_epoch_observer(&tab)?;
     resize_tab(&tab, viewport)?;
     tab.navigate_to(url)
         .map_err(|error| navigation_start_error(url, error))?;
@@ -288,6 +290,7 @@ impl ChromiumRenderer {
         configure_tab_timeout(&tab, &options);
         let (dialog_event_tx, dialog_event_rx) = mpsc::channel::<DialogEvent>();
         install_default_dialog_handler(&tab, Some(dialog_event_tx.clone()))?;
+        install_dom_epoch_observer(&tab)?;
         let download_events = configure_download_behavior(&tab, options.download_dir.as_deref())?;
         let dialog_handler_target_ids = HashSet::from([tab.get_target_id().clone()]);
         resize_tab(&tab, viewport)?;
@@ -861,6 +864,10 @@ impl Renderer for ChromiumRenderer {
         Ok(Some(PageMetadata { url, title }))
     }
 
+    fn dom_epoch(&mut self, _request: DomEpochRequest) -> Result<Option<u64>, RendererError> {
+        self.read_dom_epoch()
+    }
+
     fn focused_element(
         &mut self,
         _request: FocusedElementRequest,
@@ -1104,6 +1111,14 @@ impl ChromiumRenderer {
             return Ok(false);
         };
         if let Err(error) = self.ensure_dialog_handler(&tab) {
+            if is_closed_target_error(&error) {
+                self.pending_page_target_ids.remove(&target_id);
+                self.known_target_ids.insert(target_id);
+                return Ok(false);
+            }
+            return Err(error);
+        }
+        if let Err(error) = install_dom_epoch_observer(&tab) {
             if is_closed_target_error(&error) {
                 self.pending_page_target_ids.remove(&target_id);
                 self.known_target_ids.insert(target_id);
@@ -1390,6 +1405,15 @@ impl ChromiumRenderer {
         value
             .as_str()
             .and_then(|metrics| parse_page_metrics_json(metrics).ok())
+    }
+
+    fn read_dom_epoch(&self) -> Result<Option<u64>, RendererError> {
+        Ok(self
+            .tab
+            .evaluate(DOM_EPOCH_SCRIPT, true)
+            .map_err(render_error)?
+            .value
+            .and_then(|value| value.as_u64()))
     }
 
     fn read_focused_element(&self) -> Result<Option<FocusedElement>, RendererError> {
@@ -2099,6 +2123,38 @@ const READY_STATE_SCRIPT: &str = r#"
 (() => document.readyState || 'complete')()
 "#;
 
+const DOM_EPOCH_SCRIPT: &str = r#"
+(() => {
+  const key = '__nvbrowserDomEpochState';
+  const global = globalThis || window;
+  if (!global[key] || typeof global[key].epoch !== 'number') {
+    const state = { epoch: 1 };
+    Object.defineProperty(global, key, {
+      value: state,
+      configurable: true
+    });
+    const bump = () => {
+      state.epoch += 1;
+    };
+    if (typeof MutationObserver === 'function') {
+      const target = document.documentElement || document;
+      if (target) {
+        state.observer = new MutationObserver(bump);
+        state.observer.observe(target, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          characterData: true
+        });
+      }
+    }
+    window.addEventListener('input', bump, true);
+    window.addEventListener('change', bump, true);
+  }
+  return global[key].epoch;
+})()
+"#;
+
 const DOM_QUIET_SCRIPT: &str = r#"
 (() => new Promise((resolve) => {
   const quietMs = 120;
@@ -2802,6 +2858,17 @@ fn install_default_dialog_handler(
             let _ = dialog_tx.send(policy);
         }
     }))
+    .map(|_| ())
+    .map_err(render_error)
+}
+
+fn install_dom_epoch_observer(tab: &Arc<Tab>) -> Result<(), RendererError> {
+    tab.call_method(Page::AddScriptToEvaluateOnNewDocument {
+        source: DOM_EPOCH_SCRIPT.to_string(),
+        world_name: None,
+        include_command_line_api: None,
+        run_immediately: None,
+    })
     .map(|_| ())
     .map_err(render_error)
 }

@@ -111,8 +111,8 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Performs lightweight live page-state refresh while idle and suppresses
   background refresh while a navigation-like operation is pending. Manual
   `:NBrowserRefresh` and browser actions still capture fresh frames. Meaningful
-  idle metadata changes debounce one full-frame capture so the preview image
-  catches up without returning to constant screenshots.
+  idle metadata or DOM mutation epoch changes debounce one full-frame capture so
+  the preview image catches up without returning to constant screenshots.
 - Guards pending navigation-like operations and explicit frame captures with a
   Neovim-side watchdog based on `navigation_timeout_ms`. When Chromium/CDP
   stalls, Lua hard-stops the serve job, advances the generation so late stdout
@@ -143,9 +143,10 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   computing cell pixels from the cursor position on the fixture guide point.
 - Quiet input and idle live refresh improve latency by skipping screenshots and
   hint recomputation, but successful lightweight responses still return
-  URL/title, page-metrics, and focused-element metadata. The current frame and
-  hints remain visible until Enter, exit, manual refresh, or an adaptive/live
-  captured response refreshes them.
+  URL/title, page-metrics, focused-element metadata, and a Chromium-backed DOM
+  mutation epoch when available. The current frame and hints remain visible
+  until Enter, exit, manual refresh, or an adaptive/live captured response
+  refreshes them.
 - Chromium target lifecycle is a core reliability area. `target=_blank`,
   `window.open`, and delayed `about:blank` navigations should stay covered by
   opt-in E2E because real pages commonly create and navigate child targets
