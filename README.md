@@ -337,10 +337,11 @@ not available.
 
 Browser preview footers show the latest serve status, title or URL, scroll
 progress, focused element kind/label, latest completed download filename,
-output mode, cell geometry, and current URL when reported by the Chromium/CDP
-session. `:NBrowserStatus` echoes the same browser-session state in the command
-line. Focus metadata is reported as `focus=input Search`, `focus=text_area
-Notes`, and similar compact labels after captured browser interactions.
+non-default zoom, output mode, cell geometry, and current URL when reported by
+the Chromium/CDP session. `:NBrowserStatus` echoes the same browser-session
+state in the command line. Focus metadata is reported as `focus=input Search`,
+`focus=text_area Notes`, and similar compact labels after captured browser
+interactions. Non-default zoom is reported as `zoom=125%`.
 `:NBrowserDownloads` lists completed downloads reported during the current
 browser session, including filename and full path.
 

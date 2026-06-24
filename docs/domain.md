@@ -73,7 +73,7 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   submit-current-focus form UX.
 - Shows live browser state in a preview footer: status, title/URL, scroll
   progress, focused element kind/label, latest completed download filename,
-  output mode, cells, viewport, and errors.
+  non-default zoom, output mode, cells, viewport, and errors.
 - Saves browser-initiated downloads into a configured `download_dir` and reports
   the latest completed file path in the JSONL response plus footer/status.
 - Performs live recapture while idle and suppresses background recapture while a

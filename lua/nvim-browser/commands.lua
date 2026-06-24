@@ -1,4 +1,5 @@
 local M = {}
+local status_labels = require("nvim-browser.status")
 
 function M.register(browser, opts)
   opts = opts or {}
@@ -1009,6 +1010,7 @@ function M.register(browser, opts)
     local title = browser.current_title and browser.current_title() or nil
     local error = browser.status_error and browser.status_error() or nil
     local scroll = browser.page_metrics and page_scroll_label(browser.page_metrics()) or nil
+    local zoom = browser.zoom_scale and status_labels.zoom_label(browser.zoom_scale()) or nil
     local runtime = browser.runtime_metadata and runtime_status_label(browser.runtime_metadata()) or nil
     local focused = browser.focused_element and focused_element_label(browser.focused_element()) or nil
     local download = browser.latest_download and download_status_label(browser.latest_download()) or nil
@@ -1018,6 +1020,9 @@ function M.register(browser, opts)
     end
     if scroll ~= nil then
       message = message .. " " .. scroll
+    end
+    if zoom ~= nil then
+      message = message .. " " .. zoom
     end
     if focused ~= nil then
       message = message .. " " .. focused

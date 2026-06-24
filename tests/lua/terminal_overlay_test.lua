@@ -1775,12 +1775,15 @@ assert(zoom_in_request.scale == 1.1, "zoom_in should increase the page scale by 
 
 terminal._test.dispatch_serve_response_handler({ id = zoom_in_request.id, status = "error", error = "zoom failed" })
 terminal._test.clear_pending_operation(zoom_in_request.id)
+assert(not terminal._test.preview_footer_line(120):find("zoom="), "failed zoom responses should not show a zoom label")
 sent_requests = {}
 assert(terminal.zoom_in() == true, "zoom_in should retry from the last applied zoom after backend failure")
 retry_zoom_in_request = last_request_of_type("zoom")
 assert(retry_zoom_in_request.scale == 1.1, "failed zoom responses should not advance client-side zoom state")
 terminal._test.dispatch_serve_response_handler({ id = retry_zoom_in_request.id, status = "ok" })
 terminal._test.clear_pending_operation(retry_zoom_in_request.id)
+assert(terminal._test.preview_footer_line(120):find("zoom=110%%"), "successful zoom responses should show current zoom in the footer")
+assert(terminal.state().zoom_scale == 1.1, "terminal state should expose the applied zoom scale")
 
 sent_requests = {}
 assert(terminal.zoom_in() == true, "zoom_in should compound after an applied zoom response")
@@ -1802,6 +1805,8 @@ zoom_reset_request = last_request_of_type("zoom")
 assert(zoom_reset_request.scale == 1.0, "zoom_reset should restore default page scale")
 terminal._test.dispatch_serve_response_handler({ id = zoom_reset_request.id, status = "ok" })
 terminal._test.clear_pending_operation(zoom_reset_request.id)
+assert(not terminal._test.preview_footer_line(120):find("zoom="), "zoom_reset should remove the footer zoom label")
+assert(terminal.state().zoom_scale == 1.0, "zoom_reset should restore state zoom scale")
 
 sent_requests = {}
 assert(terminal.page_scroll(1, { fraction = 0.5 }) == true, "page_scroll should support custom viewport fractions")
@@ -3492,8 +3497,37 @@ terminal._test.apply_serve_response({
   },
 })
 assert(#terminal.downloads() > 0, "test setup should have download history before opening a new serve session")
+sent_requests = {}
+assert(terminal.zoom_in() == true, "test setup should apply zoom before replacing a browser session")
+local pre_replace_zoom_request = last_request_of_type("zoom")
+terminal._test.dispatch_serve_response_handler({ id = pre_replace_zoom_request.id, status = "ok" })
+terminal._test.clear_pending_operation(pre_replace_zoom_request.id)
+assert(terminal.state().zoom_scale ~= 1.0, "test setup should have non-default zoom before opening a new serve session")
 terminal.open({ "nvbrowser", "show-image", "/tmp/reset-downloads.png", "--output", "ansi" })
 assert(#terminal.downloads() == 0, "replacing the active browser session should reset download history")
+assert(terminal.state().zoom_scale == 1.0, "replacing the active browser session should reset zoom state")
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://e.co" })
+terminal._test.clear_in_flight_capture()
+sent_requests = {}
+assert(terminal.zoom_in() == true, "test setup should apply zoom before normal serve job exit")
+normal_exit_zoom_request = last_request_of_type("zoom")
+serve_stdout(nil, { vim.json.encode({
+  id = normal_exit_zoom_request.id,
+  status = "ok",
+}) .. "\n" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil
+end), "zoom response should clear the pending operation before normal serve job exit")
+normal_exit_state = terminal.state()
+normal_exit_lines = vim.api.nvim_buf_get_lines(normal_exit_state.bufnr, 0, -1, false)
+assert(normal_exit_lines[#normal_exit_lines]:find("zoom=110%%"), "test setup should render zoom in the footer before normal serve job exit")
+serve_exit(nil, 0)
+assert(vim.wait(1000, function()
+  return terminal.state().job_id == nil
+end), "normal serve job exit should clear the active job")
+normal_exit_lines = vim.api.nvim_buf_get_lines(normal_exit_state.bufnr, 0, -1, false)
+assert(not normal_exit_lines[#normal_exit_lines]:find("zoom="), "normal serve job exit should redraw stale footer zoom state")
+assert(terminal.state().zoom_scale == 1.0, "normal serve job exit should reset zoom state")
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/no-scroll-timer" })
 terminal._test.clear_in_flight_capture()
 sent_requests = {}
@@ -3512,6 +3546,12 @@ terminal._test.apply_serve_response({
   },
 })
 assert(#terminal.downloads() > 0, "test setup should have download history before serve job exit")
+sent_requests = {}
+assert(terminal.zoom_in() == true, "test setup should apply zoom before serve job exit")
+local pre_exit_zoom_request = last_request_of_type("zoom")
+terminal._test.dispatch_serve_response_handler({ id = pre_exit_zoom_request.id, status = "ok" })
+terminal._test.clear_pending_operation(pre_exit_zoom_request.id)
+assert(terminal.state().zoom_scale ~= 1.0, "test setup should have non-default zoom before serve job exit")
 assert(type(serve_exit) == "function", "serve jobstart should expose an exit callback in tests")
 serve_exit(nil, 17)
 assert(vim.wait(1000, function()
@@ -3520,6 +3560,7 @@ end), "serve job exit should clear the active job")
 assert(terminal.state().pending_operation == nil, "serve job exit should clear pending operations")
 assert(terminal._test.response_handler_count() == 0, "serve job exit should clear response handlers")
 assert(#terminal.downloads() == 0, "serve job exit should reset download history")
+assert(terminal.state().zoom_scale == 1.0, "serve job exit should reset zoom state")
 
 terminal._test.apply_serve_response({
   id = 702,

@@ -358,6 +358,9 @@ local browser = {
       status = "completed",
     }
   end,
+  zoom_scale = function()
+    return 1.25
+  end,
   downloads = function()
     return {
       { path = "/tmp/downloads/report.pdf", suggested_filename = "report.pdf", status = "completed" },
@@ -681,6 +684,7 @@ assert(#warnings == calibration_warning_count + 1, "fractional calibration shoul
 
 vim.cmd("NBrowserStatus")
 assert(echoed:match("scroll 25%%"), "NBrowserStatus should include scroll progress when page metrics exist")
+assert(echoed:match("zoom=125%%"), "NBrowserStatus should include non-default browser zoom")
 assert(echoed:match("focus=input Search"), "NBrowserStatus should include focused element metadata")
 assert(echoed:match("download=report%.pdf"), "NBrowserStatus should include latest download metadata")
 assert(echoed:match("output=kitty%-unicode"), "NBrowserStatus should include runtime output when available")

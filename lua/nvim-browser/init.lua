@@ -3,6 +3,7 @@ local backend = require("nvim-browser.backend")
 local config = require("nvim-browser.config")
 local doctor = require("nvim-browser.doctor")
 local keymaps = require("nvim-browser.keymaps")
+local status_labels = require("nvim-browser.status")
 local terminal = require("nvim-browser.terminal")
 
 local M = {}
@@ -716,6 +717,10 @@ local function action_status_message()
   if scroll ~= nil then
     table.insert(parts, scroll)
   end
+  local zoom = M.zoom_scale and status_labels.zoom_label(M.zoom_scale()) or nil
+  if zoom ~= nil then
+    table.insert(parts, zoom)
+  end
   local focused = M.focused_element and focused_element_label(M.focused_element()) or nil
   if focused ~= nil then
     table.insert(parts, focused)
@@ -972,6 +977,10 @@ end
 
 function M.zoom_reset()
   return terminal.zoom_reset()
+end
+
+function M.zoom_scale()
+  return terminal.state().zoom_scale or 1.0
 end
 
 function M.input_text(text)

@@ -66,6 +66,7 @@ assert(type(browser.half_page_up) == "function", "half_page_up API should exist"
 assert(type(browser.zoom_in) == "function", "zoom_in API should exist")
 assert(type(browser.zoom_out) == "function", "zoom_out API should exist")
 assert(type(browser.zoom_reset) == "function", "zoom_reset API should exist")
+assert(type(browser.zoom_scale) == "function", "zoom_scale API should exist")
 assert(type(browser.hint_error) == "function", "hint_error API should exist")
 assert(type(browser.reader) == "function", "reader API should exist")
 assert(type(browser.reader_follow) == "function", "reader_follow API should exist")
@@ -535,6 +536,9 @@ local function with_action_stubs(fn)
   browser.page_metrics = function()
     return { scroll_y = 50, viewport_height = 100, document_height = 300 }
   end
+  browser.zoom_scale = function()
+    return 1.25
+  end
   browser.focused_element = function()
     return { kind = "input", label = "Search box" }
   end
@@ -648,6 +652,7 @@ with_action_stubs(function()
   assert(action_calls[#action_calls] == "status", "Status action should call status")
   assert(status_message:find("Example", 1, true), "Status action should include the title")
   assert(status_message:find("scroll 25%%"), "Status action should include scroll metrics")
+  assert(status_message:find("zoom=125%%"), "Status action should include non-default browser zoom")
   assert(status_message:find("focus=input Search box", 1, true), "Status action should include focused element")
   assert(status_message:find("output=kitty", 1, true), "Status action should include runtime output")
   assert(status_message:find("viewport=960x720", 1, true), "Status action should include runtime viewport")

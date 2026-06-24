@@ -1,5 +1,6 @@
 local M = {}
 local hints_overlay = require("nvim-browser.hints_overlay")
+local status_labels = require("nvim-browser.status")
 
 local state = {
   bufnr = nil,
@@ -1434,6 +1435,11 @@ local function preview_footer_line(width)
     table.insert(parts, download)
   end
 
+  local zoom = status_labels.zoom_label(state.zoom_scale)
+  if zoom ~= nil then
+    table.insert(parts, zoom)
+  end
+
   if state.last_find_match_count ~= nil then
     local suffix = state.last_find_match_count == 1 and "match" or "matches"
     table.insert(parts, "find: " .. tostring(state.last_find_match_count) .. " " .. suffix)
@@ -1936,19 +1942,29 @@ function M.open(command)
           state.latest_download = nil
           state.download_history = {}
           state.download_recorded_response_ids = {}
+          state.zoom_scale = 1.0
           state.element_hints = {}
           state.element_hints_geometry = nil
           state.cursor_addressable_preview = false
           hints_overlay.clear(bufnr)
-          if code ~= 0 and vim.api.nvim_buf_is_valid(bufnr) then
+          if vim.api.nvim_buf_is_valid(bufnr) then
             vim.bo[bufnr].modifiable = true
-            vim.api.nvim_buf_set_lines(
-              bufnr,
-              0,
-              -1,
-              false,
-              preview_lines("Browser session exited: " .. code, target)
-            )
+            if code ~= 0 then
+              vim.api.nvim_buf_set_lines(
+                bufnr,
+                0,
+                -1,
+                false,
+                preview_lines("Browser session exited: " .. code, target)
+              )
+            else
+              local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+              if #lines > 0 then
+                local width = math.max(1, vim.fn.strdisplaywidth(lines[#lines]))
+                lines[#lines] = preview_footer_line(width)
+                vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+              end
+            end
             vim.bo[bufnr].modifiable = false
           end
         end)
@@ -3281,6 +3297,7 @@ function M.state()
     focused_element = state.focused_element,
     latest_download = state.latest_download,
     download_history = copy_download_history(),
+    zoom_scale = state.zoom_scale,
     runtime_metadata = state.runtime_metadata,
     rendered_frame_geometry = state.rendered_frame_geometry,
     status = state.status,
