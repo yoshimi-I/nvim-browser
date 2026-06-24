@@ -101,6 +101,7 @@ M.options = {
       hover_here = "gh",
       type_hint_mode = "t",
       submit_hint_mode = "s",
+      submit_focused = "gs",
       select_hint_mode = "o",
       toggle_hint_mode = "c",
       input_text_mode = "i",

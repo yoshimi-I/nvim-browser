@@ -135,6 +135,10 @@ assert(
   configured.preview_keymaps.mappings.toggle_hint_mode == "c",
   "preview-local keymaps should include a hinted checkbox/radio toggle mapping"
 )
+assert(
+  configured.preview_keymaps.mappings.submit_focused == "gs",
+  "preview-local keymaps should include a focused form submit mapping"
+)
 local remapped = config.setup({
   session = {
     path = "/tmp/nvim-browser-session.json",

@@ -503,6 +503,7 @@ local function with_action_stubs(fn)
     zoom_in = browser.zoom_in,
     zoom_out = browser.zoom_out,
     zoom_reset = browser.zoom_reset,
+    submit_focused = browser.submit_focused,
   }
   browser.open = function(target)
     table.insert(action_calls, "open:" .. tostring(target))
@@ -549,6 +550,10 @@ local function with_action_stubs(fn)
   end
   browser.start_text_mode = function()
     table.insert(action_calls, "text_mode")
+    return true
+  end
+  browser.submit_focused = function()
+    table.insert(action_calls, "submit_focused")
     return true
   end
   browser.open_download = function(index)
@@ -653,6 +658,7 @@ with_action_stubs(function()
 	    "Find",
 	    "Hints",
 	    "Text mode",
+	    "Submit focused",
 	    "Open download",
 	    "Screenshot",
 	    "Reader",
@@ -665,7 +671,7 @@ with_action_stubs(function()
 	  }) do
 	    assert(labels[label] == true, "actions should include " .. label)
 	  end
-	  assert(action_calls[#action_calls]:match("^open:"), "actions should run the selected action")
+		  assert(action_calls[#action_calls]:match("^open:"), "actions should run the selected action")
 
 	  action_calls = {}
 	  local action_history = browser.history
@@ -758,6 +764,19 @@ with_action_stubs(function()
 	    end,
 	  }) == true, "Inspect action should run")
 	  assert(action_calls[#action_calls]:match("^inspect:"), "Inspect action should call inspect with a target")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Submit focused" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Submit focused action should run")
+	  assert(action_calls[#action_calls] == "submit_focused", "Submit focused action should call submit_focused")
 
 	  action_calls = {}
 	  assert(browser.actions({

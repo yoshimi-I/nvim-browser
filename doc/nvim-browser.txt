@@ -629,6 +629,7 @@ N  repeat find backward
 f  hint mode
 t  type into hinted field
 s  type into hinted field and submit
+gs  submit focused form-capable element
 o  select hinted option
 c  toggle hinted checkbox/radio
 i  type into focused element
@@ -686,6 +687,7 @@ require("nvim-browser").setup({
       page_up = "<PageUp>",
       find_next = "n",
       find_previous = "N",
+      submit_focused = "gs",
       select_hint_mode = "o",
       toggle_hint_mode = "c",
       wheel_down = "<ScrollWheelDown>",

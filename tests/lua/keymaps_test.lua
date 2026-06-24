@@ -82,6 +82,10 @@ local browser = {
     local value = input("nvim-browser hint: ")
     table.insert(calls, "toggle_hint:" .. value)
   end,
+  submit_focused = function()
+    table.insert(calls, "submit_focused")
+    return true
+  end,
   input_text_mode = function(input)
     table.insert(calls, "input_mode:" .. input("nvim-browser text: "))
   end,
@@ -334,6 +338,7 @@ assert_buffer_mapping(first_bufnr, "N", "buffer-local controls should install fi
 assert_buffer_mapping(first_bufnr, "f", "buffer-local controls should install hint mapping")
 assert_buffer_mapping(first_bufnr, "t", "buffer-local controls should install hinted input mapping")
 assert_buffer_mapping(first_bufnr, "s", "buffer-local controls should install hinted submit mapping")
+assert_buffer_mapping(first_bufnr, "gs", "buffer-local controls should install focused submit mapping")
 assert_buffer_mapping(first_bufnr, "i", "buffer-local controls should install focused input mode")
 assert_buffer_mapping(first_bufnr, "p", "buffer-local controls should install register paste")
 assert_buffer_mapping(first_bufnr, "y", "buffer-local controls should install browser selection yank")
@@ -383,6 +388,7 @@ trigger_buffer(first_bufnr, "N")
 trigger_buffer(first_bufnr, "f")
 trigger_buffer(first_bufnr, "t")
 trigger_buffer(first_bufnr, "s")
+trigger_buffer(first_bufnr, "gs")
 trigger_buffer(first_bufnr, "o")
 trigger_buffer(first_bufnr, "c")
 trigger_buffer(first_bufnr, "i")
@@ -418,7 +424,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,actions,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,address,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,right_click_here,hover_here,close,click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,actions,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,submit_focused,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,address,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,right_click_here,hover_here,close,click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
 

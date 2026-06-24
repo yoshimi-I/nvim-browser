@@ -867,6 +867,12 @@ local function action_items(opts, report_error)
       end,
     },
     {
+      label = "Submit focused",
+      run = function()
+        return M.submit_focused()
+      end,
+    },
+    {
       label = "Open download",
       run = function()
         local ok = M.open_download(nil, {

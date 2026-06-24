@@ -538,7 +538,8 @@ by 90% of the browser viewport, `gg` top, `G` bottom, `<C-d>/<C-u>` scroll by
 half the browser viewport, `+` zoom in, `-` zoom out, `=` reset zoom,
 `a` address, `?` actions picker, `/` find, `n` repeat find forward, `N`
 repeat find backward, `f` hint mode, `t` type into a hinted field, `s` type and
-submit, `o` select a hinted option, `c` toggle a hinted checkbox/radio, `i`
+submit, `gs` submit the focused form-capable element, `o` select a hinted option,
+`c` toggle a hinted checkbox/radio, `i`
 type into the focused element with browser text mode, `p` paste the selected
 register into the focused element, `y` yank the browser selection into the
 selected register, `Y` yank the active browser URL into the selected register,
