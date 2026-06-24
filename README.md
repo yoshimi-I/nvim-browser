@@ -108,6 +108,17 @@ require("nvim-browser").setup({
 })
 ```
 
+You can adjust those values at runtime and immediately resize an active browser
+session:
+
+```vim
+:NBrowserCalibrate 9 18
+:NBrowserDoctor
+```
+
+`NBrowserDoctor` reports whether the latest browser runtime metadata matches
+the configured cell-pixel calibration.
+
 To attach to an already-running Chrome DevTools Protocol browser instead of
 letting `nvbrowser` launch Chrome, pass the browser WebSocket URL:
 
@@ -244,6 +255,7 @@ Then run:
 :NBrowserReader
 :NBrowserReaderFollow
 :NBrowserDoctor
+:NBrowserCalibrate 9 18
 :NBrowserToggle
 ```
 

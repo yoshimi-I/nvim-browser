@@ -661,6 +661,28 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { table.concat(report.lines or {}, "\n") } }, false, {})
   end, {})
 
+  vim.api.nvim_create_user_command("NBrowserCalibrate", function(opts)
+    local parts = vim.split(opts.args or "", "%s+", { trimempty = true })
+    local width = parts[1] ~= nil and tonumber(parts[1]) or nil
+    local height = parts[2] ~= nil and tonumber(parts[2]) or nil
+    if #parts > 0 and (width == nil or height == nil or width <= 0 or height <= 0 or #parts > 2) then
+      vim.api.nvim_echo({ { "nvim-browser: viewport cell pixels must be positive numbers", "WarningMsg" } }, false, {})
+      return
+    end
+    if #parts > 0 and (width % 1 ~= 0 or height % 1 ~= 0) then
+      vim.api.nvim_echo({ { "nvim-browser: viewport cell pixels must be positive integers", "WarningMsg" } }, false, {})
+      return
+    end
+    local report, err = browser.calibrate(width, height)
+    if report == false then
+      vim.api.nvim_echo({ { "nvim-browser: " .. tostring(err or "calibration failed"), "WarningMsg" } }, false, {})
+      return
+    end
+    vim.api.nvim_echo({ { table.concat(report.lines or {}, "\n") } }, false, {})
+  end, {
+    nargs = "*",
+  })
+
   vim.api.nvim_create_user_command("NBrowserToggle", function()
     browser.toggle()
   end, {})

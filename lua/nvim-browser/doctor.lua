@@ -55,6 +55,34 @@ local function runtime_line(state)
     .. viewport
 end
 
+local function runtime_calibration(config, state, cell)
+  local runtime = state and state.runtime_metadata or nil
+  if type(runtime) ~= "table" then
+    return "calibration: pending runtime metadata"
+  end
+  if type(runtime.cells) ~= "table" or type(runtime.viewport) ~= "table" then
+    return "calibration: pending runtime metadata"
+  end
+  local columns = tonumber(runtime.cells.columns)
+  local rows = tonumber(runtime.cells.rows)
+  local width = tonumber(runtime.viewport.width)
+  local height = tonumber(runtime.viewport.height)
+  if columns == nil or rows == nil or width == nil or height == nil then
+    return "calibration: pending runtime metadata"
+  end
+  local expected_width = columns * cell.width
+  local expected_height = rows * cell.height
+  local expected = tostring(expected_width) .. "x" .. tostring(expected_height)
+  local actual = tostring(width) .. "x" .. tostring(height)
+  if expected_width == width and expected_height == height then
+    return "calibration: ok expected viewport=" .. expected
+  end
+  return "warning: calibration runtime viewport differs from configured cell pixels; expected viewport="
+    .. expected
+    .. " actual viewport="
+    .. actual
+end
+
 local function viewport_cell_pixels(config)
   local viewport = (config and config.viewport) or {}
   return {
@@ -91,6 +119,7 @@ function M.run(config, terminal_state)
   if runtime ~= nil then
     table.insert(report.lines, runtime)
   end
+  table.insert(report.lines, runtime_calibration(config, terminal_state, cell))
 
   if vim.fn.executable(config.binary or "nvbrowser") == 1 then
     add_item(report, "ok", "binary is executable")

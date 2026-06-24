@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>nvim-browser calibration</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, sans-serif;
+      background: #111318;
+      color: #f4f6fb;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(#2d3340 1px, transparent 1px),
+        linear-gradient(90deg, #2d3340 1px, transparent 1px),
+        #111318;
+      background-size: 40px 40px;
+    }
+    .marker {
+      position: fixed;
+      width: 18px;
+      height: 18px;
+      border: 2px solid #8bd5ff;
+    }
+    .top-left { left: 0; top: 0; border-right: 0; border-bottom: 0; }
+    .top-right { right: 0; top: 0; border-left: 0; border-bottom: 0; }
+    .bottom-left { left: 0; bottom: 0; border-right: 0; border-top: 0; }
+    .bottom-right { right: 0; bottom: 0; border-left: 0; border-top: 0; }
+    main {
+      display: grid;
+      place-items: center;
+      min-height: 100vh;
+      text-align: center;
+      gap: 16px;
+    }
+    h1 { margin: 0; font-size: 28px; }
+    p { margin: 0; color: #b7c0d8; }
+    button, input {
+      font: inherit;
+      color: #f4f6fb;
+      background: #263247;
+      border: 1px solid #8bd5ff;
+      padding: 8px 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="marker top-left"></div>
+  <div class="marker top-right"></div>
+  <div class="marker bottom-left"></div>
+  <div class="marker bottom-right"></div>
+  <main>
+    <div>
+      <h1>nvim-browser calibration</h1>
+      <p>Use :NBrowserDoctor to compare configured cell pixels with runtime viewport metadata.</p>
+    </div>
+    <button id="target">Calibration target</button>
+    <input aria-label="Calibration input" value="type here">
+  </main>
+</body>
+</html>

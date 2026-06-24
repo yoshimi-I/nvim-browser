@@ -352,7 +352,15 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserDoctor
 	Echo a diagnostic report for backend binary resolution, selected graphics
 	output, terminal/multiplexer detection, auto-selection reason, active
-	preview session, and serve runtime metadata.
+	preview session, serve runtime metadata, and viewport calibration status.
+
+							*:NBrowserCalibrate*
+:NBrowserCalibrate [cell_width_px cell_height_px]
+	Open the bundled browser calibration page. When positive integer cell
+	pixel dimensions are provided, update the current in-memory viewport
+	calibration and resize an active serve preview before opening the fixture.
+	Run :NBrowserDoctor after the calibration frame renders to compare the
+	configured cell pixels with the latest runtime viewport metadata.
 
 							*:NBrowserPreview*
 :NBrowserPreview

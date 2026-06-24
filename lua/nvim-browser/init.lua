@@ -11,6 +11,26 @@ local state = {
   last_target = nil,
 }
 
+local function plugin_root()
+  return vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h")
+end
+
+local function calibration_fixture_path()
+  return plugin_root() .. "/data/html/calibrate.html"
+end
+
+local function parse_cell_pixels(cell_width_px, cell_height_px)
+  local width = tonumber(cell_width_px)
+  local height = tonumber(cell_height_px)
+  if width == nil or height == nil or width <= 0 or height <= 0 then
+    return nil, nil, "viewport cell pixels must be positive numbers"
+  end
+  if width % 1 ~= 0 or height % 1 ~= 0 then
+    return nil, nil, "viewport cell pixels must be positive integers"
+  end
+  return width, height
+end
+
 function M.setup(opts)
   M.config = config.setup(opts)
   terminal.configure(M.config)
@@ -61,6 +81,30 @@ end
 
 function M.preview()
   M.open(vim.fn.expand("%:p"))
+end
+
+function M.calibrate(cell_width_px, cell_height_px)
+  if cell_width_px ~= nil or cell_height_px ~= nil then
+    local width, height, err = parse_cell_pixels(cell_width_px, cell_height_px)
+    if err ~= nil then
+      return false, err
+    end
+    M.config.viewport = M.config.viewport or {}
+    M.config.viewport.cell_width_px = width
+    M.config.viewport.cell_height_px = height
+    terminal.configure({ viewport = M.config.viewport })
+  end
+
+  M.open(calibration_fixture_path())
+  local report = doctor.run(M.config, terminal.state())
+  table.insert(report.lines, 2, "calibration target: " .. calibration_fixture_path())
+  for index, line in ipairs(report.lines) do
+    if line:find("^calibration:") or line:find("^warning: calibration") then
+      report.lines[index] = "calibration: pending runtime metadata; run :NBrowserDoctor after the calibration frame renders"
+      break
+    end
+  end
+  return report
 end
 
 function M.focus()

@@ -26,6 +26,7 @@ local yanked_register = nil
 local pressed_key = nil
 local text_mode_called = false
 local doctor_called = false
+local calibrated = nil
 local reader_called = false
 local reader_follow_called = false
 local stop_called = false
@@ -143,6 +144,10 @@ local browser = {
   doctor = function()
     doctor_called = true
     return { lines = { "nvim-browser doctor", "browser output: kitty-unicode" } }
+  end,
+  calibrate = function(cell_width_px, cell_height_px)
+    calibrated = { cell_width_px = cell_width_px, cell_height_px = cell_height_px }
+    return { lines = { "nvim-browser calibration", "viewport cell px: " .. cell_width_px .. "x" .. cell_height_px } }
   end,
   pick_hint = function(select, opts)
     picked_action = opts and opts.action or "follow"
@@ -274,6 +279,25 @@ assert(warnings[#warnings] == "nvim-browser: hint not found, stale, or browser s
 vim.cmd("NBrowserDoctor")
 assert(doctor_called == true, "NBrowserDoctor should call browser.doctor")
 assert(echoed == "nvim-browser doctor\nbrowser output: kitty-unicode", "NBrowserDoctor should echo doctor lines")
+
+vim.cmd("NBrowserCalibrate 9 18")
+assert(calibrated.cell_width_px == 9, "NBrowserCalibrate should pass numeric cell width")
+assert(calibrated.cell_height_px == 18, "NBrowserCalibrate should pass numeric cell height")
+assert(echoed == "nvim-browser calibration\nviewport cell px: 9x18", "NBrowserCalibrate should echo calibration report lines")
+
+calibrated = nil
+local calibration_warning_count = #warnings
+vim.cmd("NBrowserCalibrate 0 18")
+assert(calibrated == nil, "NBrowserCalibrate should not call browser.calibrate with invalid values")
+assert(warnings[#warnings] == "nvim-browser: viewport cell pixels must be positive numbers", "NBrowserCalibrate should warn on invalid values")
+assert(#warnings == calibration_warning_count + 1, "invalid calibration should produce one warning")
+
+calibrated = nil
+calibration_warning_count = #warnings
+vim.cmd("NBrowserCalibrate 9.5 18")
+assert(calibrated == nil, "NBrowserCalibrate should not call browser.calibrate with fractional values")
+assert(warnings[#warnings] == "nvim-browser: viewport cell pixels must be positive integers", "NBrowserCalibrate should warn on fractional values")
+assert(#warnings == calibration_warning_count + 1, "fractional calibration should produce one warning")
 
 vim.cmd("NBrowserStatus")
 assert(echoed:match("scroll 25%%"), "NBrowserStatus should include scroll progress when page metrics exist")
