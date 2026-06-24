@@ -227,12 +227,23 @@ local function command_option_value(command, option)
   return nil
 end
 
+local function kitty_unicode_cell_limit()
+  return #kitty_diacritics
+end
+
 local function preview_cells(opts)
   opts = opts or {}
   local reserved_rows = opts.reserve_footer and serve_footer_rows or 0
+  local columns = math.max(20, vim.api.nvim_win_get_width(state.winid) - 2)
+  local rows = math.max(6, vim.api.nvim_win_get_height(state.winid) - 2 - reserved_rows)
+  if opts.cap_kitty_unicode then
+    local limit = kitty_unicode_cell_limit()
+    columns = math.min(columns, limit)
+    rows = math.min(rows, limit)
+  end
   return {
-    columns = math.max(20, vim.api.nvim_win_get_width(state.winid) - 2),
-    rows = math.max(6, vim.api.nvim_win_get_height(state.winid) - 2 - reserved_rows),
+    columns = columns,
+    rows = rows,
   }
 end
 
@@ -245,7 +256,9 @@ local function viewport_cell_pixels()
 end
 
 local function current_preview_geometry()
-  local cells = preview_cells({ reserve_footer = state.mode == "serve" })
+  local runtime_output = type(state.runtime_metadata) == "table" and state.runtime_metadata.output or nil
+  local cap_kitty_unicode = state.serve_output == "kitty-unicode" or runtime_output == "kitty-unicode"
+  local cells = preview_cells({ reserve_footer = state.mode == "serve", cap_kitty_unicode = cap_kitty_unicode })
   local cell = viewport_cell_pixels()
   return {
     columns = cells.columns,
@@ -265,6 +278,23 @@ end
 local function add_option(command, option, value)
   if command_has_option(command, option) then
     return
+  end
+
+  table.insert(command, option)
+  table.insert(command, tostring(value))
+end
+
+local function set_option(command, option, value)
+  local index = 1
+  while index <= #command do
+    if command[index] == option then
+      table.remove(command, index)
+      if index <= #command then
+        table.remove(command, index)
+      end
+    else
+      index = index + 1
+    end
   end
 
   table.insert(command, option)
@@ -301,12 +331,17 @@ local function command_for_window(command)
     return adjusted
   end
 
-  local cells = preview_cells({ reserve_footer = reserve_footer })
+  local cap_kitty_unicode = command_uses_kitty_unicode_browse(command) or command_uses_kitty_unicode_serve(command)
+  local cells = preview_cells({
+    reserve_footer = reserve_footer,
+    cap_kitty_unicode = cap_kitty_unicode,
+  })
   local cell = viewport_cell_pixels()
-  add_option(adjusted, "--columns", cells.columns)
-  add_option(adjusted, "--rows", cells.rows)
-  add_option(adjusted, "--width", cells.columns * cell.width)
-  add_option(adjusted, "--height", cells.rows * cell.height)
+  local write_option = cap_kitty_unicode and set_option or add_option
+  write_option(adjusted, "--columns", cells.columns)
+  write_option(adjusted, "--rows", cells.rows)
+  write_option(adjusted, "--width", cells.columns * cell.width)
+  write_option(adjusted, "--height", cells.rows * cell.height)
   return adjusted
 end
 
@@ -3670,6 +3705,7 @@ M._test = {
   end,
   text_mode_key_action = text_mode_key_action,
   command_for_window = command_for_window,
+  kitty_unicode_cell_limit = kitty_unicode_cell_limit,
   set_test_window = function(winid)
     state.winid = winid
   end,

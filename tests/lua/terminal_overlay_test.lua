@@ -701,6 +701,67 @@ local custom_serve_command = terminal._test.command_for_window({ "nvbrowser", "s
 assert(command_option(custom_serve_command, "--width") == "450", "serve width should use configured cell width")
 assert(command_option(custom_serve_command, "--height") == "165", "serve height should use configured cell height after footer reservation")
 
+_G.nvim_browser_original_columns_for_oversized = vim.o.columns
+_G.nvim_browser_original_lines_for_oversized = vim.o.lines
+vim.o.columns = 420
+vim.o.lines = 330
+_G.nvim_browser_oversized_win = image_win
+terminal._test.set_test_window(_G.nvim_browser_oversized_win)
+_G.nvim_browser_kitty_unicode_cell_limit = terminal._test.kitty_unicode_cell_limit()
+_G.nvim_browser_oversized_serve_command = terminal._test.command_for_window({ "nvbrowser", "serve", "--output", "kitty-unicode", "--url", "https://example.com" })
+assert(tonumber(command_option(_G.nvim_browser_oversized_serve_command, "--columns")) <= _G.nvim_browser_kitty_unicode_cell_limit, "kitty-unicode serve columns should not exceed addressable placeholder columns")
+assert(tonumber(command_option(_G.nvim_browser_oversized_serve_command, "--rows")) <= _G.nvim_browser_kitty_unicode_cell_limit, "kitty-unicode serve rows should not exceed addressable placeholder rows")
+_G.nvim_browser_explicit_oversized_serve_command = terminal._test.command_for_window({
+  "nvbrowser",
+  "serve",
+  "--output",
+  "kitty-unicode",
+  "--columns",
+  "999",
+  "--rows",
+  "999",
+  "--width",
+  "9990",
+  "--height",
+  "9990",
+  "--url",
+  "https://example.com",
+})
+assert(command_option(_G.nvim_browser_explicit_oversized_serve_command, "--columns") == command_option(_G.nvim_browser_oversized_serve_command, "--columns"), "kitty-unicode serve should replace explicit oversized columns")
+assert(command_option(_G.nvim_browser_explicit_oversized_serve_command, "--rows") == command_option(_G.nvim_browser_oversized_serve_command, "--rows"), "kitty-unicode serve should replace explicit oversized rows")
+assert(command_option(_G.nvim_browser_explicit_oversized_serve_command, "--width") == command_option(_G.nvim_browser_oversized_serve_command, "--width"), "kitty-unicode serve should replace explicit oversized width")
+assert(command_option(_G.nvim_browser_explicit_oversized_serve_command, "--height") == command_option(_G.nvim_browser_oversized_serve_command, "--height"), "kitty-unicode serve should replace explicit oversized height")
+_G.nvim_browser_explicit_oversized_browse_command = terminal._test.command_for_window({
+  "nvbrowser",
+  "browse",
+  "--output",
+  "kitty-unicode",
+  "--columns",
+  "999",
+  "--rows",
+  "999",
+  "--width",
+  "9990",
+  "--height",
+  "9990",
+  "https://example.com",
+})
+assert(tonumber(command_option(_G.nvim_browser_explicit_oversized_browse_command, "--columns")) <= _G.nvim_browser_kitty_unicode_cell_limit, "kitty-unicode browse should replace explicit oversized columns")
+assert(tonumber(command_option(_G.nvim_browser_explicit_oversized_browse_command, "--rows")) <= _G.nvim_browser_kitty_unicode_cell_limit, "kitty-unicode browse should replace explicit oversized rows")
+terminal._test.apply_serve_response({
+  id = 901,
+  status = "ok",
+  runtime = {
+    output = "kitty-unicode",
+  },
+})
+_G.nvim_browser_oversized_geometry = terminal.state().current_preview_geometry
+assert(_G.nvim_browser_oversized_geometry.columns <= _G.nvim_browser_kitty_unicode_cell_limit, "current preview geometry should match capped kitty-unicode placeholder columns")
+assert(_G.nvim_browser_oversized_geometry.rows <= _G.nvim_browser_kitty_unicode_cell_limit, "current preview geometry should match capped kitty-unicode placeholder rows")
+vim.o.columns = _G.nvim_browser_original_columns_for_oversized
+vim.o.lines = _G.nvim_browser_original_lines_for_oversized
+terminal._test.set_test_window(image_win)
+
 terminal._test.apply_serve_response({
   id = 101,
   status = "ok",
