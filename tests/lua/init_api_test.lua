@@ -641,6 +641,7 @@ local function with_action_stubs(fn)
     reader = browser.reader,
     status = browser.status,
     page_metrics = browser.page_metrics,
+    browser_history = browser.browser_history,
     focused_element = browser.focused_element,
     runtime_metadata = browser.runtime_metadata,
     current_url = browser.current_url,
@@ -727,6 +728,9 @@ local function with_action_stubs(fn)
   end
   browser.page_metrics = function()
     return { scroll_y = 50, viewport_height = 100, document_height = 300 }
+  end
+  browser.browser_history = function()
+    return { can_go_back = true, can_go_forward = false }
   end
   browser.zoom_scale = function()
     return 1.25
@@ -1182,6 +1186,7 @@ with_action_stubs(function()
   assert(action_calls[#action_calls] == "status", "Status action should call status")
   assert(status_message:find("Example", 1, true), "Status action should include the title")
   assert(status_message:find("scroll 25%%"), "Status action should include scroll metrics")
+  assert(status_message:find("history=back", 1, true), "Status action should include browser history availability")
   assert(status_message:find("zoom=125%%"), "Status action should include non-default browser zoom")
   assert(status_message:find("focus=input Search box", 1, true), "Status action should include focused element")
   assert(status_message:find("dialog=confirm dismissed: continue?", 1, true), "Status action should include dialog metadata")

@@ -311,7 +311,7 @@ fn doctor_outputs_backend_json_without_launching_chrome() {
     );
     assert_eq!(json["backend"]["user_data_dir"], "/tmp/nvbrowser-profile");
     assert_eq!(
-        json["protocol"]["serve"], 19,
+        json["protocol"]["serve"], 20,
         "doctor JSON should expose the serve protocol version"
     );
 }
@@ -452,6 +452,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
             .is_some_and(|payload| payload.contains("\u{1b}[")),
         "ansi serve output should include terminal escape payload"
     );
+    assert_history_availability(&initial, false, false);
     let hints = initial["hints"]
         .as_array()
         .expect("initial response should include hints");
@@ -696,6 +697,31 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         wheeled_page_text.contains("wheel box scrolled"),
         "wheel_point should scroll the nested element at the target coordinates; page text was {wheeled_page_text:?}"
     );
+
+    let navigated = serve.request(serde_json::json!({
+        "id": 25,
+        "type": "navigate",
+        "url": format!("{fixture_url}#docs")
+    }));
+    assert_eq!(
+        navigated["status"], "ok",
+        "navigate should succeed; response={navigated:?}"
+    );
+    assert_history_availability(&navigated, true, false);
+
+    let backed = serve.request(serde_json::json!({ "id": 26, "type": "back" }));
+    assert_eq!(
+        backed["status"], "ok",
+        "back should succeed; response={backed:?}"
+    );
+    assert_history_availability(&backed, false, true);
+
+    let forwarded = serve.request(serde_json::json!({ "id": 27, "type": "forward" }));
+    assert_eq!(
+        forwarded["status"], "ok",
+        "forward should succeed; response={forwarded:?}"
+    );
+    assert_history_availability(&forwarded, true, false);
 
     let resized = serve.request(serde_json::json!({
         "id": 15,
@@ -3092,6 +3118,17 @@ fn assert_serve_startup_error_jsonl(output: Vec<u8>) {
             .as_str()
             .is_some_and(|error| error.contains("Chrome") || error.contains("CDP")),
         "startup error should mention Chrome/CDP backend; response={json:?}"
+    );
+}
+
+fn assert_history_availability(response: &Value, can_go_back: bool, can_go_forward: bool) {
+    assert_eq!(
+        response["history"]["can_go_back"], can_go_back,
+        "serve response should report browser back availability; response={response:?}"
+    );
+    assert_eq!(
+        response["history"]["can_go_forward"], can_go_forward,
+        "serve response should report browser forward availability; response={response:?}"
     );
 }
 

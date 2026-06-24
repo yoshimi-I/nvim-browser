@@ -1125,6 +1125,77 @@ vim.fn.chansend = function(job_id, payload)
   return 1
 end
 
+terminal._test.apply_serve_response({
+  id = 207,
+  status = "ok",
+  history = {
+    can_go_back = false,
+    can_go_forward = true,
+  },
+})
+assert(terminal.state().browser_history.can_go_back == false, "serve history metadata should store back availability")
+assert(terminal.state().browser_history.can_go_forward == true, "serve history metadata should store forward availability")
+footer_click_requests = {}
+assert(terminal.back() == false, "unavailable browser back should not send a request")
+assert(#footer_click_requests == 0, "unavailable browser back should not reach the serve backend")
+assert(terminal.forward() == true, "available browser forward should send a request")
+_G.nvim_browser_forward_request_seen = false
+_G.nvim_browser_forward_request_id = nil
+for _, request in ipairs(footer_click_requests) do
+  _G.nvim_browser_forward_decode_ok, _G.nvim_browser_forward_decoded = pcall(vim.json.decode, request.payload)
+  if _G.nvim_browser_forward_decode_ok and _G.nvim_browser_forward_decoded.type == "forward" then
+    _G.nvim_browser_forward_request_seen = true
+    _G.nvim_browser_forward_request_id = _G.nvim_browser_forward_decoded.id
+  end
+end
+assert(_G.nvim_browser_forward_request_seen, "available browser forward should reach the serve backend")
+terminal._test.apply_serve_response({
+  id = _G.nvim_browser_forward_request_id,
+  status = "ok",
+  payload = "forward frame",
+  url = "https://example.com/forward",
+  title = "Forward",
+  runtime = {
+    protocol_version = 9,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "kitty-unicode",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 450, height = 165, device_scale_factor = 1 },
+  },
+  history = {
+    can_go_back = true,
+    can_go_forward = false,
+  },
+})
+terminal._test.dispatch_serve_response_handler({
+  id = _G.nvim_browser_forward_request_id,
+  status = "ok",
+})
+terminal._test.apply_serve_response({
+  id = 208,
+  status = "ok",
+})
+assert(terminal.state().browser_history == nil, "missing serve history metadata should restore legacy navigation behavior")
+footer_click_requests = {}
+assert(terminal.back() == true, "browser back should remain available when history metadata is absent")
+_G.nvim_browser_legacy_back_seen = false
+_G.nvim_browser_legacy_back_request_id = nil
+for _, request in ipairs(footer_click_requests) do
+  _G.nvim_browser_legacy_back_decode_ok, _G.nvim_browser_legacy_back_decoded = pcall(vim.json.decode, request.payload)
+  if _G.nvim_browser_legacy_back_decode_ok and _G.nvim_browser_legacy_back_decoded.type == "back" then
+    _G.nvim_browser_legacy_back_seen = true
+    _G.nvim_browser_legacy_back_request_id = _G.nvim_browser_legacy_back_decoded.id
+  end
+end
+assert(_G.nvim_browser_legacy_back_seen, "legacy browser back should reach the serve backend")
+_G.nvim_browser_legacy_back_response = {
+  id = _G.nvim_browser_legacy_back_request_id,
+  status = "ok",
+}
+terminal._test.apply_serve_response(_G.nvim_browser_legacy_back_response)
+terminal._test.dispatch_serve_response_handler(_G.nvim_browser_legacy_back_response)
+
 local function interactive_runtime(width, height)
   return {
     protocol_version = 9,

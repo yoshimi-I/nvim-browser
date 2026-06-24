@@ -66,14 +66,16 @@ browser frames into stable row-major image tiles. Tile payloads clear the full
 stable tile ID range before reusing IDs so frame replacement is deterministic
 when a large capture is followed by a smaller one.
 
-The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 19
+The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 20
 includes lightweight `page_state` requests for idle metadata refresh,
 multi-download reporting through a `downloads` array while preserving the
 single `download` compatibility field, and auto-handled JavaScript dialog
-reporting through `dialog`/`dialogs`. Lightweight and captured responses can
-include `dom_epoch`, a Chromium-backed mutation freshness signal used by
-Neovim to schedule an adaptive full-frame capture when page content changes
-without URL/title/scroll/focus changes. The same protocol also covers
+reporting through `dialog`/`dialogs`. Responses can include `history`
+availability from Chromium navigation history so Neovim can avoid sending dead
+Back/Forward requests. Lightweight and captured responses can include
+`dom_epoch`, a Chromium-backed mutation freshness signal used by Neovim to
+schedule an adaptive full-frame capture when page content changes without
+URL/title/scroll/focus changes. The same protocol also covers
 screenshot, click, right-click, hover, wheel, focus, form, text, key, reader,
 selection, find, and hint actions. Most browser actions default to returning a
 fresh frame payload after applying the action. Text input and key press requests

@@ -12,6 +12,7 @@ use nvbrowser_core::{
     inspect_target, kitty_image_escape, kitty_tiled_image_delete_escape,
     render_markdown_document_with_base_url,
     renderer::chromium::{render_url_png, ChromiumOptions},
+    renderer::{BrowserHistoryAvailability, BrowserHistoryRequest},
     tmux_passthrough_escape, BrowserSession, ChromiumRenderer, ClickHintRequest, ClickPointRequest,
     DialogAction, DialogEvent, DialogKind, DomEpochRequest, DownloadInfo, DownloadStatus,
     DragPointRequest, ElementHint, ElementHintsRequest, FindTextRequest, FocusHintRequest,
@@ -26,7 +27,7 @@ use nvbrowser_core::{
 };
 use serde::{Deserialize, Serialize};
 
-const SERVE_PROTOCOL_VERSION: u32 = 19;
+const SERVE_PROTOCOL_VERSION: u32 = 20;
 
 #[derive(Debug, Parser)]
 #[command(name = "nvbrowser")]
@@ -509,6 +510,8 @@ struct ServeResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     page: Option<PageMetrics>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    history: Option<BrowserHistoryAvailability>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     focused: Option<Option<FocusedElement>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     text: Option<PageTextSnapshot>,
@@ -912,6 +915,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     ));
                 let download = download.or_else(|| downloads.last().cloned());
                 let dialog = dialog.or_else(|| dialogs.last().cloned());
+                let history = self.browser_history();
                 ServeResponse {
                     id,
                     status: ServeStatus::Ok,
@@ -921,6 +925,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     url: self.session.active_page().url().map(str::to_string),
                     title: self.session.active_page().title().map(str::to_string),
                     page,
+                    history,
                     focused,
                     text,
                     selection,
@@ -944,6 +949,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 title: self.session.active_page().title().map(str::to_string),
                 dom_epoch: None,
                 page: None,
+                history: self.browser_history(),
                 focused: None,
                 text: None,
                 selection: None,
@@ -977,6 +983,16 @@ impl<R: Renderer> ServeRuntime<R> {
                 device_scale_factor: viewport.device_scale_factor,
             },
         }
+    }
+
+    fn browser_history(&mut self) -> Option<BrowserHistoryAvailability> {
+        self.renderer
+            .browser_history(BrowserHistoryRequest::new(
+                self.session.id(),
+                self.session.active_page_id(),
+            ))
+            .ok()
+            .flatten()
     }
 
     fn try_handle(
@@ -1682,6 +1698,8 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         url: None,
                         title: None,
                         page: None,
+                        history: None,
+
                         focused: None,
                         text: None,
                         selection: None,
@@ -2369,6 +2387,16 @@ mod tests {
                 title: Some(url.clone()),
                 url,
             })
+        }
+
+        fn browser_history(
+            &mut self,
+            _request: BrowserHistoryRequest,
+        ) -> Result<Option<BrowserHistoryAvailability>, RendererError> {
+            Ok(self.history_index.map(|index| BrowserHistoryAvailability {
+                can_go_back: index > 0,
+                can_go_forward: index + 1 < self.history.len(),
+            }))
         }
 
         fn input_text(&mut self, request: TextInputRequest) -> Result<InputResult, RendererError> {
@@ -3178,6 +3206,8 @@ mod tests {
             url: None,
             title: None,
             page: None,
+            history: None,
+
             focused: None,
             text: None,
             selection: None,
@@ -3209,6 +3239,8 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example Domain".to_string()),
             page: None,
+            history: None,
+
             focused: None,
             text: None,
             selection: None,
@@ -3254,6 +3286,8 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
+            history: None,
+
             focused: None,
             text: None,
             selection: None,
@@ -3285,6 +3319,8 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
+            history: None,
+
             focused: None,
             text: None,
             selection: None,
@@ -3316,6 +3352,8 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
+            history: None,
+
             focused: None,
             text: None,
             selection: None,
@@ -3353,6 +3391,8 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
+            history: None,
+
             focused: None,
             text: None,
             selection: None,
@@ -3399,6 +3439,7 @@ mod tests {
                 document_width: 800.0,
                 document_height: 1600.0,
             }),
+            history: None,
             focused: None,
             text: None,
             selection: None,
@@ -3420,6 +3461,41 @@ mod tests {
     }
 
     #[test]
+    fn serve_response_encodes_history_availability_when_present() {
+        let response = ServeResponse {
+            id: 24,
+            status: ServeStatus::Ok,
+            runtime: None,
+            payload: None,
+            dom_epoch: None,
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            page: None,
+            history: Some(BrowserHistoryAvailability {
+                can_go_back: true,
+                can_go_forward: false,
+            }),
+            focused: None,
+            text: None,
+            selection: None,
+            hints: Vec::new(),
+            hint_error: None,
+            found: None,
+            match_count: None,
+            download: None,
+            downloads: Vec::new(),
+            dialog: None,
+            dialogs: Vec::new(),
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r#"{"id":24,"status":"ok","url":"https://example.com","title":"Example","history":{"can_go_back":true,"can_go_forward":false}}"#
+        );
+    }
+
+    #[test]
     fn serve_response_encodes_focused_element_when_present() {
         let response = ServeResponse {
             id: 17,
@@ -3430,6 +3506,8 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
+            history: None,
+
             focused: Some(Some(FocusedElement {
                 kind: ElementHintKind::Input,
                 label: Some("Search".to_string()),
@@ -3468,6 +3546,8 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
+            history: None,
+
             focused: Some(None),
             text: None,
             selection: None,
@@ -3499,6 +3579,8 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
+            history: None,
+
             focused: None,
             text: Some(PageTextSnapshot {
                 session_id: SessionId::new(1),
@@ -3537,6 +3619,8 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
+            history: None,
+
             focused: None,
             text: None,
             selection: Some("selected text".to_string()),
@@ -3582,6 +3666,8 @@ mod tests {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             page: None,
+            history: None,
+
             focused: None,
             text: None,
             selection: None,
@@ -3598,7 +3684,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":19,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":20,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -3627,7 +3713,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 19);
+        assert_eq!(runtime_info.protocol_version, SERVE_PROTOCOL_VERSION);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -4418,15 +4504,41 @@ mod tests {
             id: 1,
             url: "https://example.com/one".to_string(),
         });
+        let first = runtime.handle(ServeRequest::PageState { id: 10 });
+        assert_eq!(
+            first.history,
+            Some(BrowserHistoryAvailability {
+                can_go_back: false,
+                can_go_forward: false,
+            }),
+            "single-entry browser history should expose no back/forward availability"
+        );
         runtime.handle(ServeRequest::Navigate {
             id: 2,
             url: "https://example.com/two".to_string(),
         });
+        let second = runtime.handle(ServeRequest::PageState { id: 11 });
+        assert_eq!(
+            second.history,
+            Some(BrowserHistoryAvailability {
+                can_go_back: true,
+                can_go_forward: false,
+            }),
+            "second history entry should expose back availability"
+        );
 
         let back = runtime.handle(ServeRequest::Back { id: 3 });
 
         assert_eq!(back.status, ServeStatus::Ok);
         assert_eq!(back.url, Some("https://example.com/one".to_string()));
+        assert_eq!(
+            back.history,
+            Some(BrowserHistoryAvailability {
+                can_go_back: false,
+                can_go_forward: true,
+            }),
+            "after going back, browser history should expose forward availability"
+        );
         assert_eq!(
             runtime.session.active_page().url(),
             Some("https://example.com/one")
@@ -4436,6 +4548,14 @@ mod tests {
 
         assert_eq!(forward.status, ServeStatus::Ok);
         assert_eq!(forward.url, Some("https://example.com/two".to_string()));
+        assert_eq!(
+            forward.history,
+            Some(BrowserHistoryAvailability {
+                can_go_back: true,
+                can_go_forward: false,
+            }),
+            "after going forward, browser history should expose back availability"
+        );
         assert_eq!(forward.focused, Some(None));
         assert_eq!(
             runtime.session.active_page().url(),
@@ -4444,8 +4564,18 @@ mod tests {
         assert_eq!(
             runtime.renderer.operations,
             vec![
-                "capture", "hints", "capture", "hints", "back", "capture", "hints", "forward",
-                "capture", "hints"
+                "capture",
+                "hints",
+                "page_metadata",
+                "capture",
+                "hints",
+                "page_metadata",
+                "back",
+                "capture",
+                "hints",
+                "forward",
+                "capture",
+                "hints",
             ]
         );
     }

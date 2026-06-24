@@ -123,6 +123,13 @@ pub trait Renderer {
         Ok(None)
     }
 
+    fn browser_history(
+        &mut self,
+        _request: BrowserHistoryRequest,
+    ) -> Result<Option<BrowserHistoryAvailability>, RendererError> {
+        Ok(None)
+    }
+
     fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError>;
 
     fn shutdown(&mut self) -> Result<ShutdownResult, RendererError>;
@@ -366,6 +373,27 @@ pub struct HistoryNavigationResult {
     pub page_id: PageId,
     pub url: String,
     pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct BrowserHistoryRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+}
+
+impl BrowserHistoryRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId) -> Self {
+        Self {
+            session_id,
+            page_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BrowserHistoryAvailability {
+    pub can_go_back: bool,
+    pub can_go_forward: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

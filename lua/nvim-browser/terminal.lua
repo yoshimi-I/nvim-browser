@@ -23,6 +23,7 @@ local state = {
   current_title = nil,
   dom_epoch = nil,
   page_metrics = nil,
+  browser_history = nil,
   focused_element = nil,
   latest_download = nil,
   download_history = {},
@@ -1116,6 +1117,14 @@ local function apply_serve_response_metadata(response)
     state.page_metrics = response.page
   else
     state.page_metrics = nil
+  end
+  if type(response.history) == "table" then
+    state.browser_history = {
+      can_go_back = response.history.can_go_back == true,
+      can_go_forward = response.history.can_go_forward == true,
+    }
+  else
+    state.browser_history = nil
   end
   if response.focused ~= nil and response.focused ~= vim.NIL then
     state.focused_element = response.focused
@@ -2278,6 +2287,7 @@ function M.open(command)
   state.current_title = nil
   state.dom_epoch = nil
   state.page_metrics = nil
+  state.browser_history = nil
   state.focused_element = nil
   state.latest_download = nil
   state.download_history = {}
@@ -2334,6 +2344,7 @@ function M.open(command)
   if command_uses_serve(command) then
     state.mode = "serve"
     state.serve_output = command_output(command)
+    state.browser_history = nil
     ensure_resize_autocmd()
     local bufnr = state.bufnr
     local generation = state.generation
@@ -2662,6 +2673,7 @@ function M.close()
   state.current_title = nil
   state.dom_epoch = nil
   state.page_metrics = nil
+  state.browser_history = nil
   state.focused_element = nil
   state.latest_download = nil
   state.download_history = {}
@@ -2762,11 +2774,17 @@ function M.navigate(url)
 end
 
 function M.back()
+  if type(state.browser_history) == "table" and state.browser_history.can_go_back == false then
+    return false
+  end
   request_resize()
   return send_pending_request({ type = "back" }, state.current_url or state.last_target or "back")
 end
 
 function M.forward()
+  if type(state.browser_history) == "table" and state.browser_history.can_go_forward == false then
+    return false
+  end
   request_resize()
   return send_pending_request({ type = "forward" }, state.current_url or state.last_target or "forward")
 end
@@ -2821,6 +2839,7 @@ hard_stop_pending_operation = function(reason)
   state.mode = nil
   state.serve_output = nil
   state.runtime_metadata = nil
+  state.browser_history = nil
   state.rendered_frame_url = nil
   state.rendered_frame_dom_epoch = nil
   state.latest_download = nil
@@ -2868,6 +2887,7 @@ hard_stop_capture_operation = function(reason)
   state.mode = nil
   state.serve_output = nil
   state.runtime_metadata = nil
+  state.browser_history = nil
   state.latest_download = nil
   state.download_history = {}
   state.download_recorded_response_ids = {}
@@ -4161,6 +4181,7 @@ function M.state()
     current_title = state.current_title,
     dom_epoch = state.dom_epoch,
     page_metrics = state.page_metrics,
+    browser_history = vim.deepcopy(state.browser_history),
     focused_element = state.focused_element,
     latest_download = state.latest_download,
     download_history = copy_download_history(),

@@ -25,18 +25,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     renderer::{
-        ClickHintRequest, ClickPointRequest, DialogAction, DialogEvent, DialogKind,
-        DomEpochRequest, DownloadInfo, DragPointRequest, ElementHint, ElementHintsRequest,
-        FindTextRequest, FindTextResult, FocusHintRequest, FocusSelectorRequest, FocusedElement,
-        FocusedElementRequest, FrameArtifact, HistoryNavigationRequest, HistoryNavigationResult,
-        HoverHintRequest, HoverPointRequest, InputResult, InteractionSettleResult, KeyPressRequest,
-        NavigateRequest, NavigationResult, PageMetadata, PageMetadataRequest, PageMetrics,
-        PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest, ReloadResult,
-        RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
-        RightClickHintRequest, RightClickPointRequest, ScrollRequest, ScrollResult,
-        SelectHintRequest, SelectionTextRequest, SelectionTextResult, ShutdownResult,
-        TextInputRequest, ToggleHintRequest, UploadHintRequest, WheelPointRequest, ZoomRequest,
-        ZoomResult,
+        BrowserHistoryAvailability, BrowserHistoryRequest, ClickHintRequest, ClickPointRequest,
+        DialogAction, DialogEvent, DialogKind, DomEpochRequest, DownloadInfo, DragPointRequest,
+        ElementHint, ElementHintsRequest, FindTextRequest, FindTextResult, FocusHintRequest,
+        FocusSelectorRequest, FocusedElement, FocusedElementRequest, FrameArtifact,
+        HistoryNavigationRequest, HistoryNavigationResult, HoverHintRequest, HoverPointRequest,
+        InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
+        PageMetadata, PageMetadataRequest, PageMetrics, PageMetricsRequest, PageTextRequest,
+        PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer,
+        RendererError, RendererErrorKind, RightClickHintRequest, RightClickPointRequest,
+        ScrollRequest, ScrollResult, SelectHintRequest, SelectionTextRequest, SelectionTextResult,
+        ShutdownResult, TextInputRequest, ToggleHintRequest, UploadHintRequest, WheelPointRequest,
+        ZoomRequest, ZoomResult,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -459,6 +459,20 @@ impl Renderer for ChromiumRenderer {
         request: HistoryNavigationRequest,
     ) -> Result<HistoryNavigationResult, RendererError> {
         self.navigate_history(request, HistoryDirection::Forward)
+    }
+
+    fn browser_history(
+        &mut self,
+        _request: BrowserHistoryRequest,
+    ) -> Result<Option<BrowserHistoryAvailability>, RendererError> {
+        let history = self
+            .tab
+            .call_method(GetNavigationHistory {})
+            .map_err(render_error)?;
+        Ok(Some(BrowserHistoryAvailability {
+            can_go_back: history.current_index > 0,
+            can_go_forward: history.current_index + 1 < history.entries.len(),
+        }))
     }
 
     fn input_text(&mut self, request: TextInputRequest) -> Result<InputResult, RendererError> {

@@ -948,6 +948,23 @@ local function dialog_status_label(dialog)
   return label
 end
 
+local function browser_history_status_label(history)
+  if type(history) ~= "table" then
+    return nil
+  end
+  local available = {}
+  if history.can_go_back == true then
+    table.insert(available, "back")
+  end
+  if history.can_go_forward == true then
+    table.insert(available, "forward")
+  end
+  if #available == 0 then
+    return "history=none"
+  end
+  return "history=" .. table.concat(available, ",")
+end
+
 local function action_status_message()
   local parts = { M.status() or "unknown" }
   local title = M.current_title()
@@ -957,6 +974,10 @@ local function action_status_message()
   local scroll = M.page_metrics and page_scroll_label(M.page_metrics()) or nil
   if scroll ~= nil then
     table.insert(parts, scroll)
+  end
+  local history = M.browser_history and browser_history_status_label(M.browser_history()) or nil
+  if history ~= nil then
+    table.insert(parts, history)
   end
   local zoom = M.zoom_scale and status_labels.zoom_label(M.zoom_scale()) or nil
   if zoom ~= nil then
@@ -2127,6 +2148,10 @@ end
 
 function M.page_metrics()
   return terminal.state().page_metrics
+end
+
+function M.browser_history()
+  return terminal.state().browser_history
 end
 
 function M.runtime_metadata()
