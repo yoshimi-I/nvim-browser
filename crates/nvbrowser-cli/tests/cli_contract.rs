@@ -1690,6 +1690,160 @@ fn opt_in_e2e_serve_loop_uploads_file_input_hints() {
 }
 
 #[test]
+fn opt_in_e2e_serve_loop_hints_open_shadow_dom_and_same_origin_iframes() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let fixture_path = directory.path().join("nested-hints.html");
+    std::fs::write(
+        &fixture_path,
+        r##"<!doctype html>
+<html>
+  <head>
+    <title>Nested Hint Fixture</title>
+    <style>
+      body { margin: 0; font-family: sans-serif; }
+      #shadow-host { display: block; margin: 20px; }
+      #same-frame { display: block; margin: 20px; width: 300px; height: 120px; border: 8px solid #333; }
+    </style>
+  </head>
+  <body>
+    <div id="shadow-host"></div>
+    <iframe
+      id="same-frame"
+      srcdoc="<button onclick=&quot;parent.document.getElementById('out').textContent='iframe clicked'&quot;>Frame Go</button><a href=&quot;#frame-docs&quot;>Frame Docs</a><section id=&quot;frame-docs&quot;>Frame docs section</section>">
+    </iframe>
+    <p id="out">nested empty</p>
+    <script>
+      const root = document.getElementById('shadow-host').attachShadow({ mode: 'open' });
+      root.innerHTML = `
+        <style>a, button { margin-right: 12px; }</style>
+        <a href="#shadow-docs">Shadow Docs</a>
+        <button onclick="document.getElementById('out').textContent='shadow clicked'">Shadow Go</button>
+        <span id="shadow-upload-label">Shadow Upload</span>
+        <input type="file" aria-labelledby="shadow-upload-label">
+        <section id="shadow-docs">Shadow docs section</section>
+      `;
+    </script>
+  </body>
+</html>"##,
+    )
+    .expect("nested hint fixture should be written");
+    let fixture_url = format!("file://{}", fixture_path.display());
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--url",
+            &fixture_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok", "initial navigation should succeed");
+    let hints = initial["hints"]
+        .as_array()
+        .expect("initial response should include hints");
+    assert!(
+        hints.iter().any(|hint| {
+            hint["kind"] == "link"
+                && hint["label"] == "Shadow Docs"
+                && hint["href"]
+                    .as_str()
+                    .is_some_and(|href| href.ends_with("#shadow-docs"))
+        }),
+        "open shadow root links should be hinted with hrefs; hints={hints:?}"
+    );
+    let shadow_button_id = hints
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Shadow Go")
+        .and_then(|hint| hint["id"].as_u64())
+        .expect("open shadow root button should be hinted");
+    assert!(
+        !hints
+            .iter()
+            .any(|hint| hint["kind"] == "file" && hint["label"] == "Shadow Upload"),
+        "nested file inputs should not be hinted until upload can target nested DOMs; hints={hints:?}"
+    );
+    assert!(
+        hints.iter().any(|hint| {
+            hint["kind"] == "link"
+                && hint["label"] == "Frame Docs"
+                && hint["href"]
+                    .as_str()
+                    .is_some_and(|href| href.ends_with("#frame-docs"))
+        }),
+        "same-origin iframe links should be hinted with hrefs; hints={hints:?}"
+    );
+    let frame_button_id = hints
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Frame Go")
+        .and_then(|hint| hint["id"].as_u64())
+        .expect("same-origin iframe button should be hinted");
+
+    let shadow_clicked = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "click_hint",
+        "hint_id": shadow_button_id
+    }));
+    assert_eq!(
+        shadow_clicked["status"], "ok",
+        "shadow button click_hint should succeed; response={shadow_clicked:?}"
+    );
+    let shadow_text = serve.request(serde_json::json!({ "id": 2, "type": "page_text" }));
+    assert!(
+        shadow_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("shadow clicked")),
+        "page_text should observe shadow button click; response={shadow_text:?}"
+    );
+
+    let frame_clicked = serve.request(serde_json::json!({
+        "id": 3,
+        "type": "click_hint",
+        "hint_id": frame_button_id
+    }));
+    assert_eq!(
+        frame_clicked["status"], "ok",
+        "iframe button click_hint should succeed; response={frame_clicked:?}"
+    );
+    let frame_text = serve.request(serde_json::json!({ "id": 4, "type": "page_text" }));
+    assert!(
+        frame_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("iframe clicked")),
+        "page_text should observe iframe button click; response={frame_text:?}"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 5, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+
+    serve.wait_success();
+}
+
+#[test]
 fn opt_in_e2e_serve_loop_adopts_delayed_about_blank_window_open() {
     if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
         return;

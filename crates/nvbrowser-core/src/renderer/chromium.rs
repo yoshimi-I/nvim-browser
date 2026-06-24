@@ -1394,12 +1394,18 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
   ].join(',');
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
   const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const MAX_FRAME_DEPTH = 3;
   const normalizeText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
   const labelledByText = (element) => {
     const raw = normalizeText(element.getAttribute('aria-labelledby'));
     if (raw.length === 0) return null;
+    const ownerDocument = element.ownerDocument || document;
+    const rootNode = typeof element.getRootNode === 'function' ? element.getRootNode() : null;
+    const labelScope = rootNode && typeof rootNode.getElementById === 'function'
+      ? rootNode
+      : ownerDocument;
     const text = raw.split(' ').map((id) => {
-      const label = document.getElementById(id);
+      const label = labelScope.getElementById(id);
       return label ? normalizeText(label.textContent) : '';
     }).filter(Boolean).join(' ');
     return text.length > 0 ? text : null;
@@ -1461,7 +1467,8 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
     const raw = element.getAttribute('href');
     if (typeof raw !== 'string' || raw.trim().length === 0) return null;
     try {
-      return new URL(raw, document.baseURI).href;
+      const ownerDocument = element.ownerDocument || document;
+      return new URL(raw, ownerDocument.baseURI).href;
     } catch (_) {
       return raw.trim();
     }
@@ -1482,37 +1489,101 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
     if (kindFor(element) !== 'select') return [];
     return Array.from(element.options || []).map((option) => ({
       value: typeof option.value === 'string' ? option.value : '',
-      label: normalize(option.textContent || option.label || option.value || ''),
+      label: normalizeText(option.textContent || option.label || option.value || ''),
       disabled: option.disabled === true,
       selected: option.selected === true
     }));
   };
   const isVisible = (element) => {
-    const style = window.getComputedStyle(element);
+    const ownerWindow = (element.ownerDocument && element.ownerDocument.defaultView) || window;
+    const style = ownerWindow.getComputedStyle(element);
     return style.display !== 'none'
       && style.visibility !== 'hidden'
       && style.visibility !== 'collapse'
       && Number(style.opacity || '1') > 0.05
       && style.pointerEvents !== 'none';
   };
-  const isTopmostAt = (element, x, y) => {
-    const top = document.elementFromPoint(x, y);
-    return top === element || (top !== null && element.contains(top));
+  const translateRectToViewport = (rect, frameElements) => {
+    let left = rect.left;
+    let top = rect.top;
+    let right = rect.right;
+    let bottom = rect.bottom;
+    for (let index = frameElements.length - 1; index >= 0; index -= 1) {
+      const frameRect = frameElements[index].getBoundingClientRect();
+      const frameLeft = frameRect.left + (frameElements[index].clientLeft || 0);
+      const frameTop = frameRect.top + (frameElements[index].clientTop || 0);
+      left += frameLeft;
+      right += frameLeft;
+      top += frameTop;
+      bottom += frameTop;
+    }
+    return { left, top, right, bottom, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
   };
-  const candidates = Array.from(document.querySelectorAll(selectors))
-    .filter((element) => !isDisabled(element))
-    .filter(isVisible)
-    .map((element) => ({ element, rect: element.getBoundingClientRect() }))
-    .filter(({ rect }) => rect.width > 0 && rect.height > 0)
-    .filter(({ rect }) => rect.right >= 0 && rect.bottom >= 0 && rect.left <= viewportWidth && rect.top <= viewportHeight)
-    .map(({ element, rect }) => {
-      const left = Math.max(0, rect.left);
-      const top = Math.max(0, rect.top);
-      const right = Math.min(viewportWidth, rect.right);
-      const bottom = Math.min(viewportHeight, rect.bottom);
-      return { element, rect, left, top, right, bottom, x: (left + right) / 2, y: (top + bottom) / 2 };
-    })
-    .filter(({ element, x, y }) => isTopmostAt(element, x, y))
+  const isTopmostAt = (element, x, y, root, frameElements) => {
+    const rootTop = typeof root.elementFromPoint === 'function' ? root.elementFromPoint(x, y) : null;
+    if (rootTop !== element && !(rootTop !== null && element.contains(rootTop))) return false;
+    if (frameElements.length === 0) return true;
+    const translated = translateRectToViewport({ left: x, top: y, right: x, bottom: y }, frameElements);
+    const topElement = document.elementFromPoint(translated.left, translated.top);
+    const outerFrame = frameElements[0];
+    return topElement === outerFrame || (topElement !== null && outerFrame.contains(topElement));
+  };
+  const rootViewport = (root) => {
+    const rootDocument = root.ownerDocument || root;
+    const rootWindow = rootDocument.defaultView || window;
+    const rootElement = rootDocument.documentElement || document.documentElement;
+    return {
+      width: rootWindow.innerWidth || rootElement.clientWidth || 0,
+      height: rootWindow.innerHeight || rootElement.clientHeight || 0
+    };
+  };
+  const collectCandidates = (root, frameElements, depth) => {
+    if (!root || typeof root.querySelectorAll !== 'function') return [];
+    const viewport = rootViewport(root);
+    const localCandidates = Array.from(root.querySelectorAll(selectors))
+      .filter((element) => !isDisabled(element))
+      .filter(isVisible)
+      .map((element) => ({ element, root, frameElements, rect: element.getBoundingClientRect() }))
+      .filter(({ element, root, frameElements }) => kindFor(element) !== 'file' || (root === document && frameElements.length === 0))
+      .filter(({ rect }) => rect.width > 0 && rect.height > 0)
+      .filter(({ rect }) => rect.right >= 0 && rect.bottom >= 0 && rect.left <= viewport.width && rect.top <= viewport.height)
+      .map(({ element, root, frameElements, rect }) => {
+        const localLeft = Math.max(0, rect.left);
+        const localTop = Math.max(0, rect.top);
+        const localRight = Math.min(viewport.width, rect.right);
+        const localBottom = Math.min(viewport.height, rect.bottom);
+        const localX = (localLeft + localRight) / 2;
+        const localY = (localTop + localBottom) / 2;
+        const translated = translateRectToViewport({ left: localLeft, top: localTop, right: localRight, bottom: localBottom }, frameElements);
+        const left = Math.max(0, translated.left);
+        const top = Math.max(0, translated.top);
+        const right = Math.min(viewportWidth, translated.right);
+        const bottom = Math.min(viewportHeight, translated.bottom);
+        return { element, root, frameElements, rect, localX, localY, left, top, right, bottom, x: (left + right) / 2, y: (top + bottom) / 2 };
+      })
+      .filter(({ left, top, right, bottom }) => right > left && bottom > top)
+      .filter(({ element, localX, localY, root, frameElements }) => isTopmostAt(element, localX, localY, root, frameElements));
+
+    const nested = [];
+    for (const element of Array.from(root.querySelectorAll('*'))) {
+      if (element.shadowRoot) {
+        nested.push(...collectCandidates(element.shadowRoot, frameElements, depth));
+      }
+      const tag = element.tagName ? element.tagName.toLowerCase() : '';
+      if ((tag === 'iframe' || tag === 'frame') && depth < MAX_FRAME_DEPTH) {
+        try {
+          const frameDocument = element.contentDocument;
+          if (frameDocument) {
+            nested.push(...collectCandidates(frameDocument, frameElements.concat(element), depth + 1));
+          }
+        } catch (_) {
+          // Cross-origin frames are intentionally skipped.
+        }
+      }
+    }
+    return localCandidates.concat(nested);
+  };
+  const candidates = collectCandidates(document, [], 0)
     .sort((a, b) => (a.rect.top - b.rect.top) || (a.rect.left - b.rect.left))
     .slice(0, 80);
   const registry = (() => {
@@ -1525,20 +1596,22 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
     return created;
   })();
   for (const [id, element] of registry.elements) {
-    if (!element || !element.isConnected) {
+    const stored = element && (element.element || element);
+    if (!stored || !stored.isConnected) {
       registry.elements.delete(id);
     }
   }
-  const idFor = (element) => {
+  const idFor = (element, frameElements) => {
     for (const [id, existing] of registry.elements) {
-      if (existing === element) return id;
+      const stored = existing && (existing.element || existing);
+      if (stored === element) return id;
     }
     const id = registry.nextId++;
-    registry.elements.set(id, element);
+    registry.elements.set(id, { element, frameElements });
     return id;
   };
-  const hints = candidates.map(({ element, left, top, right, bottom, x, y }) => {
-      const id = idFor(element);
+  const hints = candidates.map(({ element, frameElements, left, top, right, bottom, x, y }) => {
+      const id = idFor(element, frameElements);
       return {
         id,
         kind: kindFor(element),
@@ -1562,7 +1635,8 @@ const FOCUS_HINT_SCRIPT: &str = r#"
 (() => {
   const hintId = __HINT_ID__;
   const registry = window.__nvbrowserHintRegistry;
-  const element = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  const entry = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  const element = entry && (entry.element || entry);
   if (!element || !element.isConnected) return false;
   if (element.disabled || element.getAttribute('aria-disabled') === 'true') return false;
   const tag = element.tagName.toLowerCase();
@@ -1588,7 +1662,8 @@ const FOCUS_HINT_SCRIPT: &str = r#"
   if (typeof element.focus === 'function') {
     element.focus({ preventScroll: true });
   }
-  return document.activeElement === element || element.contains(document.activeElement);
+  const ownerDocument = element.ownerDocument || document;
+  return ownerDocument.activeElement === element || element.contains(ownerDocument.activeElement);
 })()
 "#;
 
@@ -1700,16 +1775,30 @@ const CLICK_HINT_POINT_SCRIPT: &str = r#"
 (() => {
   const hintId = __HINT_ID__;
   const registry = window.__nvbrowserHintRegistry;
-  const element = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  const entry = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  const element = entry && (entry.element || entry);
+  const frameElements = entry && (entry.frameElements || []);
   if (!element || !element.isConnected) return null;
+  for (const frame of frameElements) {
+    if (frame && typeof frame.scrollIntoView === 'function') {
+      frame.scrollIntoView({ block: 'center', inline: 'center' });
+    }
+  }
   if (typeof element.scrollIntoView === 'function') {
     element.scrollIntoView({ block: 'center', inline: 'center' });
   }
   const rect = element.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return null;
+  let x = rect.left + rect.width / 2;
+  let y = rect.top + rect.height / 2;
+  for (let index = frameElements.length - 1; index >= 0; index -= 1) {
+    const frameRect = frameElements[index].getBoundingClientRect();
+    x += frameRect.left + (frameElements[index].clientLeft || 0);
+    y += frameRect.top + (frameElements[index].clientTop || 0);
+  }
   return JSON.stringify({
-    x: Math.max(0, Math.min(window.innerWidth || rect.right, rect.left + rect.width / 2)),
-    y: Math.max(0, Math.min(window.innerHeight || rect.bottom, rect.top + rect.height / 2))
+    x: Math.max(0, Math.min(window.innerWidth || x, x)),
+    y: Math.max(0, Math.min(window.innerHeight || y, y))
   });
 })()
 "#;
@@ -1718,16 +1807,30 @@ const CLICK_HINT_ACTION_SCRIPT: &str = r#"
 (() => {
   const hintId = __HINT_ID__;
   const registry = window.__nvbrowserHintRegistry;
-  const element = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  const entry = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  const element = entry && (entry.element || entry);
+  const frameElements = entry && (entry.frameElements || []);
   if (!element || !element.isConnected) return null;
+  for (const frame of frameElements) {
+    if (frame && typeof frame.scrollIntoView === 'function') {
+      frame.scrollIntoView({ block: 'center', inline: 'center' });
+    }
+  }
   if (typeof element.scrollIntoView === 'function') {
     element.scrollIntoView({ block: 'center', inline: 'center' });
   }
   const rect = element.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return null;
+  let x = rect.left + rect.width / 2;
+  let y = rect.top + rect.height / 2;
+  for (let index = frameElements.length - 1; index >= 0; index -= 1) {
+    const frameRect = frameElements[index].getBoundingClientRect();
+    x += frameRect.left + (frameElements[index].clientLeft || 0);
+    y += frameRect.top + (frameElements[index].clientTop || 0);
+  }
   return JSON.stringify({
-    x: Math.max(0, Math.min(window.innerWidth || rect.right, rect.left + rect.width / 2)),
-    y: Math.max(0, Math.min(window.innerHeight || rect.bottom, rect.top + rect.height / 2))
+    x: Math.max(0, Math.min(window.innerWidth || x, x)),
+    y: Math.max(0, Math.min(window.innerHeight || y, y))
   });
 })()
 "#;
@@ -1745,7 +1848,8 @@ const SELECT_HINT_SCRIPT: &str = r#"
   const hintId = __HINT_ID__;
   const choice = __CHOICE__;
   const registry = window.__nvbrowserHintRegistry;
-  const element = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  const entry = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  const element = entry && (entry.element || entry);
   if (!element || !element.isConnected || element.tagName.toLowerCase() !== 'select') return false;
   const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
   const normalizedChoice = normalize(choice);
@@ -1793,7 +1897,8 @@ const UPLOAD_HINT_TARGET_SCRIPT: &str = r#"
   const fileCount = __FILE_COUNT__;
   const token = __TOKEN__;
   const registry = window.__nvbrowserHintRegistry;
-  const element = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  const entry = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  const element = entry && (entry.element || entry);
   if (!element || !element.isConnected || element.tagName.toLowerCase() !== 'input') {
     return JSON.stringify({ ok: false, error: 'hint id was not found or is stale' });
   }
@@ -1850,7 +1955,8 @@ const TOGGLE_HINT_SCRIPT: &str = r#"
 (() => {
   const hintId = __HINT_ID__;
   const registry = window.__nvbrowserHintRegistry;
-  const element = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  const entry = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  const element = entry && (entry.element || entry);
   if (!element || !element.isConnected || element.tagName.toLowerCase() !== 'input') return false;
   if (element.disabled || element.getAttribute('aria-disabled') === 'true') return false;
   const type = (element.getAttribute('type') || 'text').toLowerCase();
@@ -3331,7 +3437,9 @@ mod tests {
     #[test]
     fn hint_scripts_use_opaque_registry_ids_instead_of_capture_local_indexes() {
         assert!(ELEMENT_HINTS_SCRIPT.contains("__nvbrowserHintRegistry"));
-        assert!(ELEMENT_HINTS_SCRIPT.contains("registry.elements.set(id, element)"));
+        assert!(
+            ELEMENT_HINTS_SCRIPT.contains("registry.elements.set(id, { element, frameElements })")
+        );
         assert!(ELEMENT_HINTS_SCRIPT.contains("id,"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("aria-labelledby"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("element.labels"));
@@ -3393,6 +3501,41 @@ mod tests {
             .expect("upload change script should build");
         assert!(change_script.contains("dispatchEvent(new Event('input'"));
         assert!(change_script.contains("dispatchEvent(new Event('change'"));
+    }
+
+    #[test]
+    fn hint_extraction_walks_open_shadow_roots_and_same_origin_iframes() {
+        assert!(ELEMENT_HINTS_SCRIPT.contains("shadowRoot"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("collectCandidates(element.shadowRoot"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("iframe"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("contentDocument"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("try {"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("frameElements"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("translateRectToViewport"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("clientLeft"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("labelScope.getElementById(id)"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("kindFor(element) !== 'file'"));
+        assert!(
+            ELEMENT_HINTS_SCRIPT.contains("registry.elements.set(id, { element, frameElements })")
+        );
+    }
+
+    #[test]
+    fn hint_action_points_translate_iframe_relative_elements_to_top_viewport() {
+        assert!(CLICK_HINT_POINT_SCRIPT.contains("entry.element || entry"));
+        assert!(CLICK_HINT_POINT_SCRIPT.contains("entry.frameElements || []"));
+        assert!(CLICK_HINT_POINT_SCRIPT.contains("for (let index = frameElements.length - 1"));
+        assert!(CLICK_HINT_POINT_SCRIPT.contains("frameRect.left"));
+        assert!(CLICK_HINT_POINT_SCRIPT.contains("clientLeft"));
+        assert!(FOCUS_HINT_SCRIPT.contains("entry.element || entry"));
+        assert!(SELECT_HINT_SCRIPT.contains("entry.element || entry"));
+        assert!(TOGGLE_HINT_SCRIPT.contains("entry.element || entry"));
+    }
+
+    #[test]
+    fn select_hint_metadata_uses_existing_normalize_text_helper() {
+        assert!(ELEMENT_HINTS_SCRIPT.contains("label: normalizeText("));
+        assert!(!ELEMENT_HINTS_SCRIPT.contains("label: normalize("));
     }
 
     #[test]

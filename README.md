@@ -381,6 +381,9 @@ terminate a stuck serve job.
 `:NBrowserHints` echoes the latest keyboard labels and numbered browser
 elements, including link destinations when available. On ANSI and Kitty Unicode
 browser previews, the same labels are also overlaid on the preview.
+Hint discovery covers the top document, open shadow roots, and same-origin
+iframes. Closed shadow roots and cross-origin iframe DOMs are intentionally not
+inspected. File upload hints are currently limited to top-document inputs.
 `:NBrowserClickHint {id-or-label}` clicks the backend hint id without relying
 on viewport coordinates. `:NBrowserRightClickHint {id-or-label}` dispatches a
 native right-click at the hinted element. `:NBrowserHoverHint {id-or-label}`

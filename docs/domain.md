@@ -76,6 +76,10 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   `DOM.setFileInputFiles`, hinted checkbox/radio toggles, direct href following,
   current URL and hinted link URL yanking, focused-element metadata, and
   submit-current-focus form UX.
+- Browser hint discovery walks the top document, open shadow roots, and
+  same-origin iframe documents with top-viewport coordinate translation for
+  hinted click/right-click/hover actions. Closed shadow roots and cross-origin
+  iframe DOMs are outside the POC scope.
 - Shows live browser state in a preview footer: status, title/URL, scroll
   progress, focused element kind/label, latest completed download filename,
   non-default zoom, output mode, cells, viewport, and errors.
