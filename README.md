@@ -314,6 +314,7 @@ Then run:
 :NBrowserHalfPageDown
 :NBrowserHalfPageUp
 :NBrowserZoomIn
+:NBrowserZoom 1.25
 :NBrowserZoomOut
 :NBrowserZoomReset
 :NBrowserFind search text
@@ -508,6 +509,10 @@ opening, previewing, inspecting, resuming, bookmarking, address, reload, history
 movement, find, hints, text mode, cursor click/double-click/right-click/hover/type,
 downloads, screenshot, reader, status, zoom, doctor, and close. Preview buffers
 map `?` to this picker by default.
+
+`:NBrowserZoom {scale}` sets an exact page scale, for example `1.25` for
+125%, while `:NBrowserZoomIn`, `:NBrowserZoomOut`, and `:NBrowserZoomReset`
+step or reset the scale.
 
 `:NBrowserFind {text}` finds text in the active browser page, scrolls to the
 match through the browser's native find behavior, and captures a fresh frame.

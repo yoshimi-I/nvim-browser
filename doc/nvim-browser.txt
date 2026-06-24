@@ -251,6 +251,11 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserZoomIn
 	Increase the active browser page zoom and capture a fresh frame.
 
+							*:NBrowserZoom*
+:NBrowserZoom {scale}
+	Set the active browser page zoom exactly and capture a fresh frame.
+	Example: `:NBrowserZoom 1.25` sets the page zoom to 125%.
+
 							*:NBrowserZoomOut*
 :NBrowserZoomOut
 	Decrease the active browser page zoom and capture a fresh frame.

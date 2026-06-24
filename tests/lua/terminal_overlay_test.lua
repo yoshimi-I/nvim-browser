@@ -2704,6 +2704,32 @@ terminal._test.dispatch_serve_response_handler({ id = zoom_out_request.id, statu
 terminal._test.clear_pending_operation(zoom_out_request.id)
 
 sent_requests = {}
+assert(terminal.zoom(1.25) == true, "zoom should send an exact zoom request")
+_G.nvim_browser_exact_zoom_request = last_request_of_type("zoom")
+assert(_G.nvim_browser_exact_zoom_request ~= nil, "zoom should use the zoom JSONL request type")
+assert(_G.nvim_browser_exact_zoom_request.scale == 1.25, "zoom should preserve the requested exact scale")
+terminal._test.dispatch_serve_response_handler({ id = _G.nvim_browser_exact_zoom_request.id, status = "ok" })
+terminal._test.clear_pending_operation(_G.nvim_browser_exact_zoom_request.id)
+assert(terminal._test.preview_footer_line(120):find("zoom=125%%"), "exact zoom should show current zoom in the footer")
+assert(terminal.state().zoom_scale == 1.25, "exact zoom should update terminal zoom state after success")
+
+sent_requests = {}
+assert(terminal.zoom(1.234) == true, "zoom should preserve non-step exact zoom values")
+_G.nvim_browser_precise_zoom_request = last_request_of_type("zoom")
+assert(_G.nvim_browser_precise_zoom_request.scale == 1.234, "exact zoom should not round requested scales")
+terminal._test.dispatch_serve_response_handler({ id = _G.nvim_browser_precise_zoom_request.id, status = "ok" })
+terminal._test.clear_pending_operation(_G.nvim_browser_precise_zoom_request.id)
+assert(terminal.state().zoom_scale == 1.234, "exact zoom should store precise applied scales")
+
+sent_requests = {}
+assert(terminal.zoom(nil) == false, "zoom should reject missing scales")
+assert(last_request_of_type("zoom") == nil, "zoom should not send missing scales")
+assert(terminal.zoom(0) == false, "zoom should reject zero scales")
+assert(last_request_of_type("zoom") == nil, "zoom should not send zero scales")
+assert(terminal.zoom(1 / 0) == false, "zoom should reject non-finite scales")
+assert(last_request_of_type("zoom") == nil, "zoom should not send non-finite scales")
+
+sent_requests = {}
 assert(terminal.zoom_reset() == true, "zoom_reset should send a zoom request")
 zoom_reset_request = last_request_of_type("zoom")
 assert(zoom_reset_request.scale == 1.0, "zoom_reset should restore default page scale")

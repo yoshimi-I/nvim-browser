@@ -465,6 +465,10 @@ local browser = {
     table.insert(zoomed, "in")
     return true
   end,
+  zoom = function(scale)
+    table.insert(zoomed, "exact:" .. tostring(scale))
+    return scale ~= 9.99
+  end,
   zoom_out = function()
     table.insert(zoomed, "out")
     return true
@@ -791,7 +795,8 @@ assert(half_page_up_count == 1, "NBrowserHalfPageUp should request a backward ha
 vim.cmd("NBrowserZoomIn")
 vim.cmd("NBrowserZoomOut")
 vim.cmd("NBrowserZoomReset")
-assert(table.concat(zoomed, ",") == "in,out,reset", "browser zoom commands should delegate exactly once")
+vim.cmd("NBrowserZoom 1.25")
+assert(table.concat(zoomed, ",") == "in,out,reset,exact:1.25", "browser zoom commands should delegate exactly once")
 assert(#warnings == navigation_warning_count, "page navigation commands should not warn on success")
 
 local arg_error_count = 0
@@ -810,6 +815,31 @@ for _, command in ipairs({
   arg_error_count = arg_error_count + 1
 end
 assert(arg_error_count == 7, "all argument-free page navigation commands should reject arguments")
+
+local invalid_zoom_warning_count = #warnings
+_G.nvim_browser_zoomed_before_invalid_zoom = table.concat(zoomed, ",")
+vim.cmd("NBrowserZoom foo")
+assert(
+  warnings[#warnings] == "nvim-browser: zoom scale must be a positive number",
+  "NBrowserZoom should warn on nonnumeric scales"
+)
+vim.cmd("NBrowserZoom 0")
+assert(
+  warnings[#warnings] == "nvim-browser: zoom scale must be a positive number",
+  "NBrowserZoom should warn on zero scales"
+)
+vim.cmd("NBrowserZoom")
+assert(
+  warnings[#warnings] == "nvim-browser: zoom scale must be a positive number",
+  "NBrowserZoom should warn when no scale is provided"
+)
+vim.cmd("NBrowserZoom inf")
+assert(
+  warnings[#warnings] == "nvim-browser: zoom scale must be a positive number",
+  "NBrowserZoom should warn on non-finite scales"
+)
+assert(#warnings == invalid_zoom_warning_count + 4, "invalid exact zoom commands should warn without delegating")
+assert(table.concat(zoomed, ",") == _G.nvim_browser_zoomed_before_invalid_zoom, "invalid exact zoom should not delegate")
 
 vim.cmd("NBrowserAddress")
 assert(addressed == "s", "NBrowserAddress should pass the injected input function to browser.address")

@@ -2994,15 +2994,30 @@ function M.scroll_bottom()
   return M.scroll(delta, 0)
 end
 
+local function parse_zoom_scale(value)
+  value = tonumber(value)
+  if value == nil or value <= 0 or value ~= value or value == math.huge or value == -math.huge then
+    return nil
+  end
+  return value
+end
+
 local function normalized_zoom_scale(value)
-  value = tonumber(value) or 1.0
+  value = parse_zoom_scale(value)
+  if value == nil then
+    return nil
+  end
   value = math.max(0.25, math.min(3.0, value))
   return math.floor((value * 100) + 0.5) / 100
 end
 
-local function send_zoom(scale)
+local function send_zoom(scale, opts)
+  opts = opts or {}
+  local next_scale = opts.exact == true and parse_zoom_scale(scale) or normalized_zoom_scale(scale)
+  if next_scale == nil then
+    return false
+  end
   request_resize()
-  local next_scale = normalized_zoom_scale(scale)
   local ok = send_pending_request({
     type = "zoom",
     scale = next_scale,
@@ -3016,6 +3031,10 @@ end
 
 function M.zoom_in()
   return send_zoom(state.zoom_scale * 1.1)
+end
+
+function M.zoom(scale)
+  return send_zoom(scale, { exact = true })
 end
 
 function M.zoom_out()

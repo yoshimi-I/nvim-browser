@@ -181,6 +181,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: selected browser action failed or browser session is inactive", "WarningMsg" } }, false, {})
   end
 
+  local function warn_zoom_scale_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: zoom scale must be a positive number", "WarningMsg" } }, false, {})
+  end
+
   local function warn_focused_input_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: focused text input failed or browser session is inactive", "WarningMsg" } }, false, {})
   end
@@ -476,6 +480,23 @@ function M.register(browser, opts)
   vim.api.nvim_create_user_command("NBrowserZoomIn", function()
     browser.zoom_in()
   end, {})
+
+  vim.api.nvim_create_user_command("NBrowserZoom", function(opts)
+    local scale = tonumber(opts.args)
+    if
+      scale == nil
+      or scale <= 0
+      or scale ~= scale
+      or scale == math.huge
+      or scale == -math.huge
+      or browser.zoom == nil
+      or not browser.zoom(scale)
+    then
+      warn_zoom_scale_unavailable()
+    end
+  end, {
+    nargs = "?",
+  })
 
   vim.api.nvim_create_user_command("NBrowserZoomOut", function()
     browser.zoom_out()

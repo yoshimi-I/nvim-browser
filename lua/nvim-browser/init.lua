@@ -1498,6 +1498,10 @@ function M.zoom_in()
   return terminal.zoom_in()
 end
 
+function M.zoom(scale)
+  return terminal.zoom(scale)
+end
+
 function M.zoom_out()
   return terminal.zoom_out()
 end

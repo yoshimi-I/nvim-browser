@@ -70,6 +70,7 @@ assert(type(browser.scroll_bottom) == "function", "scroll_bottom API should exis
 assert(type(browser.half_page_down) == "function", "half_page_down API should exist")
 assert(type(browser.half_page_up) == "function", "half_page_up API should exist")
 assert(type(browser.zoom_in) == "function", "zoom_in API should exist")
+assert(type(browser.zoom) == "function", "zoom API should exist")
 assert(type(browser.zoom_out) == "function", "zoom_out API should exist")
 assert(type(browser.zoom_reset) == "function", "zoom_reset API should exist")
 assert(type(browser.zoom_scale) == "function", "zoom_scale API should exist")
@@ -1639,6 +1640,7 @@ local original_terminal_find_text = terminal.find_text
 local original_terminal_find_next = terminal.find_next
 local original_terminal_find_previous = terminal.find_previous
 local original_terminal_zoom_in = terminal.zoom_in
+_G.nvim_browser_original_terminal_zoom = terminal.zoom
 local original_terminal_zoom_out = terminal.zoom_out
 local original_terminal_zoom_reset = terminal.zoom_reset
 local original_terminal_navigate = terminal.navigate
@@ -2731,6 +2733,10 @@ terminal.zoom_in = function()
   table.insert(zoom_calls, "in")
   return "zoom-in"
 end
+terminal.zoom = function(scale)
+  table.insert(zoom_calls, "exact:" .. tostring(scale))
+  return "zoom-exact"
+end
 terminal.zoom_out = function()
   table.insert(zoom_calls, "out")
   return "zoom-out"
@@ -2740,10 +2746,12 @@ terminal.zoom_reset = function()
   return "zoom-reset"
 end
 assert(browser.zoom_in() == "zoom-in", "zoom_in should delegate to terminal")
+assert(browser.zoom(1.25) == "zoom-exact", "zoom should delegate exact scales to terminal")
 assert(browser.zoom_out() == "zoom-out", "zoom_out should delegate to terminal")
 assert(browser.zoom_reset() == "zoom-reset", "zoom_reset should delegate to terminal")
-assert(table.concat(zoom_calls, ",") == "in,out,reset", "zoom APIs should call terminal zoom methods")
+assert(table.concat(zoom_calls, ",") == "in,exact:1.25,out,reset", "zoom APIs should call terminal zoom methods")
 terminal.zoom_in = original_terminal_zoom_in
+terminal.zoom = _G.nvim_browser_original_terminal_zoom
 terminal.zoom_out = original_terminal_zoom_out
 terminal.zoom_reset = original_terminal_zoom_reset
 
