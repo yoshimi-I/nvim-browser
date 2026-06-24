@@ -1090,6 +1090,17 @@ function _G.nvim_browser_latest_timer()
   return fake_timers[#fake_timers]
 end
 
+function _G.nvim_browser_request_sequence()
+  local sequence = {}
+  for _, request in ipairs(sent_requests) do
+    local ok, decoded = pcall(vim.json.decode, request.payload)
+    if ok then
+      table.insert(sequence, decoded.type .. ":" .. (decoded.text or decoded.key or ""))
+    end
+  end
+  return table.concat(sequence, ",")
+end
+
 vim.fn.jobstart = function(command, opts)
   table.insert(jobstart_calls, command)
   serve_stdout = opts and opts.on_stdout or nil
@@ -2771,7 +2782,7 @@ for _, request in ipairs(sent_requests) do
     text_mode_resizes = text_mode_resizes + 1
   end
 end
-assert(table.concat(text_mode_text, ",") == "h:false,i:false", "browser text mode should send printable keys as quiet text_input")
+assert(table.concat(text_mode_text, ",") == "hi:false", "browser text mode should batch printable keys as quiet text_input")
 assert(
   table.concat(text_mode_keys, ",") == "Enter::true,Tab::false,Tab:shift:false,Backspace::false",
   "browser text mode should capture Enter immediately and keep editing keys quiet"
@@ -2784,6 +2795,72 @@ assert(terminal._test.text_mode_key_action(vim.keycode("<Up>")).key == "ArrowUp"
 assert(terminal._test.text_mode_key_action(vim.keycode("<Down>")).key == "ArrowDown", "browser text mode should translate ArrowDown")
 assert(terminal._test.text_mode_key_action(vim.keycode("<Left>")).key == "ArrowLeft", "browser text mode should translate ArrowLeft")
 assert(terminal._test.text_mode_key_action(vim.keycode("<Right>")).key == "ArrowRight", "browser text mode should translate ArrowRight")
+
+sent_requests = {}
+_G.nvim_browser_debounce_step = 0
+assert(terminal.start_text_mode({
+  getcharstr = function()
+    _G.nvim_browser_debounce_step = _G.nvim_browser_debounce_step + 1
+    if _G.nvim_browser_debounce_step == 1 then
+      return "d"
+    end
+    if _G.nvim_browser_debounce_step == 2 then
+      return "e"
+    end
+    assert(#nvim_browser_requests_of_type("text_input") == 0, "text mode should not send batched text before debounce flush")
+    assert(nvim_browser_latest_timer().starts[#nvim_browser_latest_timer().starts].timeout == 25, "text mode should use a short trailing text flush delay")
+    nvim_browser_latest_timer().callback()
+    assert(vim.wait(1000, function()
+      return #nvim_browser_requests_of_type("text_input") == 1
+    end), "text mode debounce timer should flush buffered text")
+    return vim.keycode("<Esc>")
+  end,
+}) == true, "browser text mode should flush buffered text after the debounce timer")
+assert(nvim_browser_requests_of_type("text_input")[1].text == "de", "text mode debounce flush should batch rapid printable text")
+
+sent_requests = {}
+assert(terminal.start_text_mode({
+  getcharstr = (function()
+    local keys = { "a", "b", "c", vim.keycode("<Esc>") }
+    return function()
+      return table.remove(keys, 1)
+    end
+  end)(),
+}) == true, "browser text mode should batch rapid printable keys")
+assert(#nvim_browser_requests_of_type("text_input") == 1, "rapid printable text should flush as one quiet request on exit")
+assert(nvim_browser_requests_of_type("text_input")[1].text == "abc", "rapid printable text should preserve order in the batch")
+assert(nvim_browser_request_sequence():match("text_input:abc,capture:"), "text mode should flush text before final exit capture")
+
+sent_requests = {}
+assert(terminal.start_text_mode({
+  getcharstr = (function()
+    local keys = {}
+    for _ = 1, 33 do
+      table.insert(keys, "x")
+    end
+    table.insert(keys, vim.keycode("<Esc>"))
+    return function()
+      return table.remove(keys, 1)
+    end
+  end)(),
+}) == true, "browser text mode should flush full text batches")
+assert(#nvim_browser_requests_of_type("text_input") == 2, "33 printable chars should flush at 32 and flush the remainder on exit")
+assert(#nvim_browser_requests_of_type("text_input")[1].text == 32, "first full text batch should contain 32 chars")
+assert(nvim_browser_requests_of_type("text_input")[2].text == "x", "remaining printable char should flush on exit")
+
+sent_requests = {}
+assert(terminal.start_text_mode({
+  getcharstr = (function()
+    local keys = { "a", "b", vim.keycode("<BS>"), vim.keycode("<Esc>") }
+    return function()
+      return table.remove(keys, 1)
+    end
+  end)(),
+}) == true, "browser text mode should flush printable text before non-text keys")
+assert(
+  nvim_browser_request_sequence():match("^text_input:ab,key_press:Backspace"),
+  "browser text mode should send pending text before Backspace"
+)
 
 terminal._test.clear_in_flight_capture()
 sent_requests = {}

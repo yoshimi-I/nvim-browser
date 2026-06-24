@@ -43,6 +43,7 @@ local state = {
   element_hints_geometry = nil,
   cursor_addressable_preview = false,
   text_mode_active = false,
+  text_mode_flush_timer = nil,
   zoom_scale = 1.0,
   reader_bufnr = nil,
   reader_base_url = nil,
@@ -783,8 +784,10 @@ end
 local stop_live_refresh_timer
 local stop_live_refresh
 local stop_resize_timer
+local stop_text_mode_flush_timer
 
 local function stop_existing_job(force)
+  stop_text_mode_flush_timer()
   stop_resize_timer()
   stop_live_refresh()
   if state.job_id == nil then
@@ -1639,6 +1642,7 @@ function M.open(command)
             return
           end
           state.job_id = nil
+          stop_text_mode_flush_timer()
           stop_resize_timer()
           stop_live_refresh()
           state.mode = nil
@@ -1808,6 +1812,7 @@ function M.close()
   state.element_hints_geometry = nil
   state.cursor_addressable_preview = false
   state.text_mode_active = false
+  stop_text_mode_flush_timer()
   state.zoom_scale = 1.0
   if state.stop_timer ~= nil then
     state.stop_timer:stop()
@@ -1867,6 +1872,7 @@ function M.stop()
   state.rendered_frame_geometry = nil
   state.response_handlers[pending.id] = nil
   state.generation = state.generation + 1
+  stop_text_mode_flush_timer()
   stop_live_refresh()
   stop_resize_timer()
   hints_overlay.clear(state.bufnr)
@@ -2102,6 +2108,18 @@ local function text_mode_key_action(key)
   return nil
 end
 
+local text_mode_flush_ms = 25
+local text_mode_max_batch_chars = 32
+
+stop_text_mode_flush_timer = function()
+  if state.text_mode_flush_timer == nil then
+    return
+  end
+  state.text_mode_flush_timer:stop()
+  state.text_mode_flush_timer:close()
+  state.text_mode_flush_timer = nil
+end
+
 function M.start_text_mode(opts)
   opts = opts or {}
   if state.mode ~= "serve" or state.job_id == nil or not is_valid_window() or not state.cursor_addressable_preview then
@@ -2110,6 +2128,40 @@ function M.start_text_mode(opts)
   end
 
   local getcharstr = opts.getcharstr or vim.fn.getcharstr
+  local text_buffer = {}
+  local text_buffer_chars = 0
+
+  local function flush_text_buffer()
+    stop_text_mode_flush_timer()
+    if text_buffer_chars == 0 then
+      return false
+    end
+    local text = table.concat(text_buffer)
+    text_buffer = {}
+    text_buffer_chars = 0
+    return M.input_text(text, { capture = false, resize = false })
+  end
+
+  local function schedule_text_flush()
+    stop_text_mode_flush_timer()
+    local timer = timer_factory()
+    if timer == nil then
+      return false
+    end
+    state.text_mode_flush_timer = timer
+    timer:start(text_mode_flush_ms, 0, function()
+      vim.schedule(function()
+        if state.text_mode_flush_timer ~= timer then
+          return
+        end
+        state.text_mode_flush_timer = nil
+        timer:close()
+        flush_text_buffer()
+      end)
+    end)
+    return true
+  end
+
   state.text_mode_active = true
   refresh_preview_footer(state.bufnr)
   local ok, err = pcall(function()
@@ -2119,10 +2171,18 @@ function M.start_text_mode(opts)
       if action == nil then
         -- Ignore terminal-only control sequences that do not map to browser input.
       elseif action.type == "exit" then
+        flush_text_buffer()
         state.text_mode_active = false
       elseif action.type == "text" then
-        M.input_text(action.text, { capture = false, resize = false })
+        table.insert(text_buffer, action.text)
+        text_buffer_chars = text_buffer_chars + vim.fn.strchars(action.text)
+        if text_buffer_chars >= text_mode_max_batch_chars then
+          flush_text_buffer()
+        else
+          schedule_text_flush()
+        end
       elseif action.type == "key" then
+        flush_text_buffer()
         M.press_key(action.key, {
           capture = action.key == "Enter",
           modifiers = action.modifiers or {},
@@ -2131,6 +2191,8 @@ function M.start_text_mode(opts)
       end
     end
   end)
+  flush_text_buffer()
+  stop_text_mode_flush_timer()
   state.text_mode_active = false
   refresh_preview_footer(state.bufnr)
   send_capture_request({ force = true })
@@ -2760,6 +2822,7 @@ end
 
 function M.configure(opts)
   opts = opts or {}
+  stop_text_mode_flush_timer()
   stop_resize_timer()
   options = vim.tbl_deep_extend("force", options, {
     live_refresh = opts.live_refresh or {},
@@ -2847,6 +2910,7 @@ M._test = {
     return count
   end,
   set_timer_factory = function(factory)
+    stop_text_mode_flush_timer()
     stop_live_refresh()
     stop_resize_timer()
     timer_factory = factory or function()
