@@ -206,6 +206,10 @@ local function command_uses_captured_browse(command)
     or command_uses_kitty_unicode_browse(command)
 end
 
+local function output_is_cursor_addressable(output)
+  return output == "ansi" or output == "kitty-unicode"
+end
+
 local function command_has_columns(command)
   return vim.tbl_contains(command, "--columns")
 end
@@ -1049,6 +1053,11 @@ local function apply_serve_response_metadata(response)
   end
   if response.runtime ~= nil and response.runtime ~= vim.NIL then
     state.runtime_metadata = response.runtime
+    if type(response.runtime) == "table" and output_is_cursor_addressable(response.runtime.output) then
+      state.cursor_addressable_preview = true
+    elseif type(response.runtime) == "table" and response.runtime.output == "kitty" then
+      state.cursor_addressable_preview = false
+    end
   end
   if response.download ~= nil and response.download ~= vim.NIL then
     state.latest_download = response.download

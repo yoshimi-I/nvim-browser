@@ -891,7 +891,7 @@ assert(#ansi_lines == 3, "ansi serve buffers should trim render rows and append 
 assert(ansi_lines[3] == terminal._test.preview_footer_line(20), "ansi footer should be appended after render rows")
 
 terminal._test.set_job_id(99)
-terminal._test.set_cursor_addressable_preview(true)
+terminal._test.set_cursor_addressable_preview(false)
 vim.api.nvim_set_current_win(image_win)
 vim.api.nvim_win_set_buf(image_win, payload_bufnr)
 terminal._test.apply_serve_response({
@@ -907,11 +907,84 @@ terminal._test.apply_serve_response({
     viewport = { width = 450, height = 165, device_scale_factor = 1 },
   },
 })
-assert(terminal.state().cursor_addressable_preview == true, "serve state should expose cursor-addressable previews for doctor")
+assert(terminal.state().cursor_addressable_preview == true, "kitty-unicode runtime output should mark previews cursor-addressable")
 assert(
   terminal.state().current_preview_geometry ~= nil,
   "serve state should expose current preview geometry for click calibration diagnostics"
 )
+terminal._test.set_cursor_addressable_preview(false)
+terminal._test.apply_serve_response({
+  id = 201,
+  status = "ok",
+  runtime = {
+    protocol_version = 9,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 450, height = 165, device_scale_factor = 1 },
+  },
+})
+assert(terminal.state().cursor_addressable_preview == true, "ansi runtime output should mark previews cursor-addressable")
+terminal._test.set_cursor_addressable_preview(true)
+terminal._test.apply_serve_response({
+  id = 202,
+  status = "ok",
+  runtime = {
+    protocol_version = 9,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "kitty",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 450, height = 165, device_scale_factor = 1 },
+  },
+})
+assert(terminal.state().cursor_addressable_preview == false, "kitty runtime output should mark previews non cursor-addressable")
+terminal._test.set_cursor_addressable_preview(true)
+terminal._test.apply_serve_response({
+  id = 203,
+  status = "ok",
+  runtime = {
+    protocol_version = 9,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 450, height = 165, device_scale_factor = 1 },
+  },
+})
+assert(terminal.state().cursor_addressable_preview == true, "runtime metadata without output should preserve cursor-addressability")
+terminal._test.set_cursor_addressable_preview(false)
+terminal._test.apply_serve_response({
+  id = 204,
+  status = "ok",
+  runtime = {
+    output = "unknown",
+  },
+})
+assert(terminal.state().cursor_addressable_preview == false, "unknown runtime output should preserve cursor-addressability")
+terminal._test.set_cursor_addressable_preview(false)
+terminal._test.apply_serve_response({
+  id = 205,
+  status = "ok",
+  runtime = {
+    protocol_version = 9,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 450, height = 165, device_scale_factor = 1 },
+  },
+})
+assert(terminal.state().cursor_addressable_preview == false, "runtime metadata without output should preserve non cursor-addressable state")
+terminal._test.set_cursor_addressable_preview(true)
+terminal._test.apply_serve_response({
+  id = 206,
+  status = "ok",
+  runtime = {
+    output = "unknown",
+  },
+})
+assert(terminal.state().cursor_addressable_preview == true, "unknown runtime output should preserve cursor-addressable state")
+terminal._test.set_cursor_addressable_preview(true)
 local footer_click_requests = {}
 local original_chansend_for_footer = vim.fn.chansend
 vim.fn.chansend = function(job_id, payload)
