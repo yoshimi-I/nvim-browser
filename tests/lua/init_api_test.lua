@@ -36,6 +36,7 @@ assert(type(browser.paste_register) == "function", "register paste API should ex
 assert(type(browser.yank_selection) == "function", "browser selection yank API should exist")
 assert(type(browser.yank_current_url) == "function", "current URL yank API should exist")
 assert(type(browser.yank_hint_url) == "function", "hint URL yank API should exist")
+assert(type(browser.screenshot) == "function", "active browser screenshot API should exist")
 assert(type(browser.start_text_mode) == "function", "interactive browser text mode API should exist")
 assert(type(browser.address) == "function", "address API should exist")
 assert(type(browser.resolve_address_target) == "function", "address target resolver should exist")
@@ -81,6 +82,7 @@ local original_terminal_right_click_point = terminal.right_click_point
 local original_terminal_right_click_here = terminal.right_click_here
 local original_terminal_right_click_mouse = terminal.right_click_mouse
 local original_terminal_right_click_hint = terminal.right_click_hint
+local original_terminal_screenshot = terminal.screenshot
 local original_follow_hint = browser.follow_hint
 local original_focus_hint = browser.focus_hint
 local original_hover_hint = browser.hover_hint
@@ -831,6 +833,15 @@ yanked_register = nil
 assert(browser.yank_selection("+") == true, "yank_selection should yank into an explicit register")
 assert(yanked_register == "+", "yank_selection should pass explicit register to terminal")
 
+local screenshot_path = nil
+terminal.screenshot = function(path)
+  screenshot_path = path
+  return true
+end
+assert(browser.screenshot("/tmp/page.png") == true, "screenshot should delegate to terminal")
+assert(screenshot_path == "/tmp/page.png", "screenshot should pass the target path")
+assert(browser.screenshot("") == false, "screenshot should reject an empty path")
+
 local text_mode_opts = nil
 terminal.start_text_mode = function(opts)
   text_mode_opts = opts
@@ -1206,6 +1217,7 @@ terminal.submit_focused = original_terminal_submit_focused
 terminal.start_text_mode = original_terminal_start_text_mode
 terminal.page_scroll = original_terminal_page_scroll
 terminal.yank_selection = original_terminal_yank_selection
+terminal.screenshot = original_terminal_screenshot
 terminal.yank_current_url = original_terminal_yank_current_url
 terminal.yank_hint_url = original_terminal_yank_hint_url
 terminal.find_text = original_terminal_find_text

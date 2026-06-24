@@ -1222,6 +1222,24 @@ assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no
 assert(vim.fn.getreg("a") == "selected from browser", "empty selection yank should not overwrite the register")
 vim.fn.setreg("a", old_a_register)
 
+sent_requests = {}
+assert(terminal.screenshot("") == false, "screenshot should reject empty paths")
+assert(#sent_requests == 0, "empty screenshot paths should not send serve requests")
+
+assert(terminal.screenshot("/tmp/page.png") == true, "screenshot should send a serve screenshot request")
+screenshot_request = last_request_of_type("screenshot")
+assert(screenshot_request ~= nil, "screenshot should use the screenshot serve request")
+assert(screenshot_request.path == "/tmp/page.png", "screenshot should pass the target path")
+assert(
+  terminal.state().pending_operation == nil,
+  "screenshot should not replace the active preview or mark a pending browser load"
+)
+
+local original_job_id_for_screenshot = terminal.state().job_id
+terminal._test.set_job_id(nil)
+assert(terminal.screenshot("/tmp/page.png") == false, "screenshot should fail without an active serve job")
+terminal._test.set_job_id(original_job_id_for_screenshot)
+
 warnings = {}
 sent_requests = {}
 assert(terminal.yank_selection(":") == true, "one-character invalid registers should be handled by the response path")
@@ -2552,7 +2570,7 @@ terminal._test.apply_serve_response({
   url = "https://example.com/before-quiet",
   title = "Before Quiet",
   runtime = {
-    protocol_version = 13,
+    protocol_version = 14,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",
@@ -2601,7 +2619,7 @@ serve_stdout(nil, { vim.json.encode({
     submittable = true,
   },
   runtime = {
-    protocol_version = 13,
+    protocol_version = 14,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",

@@ -423,6 +423,10 @@ enum ServeRequest {
     SelectionText {
         id: u64,
     },
+    Screenshot {
+        id: u64,
+        path: PathBuf,
+    },
     Resize {
         id: u64,
         columns: u32,
@@ -770,7 +774,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 13,
+            protocol_version: 14,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -1135,6 +1139,10 @@ impl<R: Renderer> ServeRuntime<R> {
                     found: None,
                 }))
             }
+            ServeRequest::Screenshot { path, .. } => {
+                self.write_screenshot(&path)?;
+                Ok(Some(self.interaction_metadata_payload(true)?))
+            }
             ServeRequest::Resize {
                 columns,
                 rows,
@@ -1233,6 +1241,23 @@ impl<R: Renderer> ServeRuntime<R> {
         })
     }
 
+    fn write_screenshot(&mut self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        if path.as_os_str().is_empty() {
+            return Err("screenshot path is empty".into());
+        }
+        let frame = self.renderer.render_frame(RenderFrameRequest::new(
+            self.session.id(),
+            self.session.active_page_id(),
+            self.session.active_page().viewport(),
+        ))?;
+        self.session.set_active_page_frame(frame.metadata.clone());
+        let FrameArtifact::Png(png) = frame.artifact else {
+            return Err("screenshot export requires a PNG frame".into());
+        };
+        fs::write(path, png)?;
+        Ok(())
+    }
+
     fn settle_after_interaction(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let settled = self.renderer.settle_after_interaction()?;
         self.session
@@ -1272,6 +1297,7 @@ impl ServeRequest {
             | ServeRequest::FindText { id, .. }
             | ServeRequest::PageText { id }
             | ServeRequest::SelectionText { id }
+            | ServeRequest::Screenshot { id, .. }
             | ServeRequest::Resize { id, .. }
             | ServeRequest::Quit { id } => *id,
         }
@@ -2689,6 +2715,14 @@ mod tests {
                 .expect("selection text request should parse"),
             ServeRequest::SelectionText { id: 14 }
         );
+        assert_eq!(
+            parse_serve_request(r#"{"type":"screenshot","id":15,"path":"/tmp/page.png"}"#)
+                .expect("screenshot request should parse"),
+            ServeRequest::Screenshot {
+                id: 15,
+                path: PathBuf::from("/tmp/page.png"),
+            }
+        );
     }
 
     #[test]
@@ -2931,7 +2965,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 13,
+                protocol_version: 14,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -2960,7 +2994,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":13,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":14,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -2987,7 +3021,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 13);
+        assert_eq!(runtime_info.protocol_version, 14);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -3082,6 +3116,67 @@ mod tests {
         );
         assert!(response.hints.is_empty());
         assert!(response.payload.expect("payload").contains("▀"));
+    }
+
+    #[test]
+    fn serve_runtime_writes_active_session_screenshot_png() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let screenshot_path = directory.path().join("page.png");
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        let navigate = runtime.handle(ServeRequest::Navigate {
+            id: 3,
+            url: "https://example.com".to_string(),
+        });
+        assert_eq!(navigate.status, ServeStatus::Ok);
+
+        let response = runtime.handle(ServeRequest::Screenshot {
+            id: 4,
+            path: screenshot_path.clone(),
+        });
+
+        assert_eq!(response.id, 4);
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert_eq!(response.payload, None);
+        assert_eq!(response.url, Some("https://example.com".to_string()));
+        assert_eq!(std::fs::read(screenshot_path).expect("screenshot should be written"), tiny_png());
+    }
+
+    #[test]
+    fn serve_runtime_rejects_empty_screenshot_path() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        let response = runtime.handle(ServeRequest::Screenshot {
+            id: 4,
+            path: PathBuf::new(),
+        });
+
+        assert_eq!(response.status, ServeStatus::Error);
+        assert!(response.error.expect("error").contains("screenshot path"));
     }
 
     #[test]

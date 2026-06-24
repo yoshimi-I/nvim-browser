@@ -1345,6 +1345,69 @@ fn opt_in_e2e_serve_loop_renders_local_pdf() {
 }
 
 #[test]
+fn opt_in_e2e_serve_loop_writes_active_session_screenshot() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let fixture_path = directory.path().join("screenshot.html");
+    let screenshot_path = directory.path().join("page.png");
+    std::fs::write(
+        &fixture_path,
+        r#"<!doctype html><html><head><title>Screenshot Fixture</title></head><body><main><h1>Screenshot Fixture</h1></main></body></html>"#,
+    )
+    .expect("html fixture should be written");
+    let fixture_url = format!("file://{}", fixture_path.display());
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--url",
+            &fixture_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok");
+    assert_eq!(initial["title"], "Screenshot Fixture");
+
+    let screenshot = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "screenshot",
+        "path": screenshot_path.to_string_lossy(),
+    }));
+    assert_eq!(screenshot["status"], "ok");
+    assert!(screenshot["payload"].is_null(), "screenshot responses should not include terminal payloads");
+    assert_eq!(screenshot["title"], "Screenshot Fixture");
+    let png = std::fs::read(&screenshot_path).expect("screenshot should be written");
+    assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"), "screenshot should be a PNG file");
+
+    let quit = serve.request(serde_json::json!({ "id": 2, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
+#[test]
 fn opt_in_e2e_serve_loop_uploads_file_input_hints() {
     if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
         return;

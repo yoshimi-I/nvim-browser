@@ -229,6 +229,11 @@ COMMANDS                                           *nvim-browser-commands*
 	Write a hinted link destination from the latest browser frame into a Neovim
 	register. Defaults to the unnamed register.
 
+							*:NBrowserScreenshot*
+:NBrowserScreenshot {path}
+	Capture the active browser session viewport to a PNG file without replacing
+	the current Neovim preview frame.
+
 							*:NBrowserKey*
 :NBrowserKey {key} [modifier ...]
 	Press a Puppeteer-style key name such as Enter, Tab, Backspace, or

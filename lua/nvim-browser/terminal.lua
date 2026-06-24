@@ -2202,6 +2202,16 @@ function M.yank_current_url(register)
   return set_register(register, state.current_url)
 end
 
+function M.screenshot(path)
+  if path == nil or path == "" then
+    return false
+  end
+  return send_serve_request({
+    type = "screenshot",
+    path = vim.fn.fnamemodify(tostring(path), ":p"),
+  })
+end
+
 function M.reader_follow()
   if state.reader_bufnr == nil or not vim.api.nvim_buf_is_valid(state.reader_bufnr) then
     warn_reader_follow("nvim-browser: reader follow requires a reader buffer")

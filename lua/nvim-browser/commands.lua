@@ -139,6 +139,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: hint URL not found, stale, non-link, or register is invalid", "WarningMsg" } }, false, {})
   end
 
+  local function warn_screenshot_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: browser screenshot failed, missing path, or browser session is inactive", "WarningMsg" } }, false, {})
+  end
+
   local function warn_text_mode_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: text mode requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
   end
@@ -331,6 +335,15 @@ function M.register(browser, opts)
     end
   end, {
     nargs = "+",
+  })
+
+  vim.api.nvim_create_user_command("NBrowserScreenshot", function(opts)
+    if opts.args == nil or opts.args == "" or not browser.screenshot(opts.args) then
+      warn_screenshot_unavailable()
+    end
+  end, {
+    nargs = "?",
+    complete = "file",
   })
 
   vim.api.nvim_create_user_command("NBrowserInputMode", function()

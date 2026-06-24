@@ -26,6 +26,7 @@ local pasted_register = nil
 local yanked_register = nil
 local yanked_current_url_register = nil
 local yanked_hint_url = nil
+local screenshot_path = nil
 local pressed_key = nil
 local text_mode_called = false
 local doctor_called = false
@@ -136,6 +137,13 @@ local browser = {
       return false
     end
     yanked_hint_url = { identifier = identifier, register = register or '"' }
+    return true
+  end,
+  screenshot = function(path)
+    if path == "" or path == "/tmp/fail.png" then
+      return false
+    end
+    screenshot_path = path
     return true
   end,
   press_key = function(key, opts)
@@ -751,6 +759,18 @@ assert(warnings[#warnings] == "nvim-browser: hint URL not found, stale, non-link
 
 vim.cmd("NBrowserYankHintUrl a ab")
 assert(warnings[#warnings] == "nvim-browser: hint URL not found, stale, non-link, or register is invalid", "NBrowserYankHintUrl should warn on invalid register names")
+
+screenshot_path = nil
+vim.cmd("NBrowserScreenshot /tmp/page.png")
+assert(screenshot_path == "/tmp/page.png", "NBrowserScreenshot should pass the target path")
+
+screenshot_path = nil
+vim.cmd("NBrowserScreenshot")
+assert(warnings[#warnings] == "nvim-browser: browser screenshot failed, missing path, or browser session is inactive", "NBrowserScreenshot should warn without a path")
+assert(screenshot_path == nil, "NBrowserScreenshot should not save without a path")
+
+vim.cmd("NBrowserScreenshot /tmp/fail.png")
+assert(warnings[#warnings] == "nvim-browser: browser screenshot failed, missing path, or browser session is inactive", "NBrowserScreenshot should warn on save failure")
 
 vim.cmd("NBrowserKey Enter")
 assert(pressed_key.key == "Enter", "NBrowserKey should pass a key to browser.press_key")
