@@ -12,15 +12,15 @@ use nvbrowser_core::{
     inspect_target, kitty_image_escape, kitty_tiled_image_delete_escape,
     render_markdown_document_with_base_url,
     renderer::chromium::{render_url_png, ChromiumOptions},
-    BrowserSession, ChromiumRenderer, ClickHintRequest, ClickPointRequest, ElementHint,
-    ElementHintsRequest, FindTextRequest, FocusHintRequest, FocusSelectorRequest, FocusedElement,
-    FocusedElementRequest, FrameArtifact, HistoryNavigationRequest, HoverHintRequest,
-    HoverPointRequest, KeyPressRequest, KittyImageDelete, KittyImageTransfer, NavigateRequest,
-    PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
-    RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
-    RightClickHintRequest, RightClickPointRequest, ScrollRequest, SelectHintRequest,
-    SelectionTextRequest, SessionId, TextInputRequest, ToggleHintRequest, UploadHintRequest,
-    Viewport, WheelPointRequest, ZoomRequest,
+    BrowserSession, ChromiumRenderer, ClickHintRequest, ClickPointRequest, DownloadInfo,
+    DownloadStatus, ElementHint, ElementHintsRequest, FindTextRequest, FocusHintRequest,
+    FocusSelectorRequest, FocusedElement, FocusedElementRequest, FrameArtifact,
+    HistoryNavigationRequest, HoverHintRequest, HoverPointRequest, KeyPressRequest,
+    KittyImageDelete, KittyImageTransfer, NavigateRequest, PageMetrics, PageMetricsRequest,
+    PageTextRequest, PageTextSnapshot, ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer,
+    RendererError, RendererErrorKind, RightClickHintRequest, RightClickPointRequest, ScrollRequest,
+    SelectHintRequest, SelectionTextRequest, SessionId, TextInputRequest, ToggleHintRequest,
+    UploadHintRequest, Viewport, WheelPointRequest, ZoomRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -66,6 +66,8 @@ enum Command {
         #[arg(long)]
         user_data_dir: Option<PathBuf>,
         #[arg(long)]
+        download_dir: Option<PathBuf>,
+        #[arg(long)]
         navigation_timeout_ms: Option<NonZeroU64>,
         #[arg(long, value_enum, default_value_t = ImageOutput::Kitty)]
         output: ImageOutput,
@@ -84,6 +86,8 @@ enum Command {
         cdp_ws_url: Option<String>,
         #[arg(long)]
         user_data_dir: Option<PathBuf>,
+        #[arg(long)]
+        download_dir: Option<PathBuf>,
         #[arg(long)]
         navigation_timeout_ms: Option<NonZeroU64>,
         #[arg(long, default_value = "-")]
@@ -110,6 +114,8 @@ enum Command {
         cdp_ws_url: Option<String>,
         #[arg(long)]
         user_data_dir: Option<PathBuf>,
+        #[arg(long)]
+        download_dir: Option<PathBuf>,
         #[arg(long)]
         navigation_timeout_ms: Option<NonZeroU64>,
     },
@@ -198,6 +204,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             height,
             cdp_ws_url,
             user_data_dir,
+            download_dir,
             navigation_timeout_ms,
             output,
             columns,
@@ -207,7 +214,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let frame = render_url_png(
                 &url,
                 viewport,
-                chromium_options(cdp_ws_url, user_data_dir, navigation_timeout_ms),
+                chromium_options(
+                    cdp_ws_url,
+                    user_data_dir,
+                    download_dir,
+                    navigation_timeout_ms,
+                ),
             )?;
             match output {
                 ImageOutput::Kitty => {
@@ -238,6 +250,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             height,
             cdp_ws_url,
             user_data_dir,
+            download_dir,
             navigation_timeout_ms,
             output,
             metadata,
@@ -247,7 +260,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let frame = render_url_png(
                 &url,
                 viewport,
-                chromium_options(cdp_ws_url, user_data_dir, navigation_timeout_ms),
+                chromium_options(
+                    cdp_ws_url,
+                    user_data_dir,
+                    download_dir,
+                    navigation_timeout_ms,
+                ),
             )?;
             let stdout = io::stdout();
             let mut writer = stdout.lock();
@@ -263,6 +281,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             markdown,
             cdp_ws_url,
             user_data_dir,
+            download_dir,
             navigation_timeout_ms,
         } => {
             let (initial_url, markdown_preview) = match (url, markdown) {
@@ -285,6 +304,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 markdown_preview,
                 cdp_ws_url,
                 user_data_dir,
+                download_dir,
                 navigation_timeout_ms,
             };
             serve_stdio(options)?;
@@ -295,7 +315,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             user_data_dir,
         } => {
             let report = DoctorReport {
-                backend: chromium_options(cdp_ws_url, user_data_dir, None).backend_diagnostics(),
+                backend: chromium_options(cdp_ws_url, user_data_dir, None, None)
+                    .backend_diagnostics(),
             };
             if json {
                 println!("{}", serde_json::to_string(&report)?);
@@ -484,7 +505,27 @@ struct ServeResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     match_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    download: Option<ServeDownloadInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct ServeDownloadInfo {
+    path: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    suggested_filename: Option<String>,
+    status: DownloadStatus,
+}
+
+impl From<DownloadInfo> for ServeDownloadInfo {
+    fn from(download: DownloadInfo) -> Self {
+        Self {
+            path: download.path,
+            suggested_filename: download.suggested_filename,
+            status: download.status,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -718,6 +759,7 @@ struct ServeOptions {
     markdown_preview: Option<MarkdownPreviewFile>,
     cdp_ws_url: Option<String>,
     user_data_dir: Option<PathBuf>,
+    download_dir: Option<PathBuf>,
     navigation_timeout_ms: Option<NonZeroU64>,
 }
 
@@ -728,6 +770,7 @@ struct ServeRuntime<R: Renderer> {
     rows: u32,
     output: ImageOutput,
     _markdown_preview: Option<MarkdownPreviewFile>,
+    pending_download: Option<DownloadInfo>,
 }
 
 struct CapturePayload {
@@ -740,6 +783,7 @@ struct CapturePayload {
     hint_error: Option<String>,
     found: Option<bool>,
     match_count: Option<u32>,
+    download: Option<DownloadInfo>,
 }
 
 impl<R: Renderer> ServeRuntime<R> {
@@ -751,6 +795,7 @@ impl<R: Renderer> ServeRuntime<R> {
             rows: options.rows,
             output: options.output,
             _markdown_preview: options.markdown_preview,
+            pending_download: None,
         }
     }
 
@@ -768,6 +813,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     hint_error,
                     found,
                     match_count,
+                    download,
                 ) = capture
                     .map(|capture| {
                         (
@@ -780,9 +826,21 @@ impl<R: Renderer> ServeRuntime<R> {
                             capture.hint_error,
                             capture.found,
                             capture.match_count,
+                            capture.download,
                         )
                     })
-                    .unwrap_or((None, None, None, None, None, Vec::new(), None, None, None));
+                    .unwrap_or((
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        Vec::new(),
+                        None,
+                        None,
+                        None,
+                        None,
+                    ));
                 ServeResponse {
                     id,
                     status: ServeStatus::Ok,
@@ -798,6 +856,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     hint_error,
                     found,
                     match_count,
+                    download: download.map(ServeDownloadInfo::from),
                     error: None,
                 }
             }
@@ -816,6 +875,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 hint_error: None,
                 found: None,
                 match_count: None,
+                download: None,
                 error: Some(error.to_string()),
             },
         }
@@ -1173,6 +1233,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     hint_error: None,
                     found: None,
                     match_count: None,
+                    download: None,
                 }))
             }
             ServeRequest::SelectionText { .. } => {
@@ -1190,6 +1251,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     hint_error: None,
                     found: None,
                     match_count: None,
+                    download: None,
                 }))
             }
             ServeRequest::Screenshot { path, .. } => {
@@ -1260,6 +1322,7 @@ impl<R: Renderer> ServeRuntime<R> {
             hint_error,
             found: None,
             match_count: None,
+            download: self.pending_download.take(),
         })
     }
 
@@ -1293,6 +1356,7 @@ impl<R: Renderer> ServeRuntime<R> {
             hint_error: None,
             found: None,
             match_count: None,
+            download: self.pending_download.take(),
         })
     }
 
@@ -1315,6 +1379,9 @@ impl<R: Renderer> ServeRuntime<R> {
 
     fn settle_after_interaction(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let settled = self.renderer.settle_after_interaction()?;
+        if settled.download.is_some() {
+            self.pending_download = settled.download;
+        }
         self.session
             .navigate_active_page_with_title(settled.url, settled.title);
         self.session.finish_active_page_load();
@@ -1436,6 +1503,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
         chromium_options(
             options.cdp_ws_url.clone(),
             options.user_data_dir.clone(),
+            options.download_dir.clone(),
             options.navigation_timeout_ms,
         ),
     ) {
@@ -1486,6 +1554,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         hint_error: None,
                         found: None,
                         match_count: None,
+                        download: None,
                         error: Some(error.to_string()),
                     })
                 )?;
@@ -1508,6 +1577,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
 fn chromium_options(
     cdp_ws_url: Option<String>,
     user_data_dir: Option<PathBuf>,
+    download_dir: Option<PathBuf>,
     navigation_timeout_ms: Option<NonZeroU64>,
 ) -> ChromiumOptions {
     let mut options = ChromiumOptions::detect();
@@ -1516,6 +1586,9 @@ fn chromium_options(
     }
     if let Some(user_data_dir) = user_data_dir.and_then(non_empty_cli_path) {
         options.user_data_dir = Some(user_data_dir);
+    }
+    if let Some(download_dir) = download_dir.and_then(non_empty_cli_path) {
+        options.download_dir = Some(download_dir);
     }
     if let Some(navigation_timeout_ms) = navigation_timeout_ms {
         options.navigation_timeout_ms = navigation_timeout_ms.get();
@@ -1863,6 +1936,7 @@ mod tests {
         final_reload_url: Option<String>,
         next_frame_url: Option<String>,
         next_frame_title: Option<String>,
+        next_download: Option<DownloadInfo>,
         hints: Vec<ElementHint>,
         focused: Option<FocusedElement>,
         shutdown: bool,
@@ -1909,6 +1983,7 @@ mod tests {
                 final_reload_url: None,
                 next_frame_url: None,
                 next_frame_title: None,
+                next_download: None,
                 hints: Vec::new(),
                 focused: None,
                 shutdown: false,
@@ -2348,7 +2423,11 @@ mod tests {
                     .unwrap_or_else(|| "about:blank".to_string())
             });
             self.url = Some(url.clone());
-            Ok(InteractionSettleResult::new(url.clone(), Some(url)))
+            let result = InteractionSettleResult::new(url.clone(), Some(url));
+            Ok(self
+                .next_download
+                .take()
+                .map_or(result.clone(), |download| result.with_download(download)))
         }
 
         fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
@@ -2362,6 +2441,7 @@ mod tests {
         let options = chromium_options(
             Some("ws://127.0.0.1:9222/devtools/browser/test".to_string()),
             Some(PathBuf::from("/tmp/nvbrowser-profile")),
+            Some(PathBuf::from("/tmp/nvbrowser-downloads")),
             NonZeroU64::new(1234),
         );
 
@@ -2372,6 +2452,10 @@ mod tests {
         assert_eq!(
             options.user_data_dir,
             Some(PathBuf::from("/tmp/nvbrowser-profile"))
+        );
+        assert_eq!(
+            options.download_dir,
+            Some(PathBuf::from("/tmp/nvbrowser-downloads"))
         );
         assert_eq!(options.navigation_timeout_ms, 1234);
     }
@@ -2820,6 +2904,7 @@ mod tests {
             hint_error: None,
             found: None,
             match_count: None,
+            download: None,
             error: None,
         };
 
@@ -2859,6 +2944,7 @@ mod tests {
             hint_error: None,
             found: None,
             match_count: None,
+            download: None,
             error: None,
         };
 
@@ -2885,12 +2971,43 @@ mod tests {
             hint_error: None,
             found: Some(true),
             match_count: Some(3),
+            download: None,
             error: None,
         };
 
         assert_eq!(
             encode_serve_response(&response),
             r#"{"id":12,"status":"ok","payload":"frame","url":"https://example.com","title":"Example","found":true,"match_count":3}"#
+        );
+    }
+
+    #[test]
+    fn serve_response_encodes_download_when_present() {
+        let response = ServeResponse {
+            id: 19,
+            status: ServeStatus::Ok,
+            runtime: None,
+            payload: Some("frame".to_string()),
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            page: None,
+            focused: None,
+            text: None,
+            selection: None,
+            hints: Vec::new(),
+            hint_error: None,
+            found: None,
+            match_count: None,
+            download: Some(ServeDownloadInfo::from(DownloadInfo::completed(
+                PathBuf::from("/tmp/downloads/report.pdf"),
+                Some("report.pdf".to_string()),
+            ))),
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r#"{"id":19,"status":"ok","payload":"frame","url":"https://example.com","title":"Example","download":{"path":"/tmp/downloads/report.pdf","suggested_filename":"report.pdf","status":"completed"}}"#
         );
     }
 
@@ -2918,6 +3035,7 @@ mod tests {
             hint_error: None,
             found: None,
             match_count: None,
+            download: None,
             error: None,
         };
 
@@ -2951,6 +3069,7 @@ mod tests {
             hint_error: None,
             found: None,
             match_count: None,
+            download: None,
             error: None,
         };
 
@@ -2977,6 +3096,7 @@ mod tests {
             hint_error: None,
             found: None,
             match_count: None,
+            download: None,
             error: None,
         };
 
@@ -3010,6 +3130,7 @@ mod tests {
             hint_error: None,
             found: None,
             match_count: None,
+            download: None,
             error: None,
         };
 
@@ -3036,6 +3157,7 @@ mod tests {
             hint_error: None,
             found: None,
             match_count: None,
+            download: None,
             error: None,
         };
 
@@ -3076,6 +3198,7 @@ mod tests {
             hint_error: None,
             found: None,
             match_count: None,
+            download: None,
             error: None,
         };
 
@@ -3098,6 +3221,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3140,6 +3264,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3179,6 +3304,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3223,6 +3349,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3261,6 +3388,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3287,6 +3415,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3427,6 +3556,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3459,6 +3589,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3489,6 +3620,64 @@ mod tests {
     }
 
     #[test]
+    fn serve_runtime_reports_download_after_interaction_without_clearing_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+        let navigate = runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        assert_eq!(navigate.status, ServeStatus::Ok);
+        runtime.renderer.next_download = Some(DownloadInfo::completed(
+            PathBuf::from("/tmp/downloads/report.pdf"),
+            Some("report.pdf".to_string()),
+        ));
+
+        let response = runtime.handle(ServeRequest::ClickPoint {
+            id: 2,
+            x: 5.0,
+            y: 6.0,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(
+            response.payload.is_some(),
+            "download responses should preserve the captured preview frame"
+        );
+        assert_eq!(
+            response.download,
+            Some(ServeDownloadInfo::from(DownloadInfo::completed(
+                PathBuf::from("/tmp/downloads/report.pdf"),
+                Some("report.pdf".to_string()),
+            )))
+        );
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "click_point",
+                "settle",
+                "capture",
+                "hints"
+            ]
+        );
+    }
+
+    #[test]
     fn serve_runtime_ignores_focused_element_extraction_failure_without_failing_frame() {
         let mut renderer = FakeRenderer::new();
         renderer.fail_focused_element = true;
@@ -3503,6 +3692,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3547,6 +3737,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3576,6 +3767,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3608,6 +3800,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3640,6 +3833,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3683,6 +3877,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3736,6 +3931,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3779,6 +3975,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3811,6 +4008,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3850,6 +4048,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3903,6 +4102,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -3946,6 +4146,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4000,6 +4201,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4059,6 +4261,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4104,6 +4307,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4148,6 +4352,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4180,6 +4385,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4212,6 +4418,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4258,6 +4465,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4302,6 +4510,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4346,6 +4555,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4390,6 +4600,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4439,6 +4650,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4482,6 +4694,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4518,6 +4731,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4558,6 +4772,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4598,6 +4813,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4632,6 +4848,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4672,6 +4889,64 @@ mod tests {
     }
 
     #[test]
+    fn serve_runtime_preserves_download_across_multi_step_type_point() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        runtime.renderer.next_download = Some(DownloadInfo::completed(
+            PathBuf::from("/tmp/downloads/report.pdf"),
+            Some("report.pdf".to_string()),
+        ));
+        let response = runtime.handle(ServeRequest::TypePoint {
+            id: 2,
+            x: 120.5,
+            y: 240.25,
+            text: "hello".to_string(),
+            submit: true,
+        });
+
+        assert_eq!(
+            response.download,
+            Some(ServeDownloadInfo::from(DownloadInfo::completed(
+                PathBuf::from("/tmp/downloads/report.pdf"),
+                Some("report.pdf".to_string()),
+            )))
+        );
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "click_point",
+                "settle",
+                "text_input",
+                "settle",
+                "key_press",
+                "settle",
+                "capture",
+                "hints"
+            ]
+        );
+    }
+
+    #[test]
     fn serve_runtime_does_not_type_at_point_when_click_fails() {
         let mut renderer = FakeRenderer::new();
         renderer.fail_click = true;
@@ -4686,6 +4961,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4725,6 +5001,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4766,6 +5043,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4810,6 +5088,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4848,6 +5127,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4885,6 +5165,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4926,6 +5207,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -4961,6 +5243,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -5014,6 +5297,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -5054,6 +5338,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -5102,6 +5387,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -5141,6 +5427,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -5182,6 +5469,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -5218,6 +5506,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -5266,6 +5555,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );
@@ -5309,6 +5599,7 @@ mod tests {
                 markdown_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
+                download_dir: None,
                 navigation_timeout_ms: None,
             },
         );

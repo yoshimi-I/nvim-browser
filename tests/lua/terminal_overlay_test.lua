@@ -708,6 +708,21 @@ assert(
   "footer truncation should respect the target column width"
 )
 
+terminal._test.apply_serve_response({
+  id = 102,
+  status = "ok",
+  download = {
+    path = "/tmp/nvbrowser-downloads/report.pdf",
+    suggested_filename = "report.pdf",
+    status = "completed",
+  },
+})
+assert(terminal.state().latest_download.path == "/tmp/nvbrowser-downloads/report.pdf", "download responses should store latest download metadata")
+assert(
+  terminal._test.preview_footer_line(120):find("download=report%.pdf"),
+  "footer should expose the latest completed download filename"
+)
+
 terminal._test.set_pending_operation({ id = 202, label = "loading", target = "https://example.com/next" })
 local pending_footer = terminal._test.preview_footer_line(120)
 assert(pending_footer:match("^loading | https://example%.com/next | Esc stop"), "footer should show pending navigation feedback before a response")

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     ffi::OsStr,
     path::{Path, PathBuf},
     sync::{mpsc, Arc},
@@ -13,8 +13,11 @@ use std::os::unix::fs::PermissionsExt;
 use headless_chrome::{
     browser::tab::{point::Point, ModifierKey, Tab},
     protocol::cdp::types::{Event, Method},
-    protocol::cdp::Input,
-    protocol::cdp::Page::{CaptureScreenshotFormatOption, DialogType, Viewport as CdpViewport},
+    protocol::cdp::Page::{
+        CaptureScreenshotFormatOption, DialogType, SetDownloadBehaviorBehaviorOption,
+        Viewport as CdpViewport,
+    },
+    protocol::cdp::{Input, Page},
     types::Bounds,
     Browser, LaunchOptions,
 };
@@ -22,8 +25,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     renderer::{
-        ClickHintRequest, ClickPointRequest, ElementHint, ElementHintsRequest, FindTextRequest,
-        FindTextResult, FocusHintRequest, FocusSelectorRequest, FocusedElement,
+        ClickHintRequest, ClickPointRequest, DownloadInfo, ElementHint, ElementHintsRequest,
+        FindTextRequest, FindTextResult, FocusHintRequest, FocusSelectorRequest, FocusedElement,
         FocusedElementRequest, FrameArtifact, HistoryNavigationRequest, HistoryNavigationResult,
         HoverHintRequest, HoverPointRequest, InputResult, InteractionSettleResult, KeyPressRequest,
         NavigateRequest, NavigationResult, PageMetrics, PageMetricsRequest, PageTextRequest,
@@ -44,6 +47,7 @@ pub struct ChromiumOptions {
     pub cdp_ws_url: Option<String>,
     pub binary: Option<PathBuf>,
     pub user_data_dir: Option<PathBuf>,
+    pub download_dir: Option<PathBuf>,
     pub navigation_timeout_ms: u64,
 }
 
@@ -71,6 +75,7 @@ impl ChromiumOptions {
                 .map(PathBuf::from)
                 .or_else(default_chrome_binary),
             std::env::var_os("NVBROWSER_USER_DATA_DIR").map(PathBuf::from),
+            std::env::var_os("NVBROWSER_DOWNLOAD_DIR").map(PathBuf::from),
             std::env::var("NVBROWSER_NAVIGATION_TIMEOUT_MS").ok(),
         )
     }
@@ -79,12 +84,14 @@ impl ChromiumOptions {
         cdp_ws_url: Option<String>,
         binary: Option<PathBuf>,
         user_data_dir: Option<PathBuf>,
+        download_dir: Option<PathBuf>,
         navigation_timeout_ms: Option<String>,
     ) -> Self {
         Self {
             cdp_ws_url,
             binary,
             user_data_dir: user_data_dir.and_then(non_empty_path),
+            download_dir: download_dir.and_then(non_empty_path),
             navigation_timeout_ms: parse_navigation_timeout_ms(navigation_timeout_ms),
         }
     }
@@ -249,6 +256,25 @@ pub struct ChromiumRenderer {
     current_zoom_scale: f64,
     next_frame_id: u64,
     navigation_timeout_ms: u64,
+    download_dir: Option<PathBuf>,
+    download_events: Option<DownloadEventTracker>,
+    last_interaction_started: Option<SystemTime>,
+}
+
+struct DownloadEventTracker {
+    rx: mpsc::Receiver<DownloadEvent>,
+    filenames: HashMap<String, String>,
+    known_paths: HashSet<PathBuf>,
+}
+
+enum DownloadEvent {
+    WillBegin {
+        guid: String,
+        suggested_filename: String,
+    },
+    Completed {
+        guid: String,
+    },
 }
 
 impl ChromiumRenderer {
@@ -257,6 +283,7 @@ impl ChromiumRenderer {
         let tab = browser.new_tab().map_err(render_error)?;
         configure_tab_timeout(&tab, &options);
         install_default_dialog_handler(&tab)?;
+        let download_events = configure_download_behavior(&tab, options.download_dir.as_deref())?;
         let dialog_handler_target_ids = HashSet::from([tab.get_target_id().clone()]);
         resize_tab(&tab, viewport)?;
         browser.register_missing_tabs();
@@ -276,6 +303,9 @@ impl ChromiumRenderer {
             current_zoom_scale: 1.0,
             next_frame_id: 1,
             navigation_timeout_ms: options.navigation_timeout_ms,
+            download_dir: options.download_dir,
+            download_events,
+            last_interaction_started: None,
         })
     }
 
@@ -355,6 +385,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn scroll(&mut self, request: ScrollRequest) -> Result<ScrollResult, RendererError> {
+        self.mark_interaction_start();
         self.tab
             .evaluate(
                 &format!("window.scrollBy({}, {})", request.delta_x, request.delta_y),
@@ -371,6 +402,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn zoom(&mut self, request: ZoomRequest) -> Result<ZoomResult, RendererError> {
+        self.mark_interaction_start();
         if !request.scale.is_finite() || request.scale <= 0.0 {
             return Err(RendererError::new(
                 RendererErrorKind::InvalidState,
@@ -420,6 +452,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn input_text(&mut self, request: TextInputRequest) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
         self.tab.type_str(&request.text).map_err(render_error)?;
         Ok(InputResult {
             session_id: request.session_id,
@@ -428,6 +461,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn press_key(&mut self, request: KeyPressRequest) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
         let (key, modifiers) = chromium_key_with_modifiers(&request.key);
         if modifiers.is_empty() {
             self.tab.press_key(key).map_err(render_error)?;
@@ -446,6 +480,7 @@ impl Renderer for ChromiumRenderer {
         &mut self,
         request: FocusSelectorRequest,
     ) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
         let element = self
             .tab
             .find_element(&request.selector)
@@ -458,6 +493,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn focus_hint(&mut self, request: FocusHintRequest) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
         let hint_id = serde_json::to_string(&request.hint_id).map_err(render_error)?;
         let script = FOCUS_HINT_SCRIPT.replace("__HINT_ID__", &hint_id);
         let focused = self
@@ -480,6 +516,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn click_hint(&mut self, request: ClickHintRequest) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
         let hint_id = serde_json::to_string(&request.hint_id).map_err(render_error)?;
         let script = CLICK_HINT_ACTION_SCRIPT.replace("__HINT_ID__", &hint_id);
         let point = self
@@ -520,6 +557,7 @@ impl Renderer for ChromiumRenderer {
         &mut self,
         request: RightClickHintRequest,
     ) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
         let hint_id = serde_json::to_string(&request.hint_id).map_err(render_error)?;
         let script = CLICK_HINT_POINT_SCRIPT.replace("__HINT_ID__", &hint_id);
         let point = self
@@ -543,6 +581,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn hover_hint(&mut self, request: HoverHintRequest) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
         let hint_id = serde_json::to_string(&request.hint_id).map_err(render_error)?;
         let script = CLICK_HINT_POINT_SCRIPT.replace("__HINT_ID__", &hint_id);
         let point = self
@@ -570,6 +609,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn select_hint(&mut self, request: SelectHintRequest) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
         let script = select_hint_script(request.hint_id, &request.choice)?;
         let selected = self
             .tab
@@ -591,6 +631,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn upload_hint(&mut self, request: UploadHintRequest) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
         let script = upload_hint_target_script(request.hint_id, request.paths.len())?;
         let target = self
             .tab
@@ -638,6 +679,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn toggle_hint(&mut self, request: ToggleHintRequest) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
         let script = toggle_hint_script(request.hint_id)?;
         let toggled = self
             .tab
@@ -659,6 +701,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
         self.tab
             .click_point(Point {
                 x: request.x,
@@ -675,6 +718,7 @@ impl Renderer for ChromiumRenderer {
         &mut self,
         request: RightClickPointRequest,
     ) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
         dispatch_mouse_click_with_button(
             &self.tab,
             request.x,
@@ -688,6 +732,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn hover_point(&mut self, request: HoverPointRequest) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
         self.tab
             .move_mouse_to_point(Point {
                 x: request.x,
@@ -701,6 +746,7 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn wheel_point(&mut self, request: WheelPointRequest) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
         self.tab
             .move_mouse_to_point(Point {
                 x: request.x,
@@ -819,6 +865,10 @@ impl Renderer for ChromiumRenderer {
     }
 
     fn settle_after_interaction(&mut self) -> Result<InteractionSettleResult, RendererError> {
+        let interaction_started = self
+            .last_interaction_started
+            .take()
+            .unwrap_or_else(SystemTime::now);
         let settled = if self.skip_next_target_adoption {
             self.skip_next_target_adoption = false;
             self.wait_for_current_tab_interaction_settle()
@@ -833,7 +883,10 @@ impl Renderer for ChromiumRenderer {
         let title = settled.title;
         self.current_url = Some(url.clone());
         self.current_title = title.clone();
-        Ok(InteractionSettleResult::new(url, title))
+        let settled = InteractionSettleResult::new(url, title);
+        Ok(self
+            .collect_completed_download(interaction_started)
+            .map_or(settled.clone(), |download| settled.with_download(download)))
     }
 
     fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
@@ -843,6 +896,83 @@ impl Renderer for ChromiumRenderer {
 }
 
 impl ChromiumRenderer {
+    fn mark_interaction_start(&mut self) {
+        self.last_interaction_started = Some(SystemTime::now());
+    }
+
+    fn collect_completed_download(
+        &mut self,
+        interaction_started: SystemTime,
+    ) -> Option<DownloadInfo> {
+        let (Some(download_dir), Some(download_events)) =
+            (self.download_dir.as_ref(), self.download_events.as_mut())
+        else {
+            return None;
+        };
+        let mut completed = None;
+        let mut saw_download_event = false;
+        while let Ok(event) = download_events.rx.try_recv() {
+            match event {
+                DownloadEvent::WillBegin {
+                    guid,
+                    suggested_filename,
+                } => {
+                    saw_download_event = true;
+                    download_events.filenames.insert(guid, suggested_filename);
+                }
+                DownloadEvent::Completed { guid } => {
+                    saw_download_event = true;
+                    let suggested_filename = download_events.filenames.remove(&guid);
+                    completed = Some(
+                        detect_new_completed_download(
+                            download_dir,
+                            &mut download_events.known_paths,
+                            interaction_started,
+                        )
+                        .unwrap_or_else(|| {
+                            let path = suggested_filename
+                                .as_ref()
+                                .map(|filename| download_dir.join(filename))
+                                .unwrap_or_else(|| download_dir.join(guid));
+                            download_events.known_paths.insert(path.clone());
+                            DownloadInfo::completed(path, suggested_filename)
+                        }),
+                    );
+                }
+            }
+        }
+        if completed.is_some() {
+            return completed;
+        }
+
+        if let Some(download) = detect_new_completed_download(
+            download_dir,
+            &mut download_events.known_paths,
+            interaction_started,
+        ) {
+            return Some(download);
+        }
+
+        if !saw_download_event && !has_active_chromium_download(download_dir, interaction_started) {
+            return None;
+        }
+
+        let deadline = std::time::Instant::now() + Duration::from_millis(1500);
+        loop {
+            if let Some(download) = detect_new_completed_download(
+                download_dir,
+                &mut download_events.known_paths,
+                interaction_started,
+            ) {
+                return Some(download);
+            }
+            if std::time::Instant::now() >= deadline {
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
     fn adopt_new_page_target_after_interaction(&mut self) -> Result<(), RendererError> {
         let deadline = std::time::Instant::now() + Duration::from_millis(750);
         let new_target_deadline = std::time::Instant::now() + Duration::from_millis(500);
@@ -926,6 +1056,19 @@ impl ChromiumRenderer {
                 return Ok(false);
             }
             return Err(error);
+        }
+        if let Some(download_dir) = self.download_dir.as_deref() {
+            match configure_download_behavior(&tab, Some(download_dir)) {
+                Ok(download_events) => {
+                    self.download_events = download_events;
+                }
+                Err(error) if is_closed_target_error(&error) => {
+                    self.pending_page_target_ids.remove(&target_id);
+                    self.known_target_ids.insert(target_id);
+                    return Ok(false);
+                }
+                Err(error) => return Err(error),
+            }
         }
         self.tab = tab;
         self.pending_page_target_ids.remove(&target_id);
@@ -2023,6 +2166,139 @@ fn connect_browser(cdp_ws_url: &str) -> Result<Browser, RendererError> {
     )
 }
 
+fn configure_download_behavior(
+    tab: &Arc<Tab>,
+    download_dir: Option<&Path>,
+) -> Result<Option<DownloadEventTracker>, RendererError> {
+    let Some(download_dir) = download_dir else {
+        return Ok(None);
+    };
+    std::fs::create_dir_all(download_dir).map_err(|error| {
+        RendererError::new(
+            RendererErrorKind::BackendUnavailable,
+            format!(
+                "failed to create download directory {}: {error}",
+                download_dir.display()
+            ),
+        )
+    })?;
+    if !download_dir.is_dir() {
+        return Err(RendererError::new(
+            RendererErrorKind::BackendUnavailable,
+            format!(
+                "download directory is not a directory: {}",
+                download_dir.display()
+            ),
+        ));
+    }
+
+    tab.call_method(Page::SetDownloadBehavior {
+        behavior: SetDownloadBehaviorBehaviorOption::Allow,
+        download_path: Some(download_dir.to_string_lossy().into_owned()),
+    })
+    .map_err(|error| {
+        RendererError::new(
+            RendererErrorKind::BackendUnavailable,
+            format!("failed to configure Chrome download directory: {error}"),
+        )
+    })?;
+
+    let (tx, rx) = mpsc::channel();
+    tab.add_event_listener(Arc::new(move |event: &Event| match event {
+        Event::PageDownloadWillBegin(event) => {
+            let _ = tx.send(DownloadEvent::WillBegin {
+                guid: event.params.guid.clone(),
+                suggested_filename: event.params.suggested_filename.clone(),
+            });
+        }
+        Event::PageDownloadProgress(event)
+            if event.params.state == Page::DownloadProgressEventStateOption::Completed =>
+        {
+            let _ = tx.send(DownloadEvent::Completed {
+                guid: event.params.guid.clone(),
+            });
+        }
+        _ => {}
+    }))
+    .map_err(|error| {
+        RendererError::new(
+            RendererErrorKind::BackendUnavailable,
+            format!("failed to observe Chrome download events: {error}"),
+        )
+    })?;
+
+    Ok(Some(DownloadEventTracker {
+        rx,
+        filenames: HashMap::new(),
+        known_paths: list_completed_download_paths(download_dir),
+    }))
+}
+
+fn list_completed_download_paths(download_dir: &Path) -> HashSet<PathBuf> {
+    std::fs::read_dir(download_dir)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.flatten())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_none_or(|extension| extension != "crdownload")
+        })
+        .collect()
+}
+
+fn detect_new_completed_download(
+    download_dir: &Path,
+    known_paths: &mut HashSet<PathBuf>,
+    since: SystemTime,
+) -> Option<DownloadInfo> {
+    let mut candidates: Vec<PathBuf> = list_completed_download_paths(download_dir)
+        .into_iter()
+        .filter(|path| {
+            if known_paths.contains(path) {
+                return false;
+            }
+            if path_modified_before(path, since) {
+                known_paths.insert(path.clone());
+                return false;
+            }
+            true
+        })
+        .collect();
+    candidates.sort();
+    let path = candidates.into_iter().next()?;
+    known_paths.insert(path.clone());
+    let suggested_filename = path
+        .file_name()
+        .and_then(|filename| filename.to_str())
+        .map(str::to_string);
+    Some(DownloadInfo::completed(path, suggested_filename))
+}
+
+fn has_active_chromium_download(download_dir: &Path, since: SystemTime) -> bool {
+    std::fs::read_dir(download_dir)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.flatten())
+        .map(|entry| entry.path())
+        .any(|path| {
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension == "crdownload")
+                && !path_modified_before(&path, since)
+        })
+}
+
+fn path_modified_before(path: &Path, since: SystemTime) -> bool {
+    path.metadata()
+        .and_then(|metadata| metadata.modified())
+        .map(|modified| modified < since)
+        .unwrap_or(false)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MouseDispatchButton {
     Left,
@@ -2637,6 +2913,7 @@ mod tests {
             Some("ws://127.0.0.1:9222/devtools/browser/test".to_string()),
             None,
             Some(PathBuf::from("/tmp/nvbrowser-profile")),
+            Some(PathBuf::from("/tmp/nvbrowser-downloads")),
             Some("1234".to_string()),
         );
 
@@ -2649,21 +2926,80 @@ mod tests {
             options.user_data_dir,
             Some(PathBuf::from("/tmp/nvbrowser-profile"))
         );
+        assert_eq!(
+            options.download_dir,
+            Some(PathBuf::from("/tmp/nvbrowser-downloads"))
+        );
         assert_eq!(options.navigation_timeout_ms, 1234);
     }
 
     #[test]
     fn chromium_options_from_env_values_ignores_empty_user_data_dir() {
-        let options = ChromiumOptions::from_env_values(None, None, Some(PathBuf::from("")), None);
+        let options =
+            ChromiumOptions::from_env_values(None, None, Some(PathBuf::from("")), None, None);
 
         assert_eq!(options.user_data_dir, None);
         assert_eq!(options.navigation_timeout_ms, 20_000);
     }
 
     #[test]
-    fn chromium_options_from_env_values_ignores_invalid_navigation_timeout() {
+    fn chromium_options_from_env_values_ignores_empty_download_dir() {
         let options =
-            ChromiumOptions::from_env_values(None, None, None, Some("not-a-number".to_string()));
+            ChromiumOptions::from_env_values(None, None, None, Some(PathBuf::from("")), None);
+
+        assert_eq!(options.download_dir, None);
+    }
+
+    #[test]
+    fn detects_new_completed_download_files_without_reporting_known_paths() {
+        let directory =
+            std::env::temp_dir().join(format!("nvbrowser-download-detect-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("tempdir should be created");
+        let known_path = directory.join("known.txt");
+        std::fs::write(&known_path, "known").expect("known fixture should be written");
+        let mut known_paths = list_completed_download_paths(&directory);
+        let interaction_started = SystemTime::now();
+
+        assert!(
+            detect_new_completed_download(&directory, &mut known_paths, interaction_started)
+                .is_none(),
+            "existing files should not be reported as fresh downloads"
+        );
+
+        let partial_path = directory.join("partial.txt.crdownload");
+        std::fs::write(&partial_path, "partial").expect("partial fixture should be written");
+        assert!(
+            detect_new_completed_download(&directory, &mut known_paths, interaction_started)
+                .is_none(),
+            "temporary Chromium download files should not be reported as completed"
+        );
+
+        let download_path = directory.join("report.txt");
+        std::fs::write(&download_path, "download").expect("download fixture should be written");
+        let download =
+            detect_new_completed_download(&directory, &mut known_paths, interaction_started)
+                .expect("new completed download should be reported");
+
+        assert_eq!(download.path, download_path);
+        assert_eq!(download.suggested_filename.as_deref(), Some("report.txt"));
+        assert!(
+            detect_new_completed_download(&directory, &mut known_paths, interaction_started)
+                .is_none(),
+            "reported downloads should become known"
+        );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn chromium_options_from_env_values_ignores_invalid_navigation_timeout() {
+        let options = ChromiumOptions::from_env_values(
+            None,
+            None,
+            None,
+            None,
+            Some("not-a-number".to_string()),
+        );
 
         assert_eq!(options.navigation_timeout_ms, 20_000);
     }
@@ -2717,6 +3053,7 @@ mod tests {
             )),
             Some(PathBuf::from("/tmp/nvbrowser-profile")),
             None,
+            None,
         )
         .backend_diagnostics();
 
@@ -2752,7 +3089,7 @@ mod tests {
                 .expect("chrome fixture should be executable");
         }
         let diagnostics =
-            ChromiumOptions::from_env_values(None, Some(chrome_path.clone()), None, None)
+            ChromiumOptions::from_env_values(None, Some(chrome_path.clone()), None, None, None)
                 .backend_diagnostics();
 
         assert_eq!(diagnostics.status, "available");
@@ -2771,6 +3108,7 @@ mod tests {
         let diagnostics = ChromiumOptions::from_env_values(
             None,
             Some(PathBuf::from("/definitely/not/nvbrowser-chrome")),
+            None,
             None,
             None,
         )
@@ -2807,7 +3145,7 @@ mod tests {
         }
 
         let diagnostics =
-            ChromiumOptions::from_env_values(None, Some(chrome_path.clone()), None, None)
+            ChromiumOptions::from_env_values(None, Some(chrome_path.clone()), None, None, None)
                 .backend_diagnostics();
 
         assert_eq!(diagnostics.status, "missing");
@@ -2827,7 +3165,7 @@ mod tests {
     #[test]
     fn chromium_backend_diagnostics_reports_missing_backend() {
         let diagnostics =
-            ChromiumOptions::from_env_values(None, None, None, None).backend_diagnostics();
+            ChromiumOptions::from_env_values(None, None, None, None, None).backend_diagnostics();
 
         assert_eq!(diagnostics.status, "missing");
         assert_eq!(diagnostics.source, "none");
@@ -2863,6 +3201,7 @@ mod tests {
             cdp_ws_url: Some("ws://127.0.0.1:9222/devtools/browser/test".to_string()),
             binary: Some(PathBuf::from("/custom/chrome")),
             user_data_dir: Some(PathBuf::from("/tmp/nvbrowser-profile")),
+            download_dir: Some(PathBuf::from("/tmp/nvbrowser-downloads")),
             navigation_timeout_ms: DEFAULT_NAVIGATION_TIMEOUT_MS,
         };
 
@@ -2880,6 +3219,7 @@ mod tests {
             cdp_ws_url: None,
             binary: Some(PathBuf::from("/custom/chrome")),
             user_data_dir: Some(PathBuf::from("/tmp/nvbrowser-profile")),
+            download_dir: Some(PathBuf::from("/tmp/nvbrowser-downloads")),
             navigation_timeout_ms: DEFAULT_NAVIGATION_TIMEOUT_MS,
         };
 
@@ -2897,6 +3237,7 @@ mod tests {
             cdp_ws_url: None,
             binary: None,
             user_data_dir: Some(PathBuf::from("/tmp/nvbrowser-profile")),
+            download_dir: Some(PathBuf::from("/tmp/nvbrowser-downloads")),
             navigation_timeout_ms: DEFAULT_NAVIGATION_TIMEOUT_MS,
         };
 

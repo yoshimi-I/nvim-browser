@@ -363,6 +363,8 @@ pub struct InputResult {
 pub struct InteractionSettleResult {
     pub url: String,
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download: Option<DownloadInfo>,
 }
 
 impl InteractionSettleResult {
@@ -370,8 +372,37 @@ impl InteractionSettleResult {
         Self {
             url: url.into(),
             title,
+            download: None,
         }
     }
+
+    pub fn with_download(mut self, download: DownloadInfo) -> Self {
+        self.download = Some(download);
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DownloadInfo {
+    pub path: PathBuf,
+    pub suggested_filename: Option<String>,
+    pub status: DownloadStatus,
+}
+
+impl DownloadInfo {
+    pub fn completed(path: PathBuf, suggested_filename: Option<String>) -> Self {
+        Self {
+            path,
+            suggested_filename,
+            status: DownloadStatus::Completed,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DownloadStatus {
+    Completed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

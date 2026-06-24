@@ -71,8 +71,10 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   current URL and hinted link URL yanking, focused-element metadata, and
   submit-current-focus form UX.
 - Shows live browser state in a preview footer: status, title/URL, scroll
-  progress, focused element kind/label, output mode, cells, viewport, and
-  errors.
+  progress, focused element kind/label, latest completed download filename,
+  output mode, cells, viewport, and errors.
+- Saves browser-initiated downloads into a configured `download_dir` and reports
+  the latest completed file path in the JSONL response plus footer/status.
 - Performs live recapture while idle and suppresses background recapture while a
   navigation-like operation is pending.
 - Extracts a reader buffer from the current browser page and resolves reader
@@ -113,6 +115,9 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - File uploads must validate local paths before invoking CDP. Real Chromium E2E
   should cover file inputs because DOM-only JS cannot set true local upload
   files.
+- Downloads are intentionally a single-report POC surface: if multiple downloads
+  complete during one interaction, only one completed file is surfaced. There is
+  no progress UI, cancellation, retry, filename prompt, or download list yet.
 - Long-running Chromium lifecycle, stuck navigation cancellation, and late
   response handling remain operational risk areas and should stay covered by
   tests.

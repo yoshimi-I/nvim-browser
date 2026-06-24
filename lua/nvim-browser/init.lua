@@ -689,6 +689,23 @@ local function focused_element_label(focused)
   return "focus=" .. kind
 end
 
+local function download_status_label(download)
+  if type(download) ~= "table" then
+    return nil
+  end
+  local filename = download.suggested_filename
+  if filename == nil or filename == vim.NIL or filename == "" then
+    local path = download.path
+    if path ~= nil and path ~= vim.NIL and path ~= "" then
+      filename = vim.fn.fnamemodify(tostring(path), ":t")
+    end
+  end
+  if filename == nil or filename == vim.NIL or filename == "" then
+    return "download"
+  end
+  return "download=" .. tostring(filename)
+end
+
 local function action_status_message()
   local parts = { M.status() or "unknown" }
   local title = M.current_title()
@@ -702,6 +719,10 @@ local function action_status_message()
   local focused = M.focused_element and focused_element_label(M.focused_element()) or nil
   if focused ~= nil then
     table.insert(parts, focused)
+  end
+  local download = M.latest_download and download_status_label(M.latest_download()) or nil
+  if download ~= nil then
+    table.insert(parts, download)
   end
   local runtime = M.runtime_metadata and runtime_status_label(M.runtime_metadata()) or nil
   if runtime ~= nil then
@@ -1708,6 +1729,10 @@ end
 
 function M.focused_element()
   return terminal.state().focused_element
+end
+
+function M.latest_download()
+  return terminal.state().latest_download
 end
 
 function M.status()

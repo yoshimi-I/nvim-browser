@@ -21,6 +21,7 @@ local state = {
   current_title = nil,
   page_metrics = nil,
   focused_element = nil,
+  latest_download = nil,
   runtime_metadata = nil,
   rendered_frame_geometry = nil,
   status = nil,
@@ -774,6 +775,9 @@ local function apply_serve_response_metadata(response)
   if response.runtime ~= nil and response.runtime ~= vim.NIL then
     state.runtime_metadata = response.runtime
   end
+  if response.download ~= nil and response.download ~= vim.NIL then
+    state.latest_download = response.download
+  end
   if response.status == "ok" and response.payload ~= nil then
     state.rendered_frame_geometry = rendered_frame_geometry_from_runtime(response.runtime)
     if response.found == nil then
@@ -1284,6 +1288,23 @@ local function runtime_footer_label(runtime)
   return output ~= nil and (output .. " " .. cells) or cells
 end
 
+local function download_footer_label(download)
+  if type(download) ~= "table" then
+    return nil
+  end
+  local filename = download.suggested_filename
+  if filename == nil or filename == vim.NIL or filename == "" then
+    local path = download.path
+    if path ~= nil and path ~= vim.NIL and path ~= "" then
+      filename = vim.fn.fnamemodify(tostring(path), ":t")
+    end
+  end
+  if filename == nil or filename == vim.NIL or filename == "" then
+    return "download"
+  end
+  return "download=" .. tostring(filename)
+end
+
 local function truncate_cells(value, width)
   width = tonumber(width) or 0
   if width <= 0 then
@@ -1332,6 +1353,11 @@ local function preview_footer_line(width)
   local focused = focused_element_label(state.focused_element)
   if focused ~= nil then
     table.insert(parts, focused)
+  end
+
+  local download = download_footer_label(state.latest_download)
+  if download ~= nil then
+    table.insert(parts, download)
   end
 
   if state.last_find_match_count ~= nil then
@@ -1626,6 +1652,7 @@ function M.open(command)
   state.current_title = nil
   state.page_metrics = nil
   state.focused_element = nil
+  state.latest_download = nil
   state.runtime_metadata = nil
   state.rendered_frame_geometry = nil
   state.status = nil
@@ -1829,6 +1856,7 @@ function M.open(command)
           state.runtime_metadata = nil
           state.rendered_frame_geometry = nil
           state.focused_element = nil
+          state.latest_download = nil
           state.element_hints = {}
           state.element_hints_geometry = nil
           state.cursor_addressable_preview = false
@@ -1964,6 +1992,7 @@ function M.close()
   state.current_title = nil
   state.page_metrics = nil
   state.focused_element = nil
+  state.latest_download = nil
   state.runtime_metadata = nil
   state.rendered_frame_geometry = nil
   state.status = nil
@@ -2070,6 +2099,7 @@ function M.stop()
   state.mode = nil
   state.serve_output = nil
   state.runtime_metadata = nil
+  state.latest_download = nil
   state.element_hints = {}
   state.element_hints_geometry = nil
   state.cursor_addressable_preview = false
@@ -3057,6 +3087,7 @@ function M.state()
     current_title = state.current_title,
     page_metrics = state.page_metrics,
     focused_element = state.focused_element,
+    latest_download = state.latest_download,
     runtime_metadata = state.runtime_metadata,
     rendered_frame_geometry = state.rendered_frame_geometry,
     status = state.status,

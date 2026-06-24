@@ -341,6 +341,13 @@ local browser = {
       submittable = true,
     }
   end,
+  latest_download = function()
+    return {
+      path = "/tmp/downloads/report.pdf",
+      suggested_filename = "report.pdf",
+      status = "completed",
+    }
+  end,
   hint_error = function()
     return nil
   end,
@@ -659,6 +666,7 @@ assert(#warnings == calibration_warning_count + 1, "fractional calibration shoul
 vim.cmd("NBrowserStatus")
 assert(echoed:match("scroll 25%%"), "NBrowserStatus should include scroll progress when page metrics exist")
 assert(echoed:match("focus=input Search"), "NBrowserStatus should include focused element metadata")
+assert(echoed:match("download=report%.pdf"), "NBrowserStatus should include latest download metadata")
 assert(echoed:match("output=kitty%-unicode"), "NBrowserStatus should include runtime output when available")
 assert(echoed:match("viewport=800x600"), "NBrowserStatus should include runtime viewport when available")
 assert(echoed:match("cells=80x24"), "NBrowserStatus should include runtime cell size when available")

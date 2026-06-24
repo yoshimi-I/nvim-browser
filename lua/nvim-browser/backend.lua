@@ -134,6 +134,14 @@ local function add_user_data_dir(command, opts)
   return command
 end
 
+local function add_download_dir(command, opts)
+  if opts ~= nil and opts.download_dir ~= nil and opts.download_dir ~= "" then
+    table.insert(command, "--download-dir")
+    table.insert(command, opts.download_dir)
+  end
+  return command
+end
+
 local function add_navigation_timeout(command, opts)
   local timeout = opts and tonumber(opts.navigation_timeout_ms) or nil
   if timeout ~= nil then
@@ -156,6 +164,7 @@ function M.command_for(binary, action, target, opts)
     add_navigation_timeout(command, opts)
     add_cdp_ws_url(command, opts)
     add_user_data_dir(command, opts)
+    add_download_dir(command, opts)
     table.insert(command, "--url")
     table.insert(command, target)
     return command
@@ -167,6 +176,7 @@ function M.command_for(binary, action, target, opts)
     add_navigation_timeout(command, opts)
     add_cdp_ws_url(command, opts)
     add_user_data_dir(command, opts)
+    add_download_dir(command, opts)
     table.insert(command, "--markdown")
     table.insert(command, target)
     return command
@@ -177,6 +187,7 @@ function M.command_for(binary, action, target, opts)
     add_navigation_timeout(command, opts)
     add_cdp_ws_url(command, opts)
     add_user_data_dir(command, opts)
+    add_download_dir(command, opts)
     table.insert(command, "--url")
     table.insert(command, vim.uri_from_fname(vim.fn.fnamemodify(target, ":p")))
     return command

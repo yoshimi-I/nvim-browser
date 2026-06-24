@@ -2,6 +2,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
 use std::process::{Child, ChildStdin, Command as StdCommand, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
@@ -189,6 +190,7 @@ fn serve_help_documents_cdp_ws_url_flag() {
         .success()
         .stdout(predicate::str::contains("--cdp-ws-url"))
         .stdout(predicate::str::contains("--user-data-dir"))
+        .stdout(predicate::str::contains("--download-dir"))
         .stdout(predicate::str::contains("--navigation-timeout-ms"));
 }
 
@@ -1920,6 +1922,90 @@ fn opt_in_e2e_serve_loop_toggles_checkbox_and_radio_hints() {
     serve.wait_success();
 }
 
+#[test]
+fn opt_in_e2e_serve_loop_reports_completed_download() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let download_dir = directory.path().join("downloads");
+    let fixture_url = start_download_fixture_server();
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--download-dir",
+        ])
+        .arg(&download_dir)
+        .args(["--url", &fixture_url])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok");
+    let download_hint_id = initial["hints"]
+        .as_array()
+        .and_then(|hints| {
+            hints
+                .iter()
+                .find(|hint| hint["label"] == "Download Report")
+                .and_then(|hint| hint["id"].as_u64())
+        })
+        .expect("download link hint should be present");
+
+    let downloaded = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "click_hint",
+        "hint_id": download_hint_id
+    }));
+
+    let download_entries: Vec<_> = std::fs::read_dir(&download_dir)
+        .expect("download dir should be readable")
+        .flatten()
+        .map(|entry| entry.path())
+        .collect();
+    assert_eq!(downloaded["status"], "ok");
+    assert_eq!(
+        downloaded["download"]["status"], "completed",
+        "download response should report completion; response={downloaded:?}; entries={download_entries:?}"
+    );
+    assert_eq!(downloaded["download"]["suggested_filename"], "report.txt");
+    let path = downloaded["download"]["path"]
+        .as_str()
+        .expect("download response should include a file path");
+    assert!(
+        path.ends_with("report.txt"),
+        "download path should include suggested filename; response={downloaded:?}"
+    );
+    assert!(
+        std::path::Path::new(path).exists(),
+        "reported download file should exist at {path}"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 2, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
 fn assert_serve_startup_error_jsonl(output: Vec<u8>) {
     let stdout = String::from_utf8(output).expect("startup error should write utf-8 JSONL");
     let lines: Vec<&str> = stdout.lines().collect();
@@ -1955,6 +2041,59 @@ fn assert_serve_startup_error_jsonl(output: Vec<u8>) {
             .is_some_and(|error| error.contains("Chrome") || error.contains("CDP")),
         "startup error should mention Chrome/CDP backend; response={json:?}"
     );
+}
+
+fn start_download_fixture_server() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("download fixture server should bind");
+    let address = listener
+        .local_addr()
+        .expect("download fixture server should expose local address");
+    thread::spawn(move || {
+        for stream in listener.incoming().take(8) {
+            let Ok(mut stream) = stream else {
+                break;
+            };
+            let mut reader = BufReader::new(
+                stream
+                    .try_clone()
+                    .expect("download fixture stream should clone"),
+            );
+            let mut request_line = String::new();
+            if reader.read_line(&mut request_line).is_err() {
+                continue;
+            }
+            while {
+                let mut line = String::new();
+                reader.read_line(&mut line).is_ok() && line != "\r\n" && !line.is_empty()
+            } {}
+            if request_line.starts_with("GET /report.txt ") {
+                let body = "download body";
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Disposition: attachment; filename=\"report.txt\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            } else if request_line.starts_with("GET /favicon.ico ") {
+                let response =
+                    "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                let _ = stream.write_all(response.as_bytes());
+            } else {
+                let body = r#"<!doctype html>
+<html>
+  <head><title>Download Fixture</title></head>
+  <body><main><button onclick="window.location.href='/report.txt'">Download Report</button></main></body>
+</html>"#;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        }
+    });
+    format!("http://{address}/")
 }
 
 fn tiny_png() -> Vec<u8> {

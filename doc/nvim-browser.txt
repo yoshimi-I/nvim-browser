@@ -64,6 +64,19 @@ The backend also accepts NVBROWSER_USER_DATA_DIR or --user-data-dir. Reusing one
 profile directory from multiple simultaneous browser sessions can fail because
 Chromium locks active profiles.
 
+To save browser-initiated downloads from clicks, hints, forms, or forwarded
+keys, configure a dedicated download directory:
+>
+require("nvim-browser").setup({
+  download_dir = vim.fn.expand("~/Downloads/nvim-browser"),
+})
+<
+The backend also accepts NVBROWSER_DOWNLOAD_DIR or --download-dir. Completed
+downloads are reported in the preview footer and :NBrowserStatus as
+"download=filename". The current POC reports one completed download per
+interaction response; it does not provide a download list, progress UI,
+cancellation, or filename prompts.
+
 If the terminal font cell size makes previews look stretched or click targets
 feel offset, tune the viewport cell pixels:
 >
@@ -444,12 +457,13 @@ COMMANDS                                           *nvim-browser-commands*
 
 							*:NBrowserStatus*
 :NBrowserStatus
-	Echo the last serve response status, current title, scroll progress, and
-	current URL. When available, the status line also includes serve runtime
-	diagnostics such as output mode, viewport, cell size, and renderer.
-	The active browser preview also shows a compact footer with status, title
-	or URL, scroll progress, output mode, cell geometry, and current URL. The
-	preview buffer name is also kept in sync with the current title or URL.
+	Echo the last serve response status, current title, scroll progress,
+	latest completed download filename, and current URL. When available, the
+	status line also includes serve runtime diagnostics such as output mode,
+	viewport, cell size, and renderer. The active browser preview also shows
+	a compact footer with status, title or URL, scroll progress, download
+	filename, output mode, cell geometry, and current URL. The preview buffer
+	name is also kept in sync with the current title or URL.
 	Navigation-like operations show immediate "loading | ... | Esc stop"
 	feedback in this footer before Chromium returns a new frame.
 	Idle browser previews periodically send capture requests to keep async

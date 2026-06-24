@@ -144,6 +144,21 @@ The same setting is available to the backend as `NVBROWSER_USER_DATA_DIR` or
 `--user-data-dir`. Reusing one profile directory from multiple simultaneous
 browser sessions can fail because Chromium locks active profiles.
 
+To save browser-initiated downloads from clicks, hints, forms, or forwarded
+keys, configure a dedicated download directory:
+
+```lua
+require("nvim-browser").setup({
+  download_dir = vim.fn.expand("~/Downloads/nvim-browser"),
+})
+```
+
+The same setting is available to the backend as `NVBROWSER_DOWNLOAD_DIR` or
+`--download-dir`. Completed downloads are reported in the preview footer and
+`:NBrowserStatus` as `download=filename`. The current POC reports one completed
+download per interaction response; it does not provide a download list,
+progress UI, cancellation, or filename prompts.
+
 Active browser previews recapture the page every 1500ms by default so async
 page updates and SPA state changes appear in Neovim without manual refresh.
 Disable it or tune the interval with:
@@ -317,11 +332,11 @@ cursor-addressable, then fall back to page-level scrolling if coordinates are
 not available.
 
 Browser preview footers show the latest serve status, title or URL, scroll
-progress, focused element kind/label, output mode, cell geometry, and current
-URL when reported by the Chromium/CDP session. `:NBrowserStatus` echoes the
-same browser-session state in the command line. Focus metadata is reported as
-`focus=input Search`, `focus=text_area Notes`, and similar compact labels after
-captured browser interactions.
+progress, focused element kind/label, latest completed download filename,
+output mode, cell geometry, and current URL when reported by the Chromium/CDP
+session. `:NBrowserStatus` echoes the same browser-session state in the command
+line. Focus metadata is reported as `focus=input Search`, `focus=text_area
+Notes`, and similar compact labels after captured browser interactions.
 
 While a browser session is idle, nvim-browser periodically sends a lightweight
 capture request to keep the preview current. It does not send background

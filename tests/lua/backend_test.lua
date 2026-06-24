@@ -149,6 +149,34 @@ assert(vim.deep_equal(profile_url_command, {
   "https://example.com",
 }), "web URL commands should pass configured persistent profile directories")
 
+local download_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
+  graphics = "ansi",
+  download_dir = "/tmp/nvbrowser-downloads",
+})
+assert(vim.deep_equal(download_url_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--download-dir",
+  "/tmp/nvbrowser-downloads",
+  "--url",
+  "https://example.com",
+}), "web URL commands should pass configured download directories")
+
+local empty_download_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
+  graphics = "ansi",
+  download_dir = "",
+})
+assert(vim.deep_equal(empty_download_url_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  "https://example.com",
+}), "empty download directories should not be passed to web URL commands")
+
 local empty_profile_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
   graphics = "ansi",
   user_data_dir = "",
@@ -206,6 +234,21 @@ assert(vim.deep_equal(html_profile_command, {
   "--url",
   vim.uri_from_fname("/tmp/site/index.html"),
 }), "HTML file commands should pass configured persistent profile directories")
+
+local html_download_command = backend.command_for("nvbrowser", "open", "/tmp/site/index.html", {
+  graphics = "ansi",
+  download_dir = "/tmp/nvbrowser-downloads",
+})
+assert(vim.deep_equal(html_download_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--download-dir",
+  "/tmp/nvbrowser-downloads",
+  "--url",
+  vim.uri_from_fname("/tmp/site/index.html"),
+}), "HTML file commands should pass configured download directories")
 
 local relative_html_command = backend.command_for("nvbrowser", "open", "site/index.html", {
   graphics = "ansi",

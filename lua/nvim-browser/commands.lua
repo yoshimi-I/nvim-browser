@@ -83,6 +83,23 @@ function M.register(browser, opts)
     return "focus=" .. kind
   end
 
+  local function download_status_label(download)
+    if type(download) ~= "table" then
+      return nil
+    end
+    local filename = download.suggested_filename
+    if filename == nil or filename == vim.NIL or filename == "" then
+      local path = download.path
+      if path ~= nil and path ~= vim.NIL and path ~= "" then
+        filename = vim.fn.fnamemodify(tostring(path), ":t")
+      end
+    end
+    if filename == nil or filename == vim.NIL or filename == "" then
+      return "download"
+    end
+    return "download=" .. tostring(filename)
+  end
+
   local function warn_hint_input_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: hint input failed, stale, or browser session is inactive", "WarningMsg" } }, false, {})
   end
@@ -882,6 +899,7 @@ function M.register(browser, opts)
     local scroll = browser.page_metrics and page_scroll_label(browser.page_metrics()) or nil
     local runtime = browser.runtime_metadata and runtime_status_label(browser.runtime_metadata()) or nil
     local focused = browser.focused_element and focused_element_label(browser.focused_element()) or nil
+    local download = browser.latest_download and download_status_label(browser.latest_download()) or nil
     local message = status
     if title ~= nil and title ~= "" then
       message = message .. " " .. title
@@ -891,6 +909,9 @@ function M.register(browser, opts)
     end
     if focused ~= nil then
       message = message .. " " .. focused
+    end
+    if download ~= nil then
+      message = message .. " " .. download
     end
     if runtime ~= nil then
       message = message .. " " .. runtime
