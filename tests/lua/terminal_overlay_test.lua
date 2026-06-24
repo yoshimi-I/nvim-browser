@@ -1303,6 +1303,15 @@ local function last_request_of_type(kind)
   return nil
 end
 
+function _G.nvim_browser_command_option(command, option)
+  for index, value in ipairs(command or {}) do
+    if value == option then
+      return command[index + 1]
+    end
+  end
+  return nil
+end
+
 function _G.nvim_browser_requests_of_type(kind)
   local matches = {}
   for _, request in ipairs(sent_requests) do
@@ -2852,6 +2861,7 @@ assert(#jobstop_calls >= 1, "stop should terminate the serve job when a pending 
 assert(terminal.state().mode == nil, "stop should mark the serve session inactive after terminating the job")
 assert(terminal.state().serve_output == nil, "stop should clear stale serve output metadata")
 assert(terminal._test.preview_footer_line(120):match("^stopped | https://example%.com/docs"), "stop should leave a stopped footer message")
+assert(terminal.state().stopped_operation ~= nil, "stop should keep stopped operation metadata for the footer")
 local cancelled_response = vim.json.encode({
   id = pending_request_id,
   status = "ok",
@@ -2863,8 +2873,51 @@ serve_stdout(nil, { cancelled_response, "" })
 assert(vim.wait(1000, function()
   return terminal.state().current_title ~= "Late Page"
 end), "cancelled operation responses should be ignored")
+jobstart_calls = {}
+sent_requests = {}
+assert(terminal.refresh() == true, "refresh after hard stop should restart the serve session")
+assert(#jobstart_calls == 1, "refresh after hard stop should start one replacement serve job")
+assert(jobstart_calls[1][2] == "serve", "refresh restart should use the serve backend")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == "https://example.com/docs", "refresh restart should target the stopped navigation URL")
+assert(terminal.state().mode == "serve", "refresh restart should reactivate serve mode")
+assert(terminal.state().pending_operation == nil, "refresh restart should start without stale pending operations")
+assert(terminal._test.response_handler_count() == 0, "refresh restart should start without stale response handlers")
+assert(#terminal.downloads() == 0, "refresh restart should clear stale download history")
+assert(terminal.state().zoom_scale == 1.0, "refresh restart should reset stale zoom state")
+assert(#terminal.state().element_hints == 0, "refresh restart should start without stale hints")
+
+terminal._test.clear_in_flight_capture()
+assert(terminal.navigate("https://example.com/reload-stopped") == true, "test setup should create another stoppable navigation")
+_G.nvim_browser_reload_stopped_target = terminal.state().pending_operation.target
+assert(terminal.stop() == true, "test setup should stop the second pending navigation")
+jobstart_calls = {}
+sent_requests = {}
+assert(terminal.reload() == true, "reload after hard stop should restart the serve session")
+assert(#jobstart_calls == 1, "reload after hard stop should start one replacement serve job")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == _G.nvim_browser_reload_stopped_target, "reload restart should target the stopped operation")
+terminal._test.clear_in_flight_capture()
+assert(terminal.navigate("https://example.com/address-stopped") == true, "test setup should create a pending address navigation")
+assert(terminal.stop() == true, "test setup should stop the address navigation")
+jobstart_calls = {}
+sent_requests = {}
+assert(terminal.navigate("https://example.com/address-restart") == true, "address navigation after hard stop should restart serve")
+assert(#jobstart_calls == 1, "address navigation after hard stop should start one replacement serve job")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == "https://example.com/address-restart", "address restart should use the requested URL")
 
 sent_requests = {}
+terminal.close()
+jobstart_calls = {}
+assert(terminal.refresh() == false, "refresh after close should not restart the closed serve session")
+assert(#jobstart_calls == 0, "refresh after close should not start a replacement serve job")
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--markdown", "/tmp/docs/README.md" })
+assert(terminal.navigate("https://example.com/from-markdown") == true, "test setup should create a pending navigation from markdown")
+assert(terminal.stop() == true, "test setup should stop markdown-origin navigation")
+jobstart_calls = {}
+assert(terminal.navigate("https://example.com/markdown-address-restart") == true, "address navigation after markdown hard stop should restart serve")
+assert(#jobstart_calls == 1, "markdown-origin address restart should start one replacement serve job")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == "https://example.com/markdown-address-restart", "markdown-origin address restart should use the requested URL")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--markdown") == nil, "markdown-origin address restart should drop the old markdown target")
+terminal.close()
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
 assert(terminal.find_text("cancel me") == true, "test setup should send a cancellable find request")
 _G.nvim_browser_cancellable_find_id = terminal.state().pending_operation and terminal.state().pending_operation.id

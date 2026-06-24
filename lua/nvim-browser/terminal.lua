@@ -14,6 +14,7 @@ local state = {
   stream_buffer = "",
   mode = nil,
   serve_output = nil,
+  last_serve_command = nil,
   next_request_id = 1,
   stop_timer = nil,
   resize_autocmd = nil,
@@ -322,6 +323,37 @@ local function command_target(command)
     return nil
   end
   return command[3]
+end
+
+local function copy_command(command)
+  if type(command) ~= "table" then
+    return nil
+  end
+  return vim.list_extend({}, command)
+end
+
+local function command_with_target(command, target)
+  local adjusted = copy_command(command)
+  if adjusted == nil or target == nil or target == "" then
+    return adjusted
+  end
+  if adjusted[2] ~= "serve" then
+    return adjusted
+  end
+  for index, value in ipairs(adjusted) do
+    if value == "--url" then
+      adjusted[index + 1] = target
+      return adjusted
+    end
+    if value == "--markdown" then
+      table.remove(adjusted, index + 1)
+      table.remove(adjusted, index)
+      break
+    end
+  end
+  table.insert(adjusted, "--url")
+  table.insert(adjusted, target)
+  return adjusted
 end
 
 local function kitty_placeholder_lines(columns, rows)
@@ -1869,6 +1901,7 @@ end
 
 function M.open(command)
   ensure_window()
+  local original_command = copy_command(command)
   command = command_for_window(command)
 
   local reused = reuse_active_serve_command(command)
@@ -1885,6 +1918,7 @@ function M.open(command)
   state.stream_buffer = ""
   state.mode = nil
   state.serve_output = nil
+  state.last_serve_command = command_uses_serve(original_command) and original_command or nil
   state.next_request_id = 1
   state.current_url = nil
   state.current_title = nil
@@ -2254,6 +2288,7 @@ function M.close()
   state.stream_buffer = ""
   state.mode = nil
   state.serve_output = nil
+  state.last_serve_command = nil
   state.current_url = nil
   state.current_title = nil
   state.page_metrics = nil
@@ -2297,11 +2332,33 @@ function M.close()
   end
 end
 
+local function restart_stopped_serve(target)
+  if state.mode == "serve" and state.job_id ~= nil then
+    return false
+  end
+  local command = state.last_serve_command
+  if command == nil then
+    return false
+  end
+  target = target
+    or (state.stopped_operation and state.stopped_operation.target)
+    or state.current_url
+    or state.last_target
+  M.open(command_with_target(command, target))
+  return state.mode == "serve" and state.job_id ~= nil
+end
+
 function M.refresh()
+  if state.mode ~= "serve" or state.job_id == nil then
+    return restart_stopped_serve()
+  end
   return send_capture_request()
 end
 
 function M.reload()
+  if state.mode ~= "serve" or state.job_id == nil then
+    return restart_stopped_serve((state.stopped_operation and state.stopped_operation.target) or state.current_url or state.last_target)
+  end
   request_resize()
   return send_pending_request({ type = "reload" }, state.current_url or state.last_target or "reload")
 end
@@ -2309,6 +2366,13 @@ end
 function M.navigate(url)
   if url == nil or url == "" then
     return false
+  end
+  if state.mode ~= "serve" or state.job_id == nil then
+    local ok = restart_stopped_serve(url)
+    if ok then
+      state.last_target = url
+    end
+    return ok
   end
   request_resize()
   local ok = send_pending_request({
