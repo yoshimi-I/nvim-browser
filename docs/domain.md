@@ -150,9 +150,10 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   `window.open`, and delayed `about:blank` navigations should stay covered by
   opt-in E2E because real pages commonly create and navigate child targets
   asynchronously.
-- Point-click popup recovery belongs with hint-click recovery: a closed current
-  target after native mouse dispatch should open a short suppression window so
-  the real child target can be adopted instead of leaking a stale preview.
+- Native mouse popup recovery belongs to click and right-click input alike: a
+  closed current target after point or hinted mouse dispatch should open a short
+  suppression window so the real child target can be adopted instead of leaking
+  a stale preview.
 - Interaction settling favors correctness over the fastest possible capture:
   Chromium responses wait for DOM quiet plus multiple stable complete
   URL/title samples before screenshotting, with a bounded latest-sample fallback

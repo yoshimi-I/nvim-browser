@@ -541,11 +541,7 @@ impl Renderer for ChromiumRenderer {
         if let Err(error) = dispatch_mouse_click(&self.tab, point.x, point.y)
             .map_err(|error| render_context_error("hint click failed", error))
         {
-            let now = std::time::Instant::now();
-            let Some(deadline) = popup_opening_click_recovery_deadline(&error, now) else {
-                return Err(error);
-            };
-            self.suppress_target_registration_until = Some(deadline);
+            self.recover_popup_opening_mouse_dispatch_error(error)?;
         }
         Ok(InputResult {
             session_id: request.session_id,
@@ -572,8 +568,16 @@ impl Renderer for ChromiumRenderer {
                 )
             })
             .and_then(parse_hint_point_json)?;
-        dispatch_mouse_click_with_button(&self.tab, point.x, point.y, MouseDispatchButton::Right)
-            .map_err(|error| render_context_error("hint right click failed", error))?;
+        if let Err(error) = dispatch_mouse_click_with_button(
+            &self.tab,
+            point.x,
+            point.y,
+            MouseDispatchButton::Right,
+        )
+        .map_err(|error| render_context_error("hint right click failed", error))
+        {
+            self.recover_popup_opening_mouse_dispatch_error(error)?;
+        }
         Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
@@ -716,11 +720,7 @@ impl Renderer for ChromiumRenderer {
         if let Err(error) = dispatch_mouse_click(&self.tab, request.x, request.y)
             .map_err(|error| render_context_error("point click failed", error))
         {
-            let now = std::time::Instant::now();
-            let Some(deadline) = popup_opening_click_recovery_deadline(&error, now) else {
-                return Err(error);
-            };
-            self.suppress_target_registration_until = Some(deadline);
+            self.recover_popup_opening_mouse_dispatch_error(error)?;
         }
         Ok(InputResult {
             session_id: request.session_id,
@@ -748,12 +748,16 @@ impl Renderer for ChromiumRenderer {
         request: RightClickPointRequest,
     ) -> Result<InputResult, RendererError> {
         self.mark_interaction_start();
-        dispatch_mouse_click_with_button(
+        if let Err(error) = dispatch_mouse_click_with_button(
             &self.tab,
             request.x,
             request.y,
             MouseDispatchButton::Right,
-        )?;
+        )
+        .map_err(|error| render_context_error("point right click failed", error))
+        {
+            self.recover_popup_opening_mouse_dispatch_error(error)?;
+        }
         Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
@@ -959,6 +963,18 @@ impl ChromiumRenderer {
 
     fn drain_dialog_events(&mut self) {
         while self.dialog_event_rx.try_recv().is_ok() {}
+    }
+
+    fn recover_popup_opening_mouse_dispatch_error(
+        &mut self,
+        error: RendererError,
+    ) -> Result<(), RendererError> {
+        let now = std::time::Instant::now();
+        let Some(deadline) = popup_opening_mouse_recovery_deadline(&error, now) else {
+            return Err(error);
+        };
+        self.suppress_target_registration_until = Some(deadline);
+        Ok(())
     }
 
     fn collect_completed_downloads(
@@ -2866,7 +2882,7 @@ fn is_closed_target_error(error: &RendererError) -> bool {
         && error.message().contains("underlying connection is closed")
 }
 
-fn popup_opening_click_recovery_deadline(
+fn popup_opening_mouse_recovery_deadline(
     error: &RendererError,
     now: std::time::Instant,
 ) -> Option<std::time::Instant> {
@@ -3263,14 +3279,14 @@ mod tests {
     }
 
     #[test]
-    fn popup_opening_click_recovery_deadline_handles_closed_target_errors() {
+    fn popup_opening_mouse_recovery_deadline_handles_closed_target_errors() {
         let now = std::time::Instant::now();
         let error = RendererError::new(
             RendererErrorKind::RenderFailed,
             "hint click failed: underlying connection is closed",
         );
 
-        let deadline = popup_opening_click_recovery_deadline(&error, now).expect(
+        let deadline = popup_opening_mouse_recovery_deadline(&error, now).expect(
             "closed target click errors should start a target-registration suppression window",
         );
 
@@ -3279,13 +3295,48 @@ mod tests {
     }
 
     #[test]
-    fn popup_opening_click_recovery_deadline_rejects_other_errors() {
+    fn popup_opening_mouse_recovery_deadline_rejects_other_errors() {
         let now = std::time::Instant::now();
         let error = RendererError::new(RendererErrorKind::RenderFailed, "hint click failed: boom");
+        let hint_right_error = RendererError::new(
+            RendererErrorKind::RenderFailed,
+            "hint right click failed: boom",
+        );
+        let point_right_error = RendererError::new(
+            RendererErrorKind::RenderFailed,
+            "point right click failed: boom",
+        );
 
-        let recovered = popup_opening_click_recovery_deadline(&error, now);
+        let recovered = popup_opening_mouse_recovery_deadline(&error, now);
+        let hint_right_recovered = popup_opening_mouse_recovery_deadline(&hint_right_error, now);
+        let point_right_recovered = popup_opening_mouse_recovery_deadline(&point_right_error, now);
 
         assert_eq!(recovered, None);
+        assert_eq!(hint_right_recovered, None);
+        assert_eq!(point_right_recovered, None);
+    }
+
+    #[test]
+    fn popup_opening_mouse_recovery_deadline_handles_right_click_closed_target_errors() {
+        let now = std::time::Instant::now();
+        let hint_error = RendererError::new(
+            RendererErrorKind::RenderFailed,
+            "hint right click failed: underlying connection is closed",
+        );
+        let point_error = RendererError::new(
+            RendererErrorKind::RenderFailed,
+            "point right click failed: underlying connection is closed",
+        );
+
+        let hint_deadline = popup_opening_mouse_recovery_deadline(&hint_error, now)
+            .expect("closed target hint right-click errors should start popup recovery");
+        let point_deadline = popup_opening_mouse_recovery_deadline(&point_error, now)
+            .expect("closed target point right-click errors should start popup recovery");
+
+        assert!(hint_deadline > now);
+        assert!(hint_deadline <= now + Duration::from_millis(750));
+        assert!(point_deadline > now);
+        assert!(point_deadline <= now + Duration::from_millis(750));
     }
 
     #[test]

@@ -1225,6 +1225,217 @@ fn opt_in_e2e_serve_loop_adopts_target_blank_point_click() {
 }
 
 #[test]
+fn opt_in_e2e_serve_loop_adopts_target_blank_right_click() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let fixture_path = directory.path().join("right-click-target-blank.html");
+    let blank_path = directory.path().join("right-click-adopted.html");
+    let blank_url = format!("file://{}", blank_path.display());
+    std::fs::write(
+        &blank_path,
+        r#"<!doctype html>
+<html>
+  <head><title>Right Click Adopted</title></head>
+  <body><main><p>right click adopted text</p></main></body>
+</html>"#,
+    )
+    .expect("adopted target fixture should be written");
+    std::fs::write(
+        &fixture_path,
+        format!(
+            r#"<!doctype html>
+<html>
+  <head><title>Right Click Opener</title></head>
+  <body>
+    <main>
+      <button oncontextmenu="window.open('{blank_url}', '_blank'); event.preventDefault(); return false;">Open Blank Target</button>
+    </main>
+  </body>
+</html>"#
+        ),
+    )
+    .expect("opener fixture should be written");
+    let fixture_url = format!("file://{}", fixture_path.display());
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--url",
+            &fixture_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok", "initial navigation should succeed");
+    let blank_target_hint = initial["hints"]
+        .as_array()
+        .expect("initial response should include hints")
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Open Blank Target")
+        .expect("real Chromium hints should include the target blank button");
+
+    let adopted_blank = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "right_click_point",
+        "x": blank_target_hint["x"].as_f64().expect("target blank hint should include x"),
+        "y": blank_target_hint["y"].as_f64().expect("target blank hint should include y")
+    }));
+    assert_eq!(
+        adopted_blank["status"], "ok",
+        "target blank right click should succeed; response={adopted_blank:?}"
+    );
+    assert_eq!(
+        adopted_blank["title"], "Right Click Adopted",
+        "target blank right click should adopt the new page target"
+    );
+    assert!(
+        adopted_blank["url"]
+            .as_str()
+            .is_some_and(|url| url.ends_with("right-click-adopted.html")),
+        "target blank right click response should use the adopted page URL"
+    );
+    let adopted_blank_text = serve.request(serde_json::json!({ "id": 2, "type": "page_text" }));
+    assert!(
+        adopted_blank_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("right click adopted text")),
+        "page_text should read from the right-click adopted target"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 3, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
+#[test]
+fn opt_in_e2e_serve_loop_adopts_target_blank_right_click_hint() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let fixture_path = directory.path().join("right-click-hint-target-blank.html");
+    let blank_path = directory.path().join("right-click-hint-adopted.html");
+    let blank_url = format!("file://{}", blank_path.display());
+    std::fs::write(
+        &blank_path,
+        r#"<!doctype html>
+<html>
+  <head><title>Right Click Hint Adopted</title></head>
+  <body><main><p>right click hint adopted text</p></main></body>
+</html>"#,
+    )
+    .expect("adopted target fixture should be written");
+    std::fs::write(
+        &fixture_path,
+        format!(
+            r#"<!doctype html>
+<html>
+  <head><title>Right Click Hint Opener</title></head>
+  <body>
+    <main>
+      <button oncontextmenu="window.open('{blank_url}', '_blank'); event.preventDefault(); return false;">Open Blank Target</button>
+    </main>
+  </body>
+</html>"#
+        ),
+    )
+    .expect("opener fixture should be written");
+    let fixture_url = format!("file://{}", fixture_path.display());
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--url",
+            &fixture_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok", "initial navigation should succeed");
+    let blank_target_hint = initial["hints"]
+        .as_array()
+        .expect("initial response should include hints")
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Open Blank Target")
+        .expect("real Chromium hints should include the target blank button")["id"]
+        .as_u64()
+        .expect("target blank hint should include id");
+
+    let adopted_blank = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "right_click_hint",
+        "hint_id": blank_target_hint
+    }));
+    assert_eq!(
+        adopted_blank["status"], "ok",
+        "target blank right click hint should succeed; response={adopted_blank:?}"
+    );
+    assert_eq!(
+        adopted_blank["title"], "Right Click Hint Adopted",
+        "target blank right click hint should adopt the new page target"
+    );
+    assert!(
+        adopted_blank["url"]
+            .as_str()
+            .is_some_and(|url| url.ends_with("right-click-hint-adopted.html")),
+        "target blank right click hint response should use the adopted page URL"
+    );
+    let adopted_blank_text = serve.request(serde_json::json!({ "id": 2, "type": "page_text" }));
+    assert!(
+        adopted_blank_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("right click hint adopted text")),
+        "page_text should read from the right-click-hint adopted target"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 3, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
+#[test]
 fn opt_in_e2e_serve_loop_focuses_hint_for_text_entry() {
     if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
         return;
