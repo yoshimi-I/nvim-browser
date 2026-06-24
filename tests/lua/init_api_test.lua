@@ -23,6 +23,8 @@ assert(type(browser.type_hint) == "function", "type_hint API should exist")
 assert(type(browser.type_hint_mode) == "function", "type_hint_mode API should exist")
 assert(type(browser.select_hint) == "function", "select_hint API should exist")
 assert(type(browser.select_hint_mode) == "function", "select_hint_mode API should exist")
+assert(type(browser.upload_hint) == "function", "upload_hint API should exist")
+assert(type(browser.upload_hint_mode) == "function", "upload_hint_mode API should exist")
 assert(type(browser.toggle_hint) == "function", "toggle_hint API should exist")
 assert(type(browser.toggle_hint_mode) == "function", "toggle_hint_mode API should exist")
 assert(type(browser.input_text_mode) == "function", "focused input text mode API should exist")
@@ -78,6 +80,7 @@ local original_terminal_wheel_point = terminal.wheel_point
 local original_terminal_wheel_mouse = terminal.wheel_mouse
 local original_terminal_type_hint = terminal.type_hint
 local original_terminal_select_hint = terminal.select_hint
+local original_terminal_upload_hint = terminal.upload_hint
 local original_terminal_toggle_hint = terminal.toggle_hint
 local original_terminal_hover_point = terminal.hover_point
 local original_terminal_hover_here = terminal.hover_here
@@ -370,6 +373,18 @@ end
 assert(browser.select_hint("s", "Canada") == true, "select_hint should delegate to terminal")
 assert(selected_hint.label == "s", "select_hint should pass hint label to terminal")
 assert(selected_hint.choice == "Canada", "select_hint should pass option choice to terminal")
+
+local uploaded_hint = nil
+terminal.upload_hint = function(label, paths)
+  uploaded_hint = {
+    label = label,
+    paths = paths,
+  }
+  return true
+end
+assert(browser.upload_hint("u", { "/tmp/example.txt" }) == true, "upload_hint should delegate to terminal")
+assert(uploaded_hint.label == "u", "upload_hint should pass hint label to terminal")
+assert(uploaded_hint.paths[1] == "/tmp/example.txt", "upload_hint should pass file paths to terminal")
 
 local toggled_hint = nil
 terminal.toggle_hint = function(label)
@@ -666,6 +681,30 @@ assert(selected_hint.label == "s", "select_hint_mode should pass the prompted hi
 assert(selected_hint.choice == "Canada", "select_hint_mode should pass the prompted option choice")
 
 browser.hints = function()
+  return { { id = 9, hint_label = "u", kind = "file" } }
+end
+uploaded_hint = nil
+local upload_prompts = {}
+local upload_responses = { "u", "/tmp/example.txt" }
+terminal.upload_hint = function(label, paths)
+  uploaded_hint = {
+    label = label,
+    paths = paths,
+  }
+  return true
+end
+assert(browser.upload_hint_mode(function(prompt)
+  table.insert(upload_prompts, prompt)
+  return table.remove(upload_responses, 1)
+end) == true, "upload_hint_mode should upload the prompted file")
+assert(
+  table.concat(upload_prompts, "|") == "nvim-browser hint: |nvim-browser file: ",
+  "upload_hint_mode should prompt for hint then file path"
+)
+assert(uploaded_hint.label == "u", "upload_hint_mode should pass the prompted hint label")
+assert(uploaded_hint.paths[1] == "/tmp/example.txt", "upload_hint_mode should pass the prompted file path")
+
+browser.hints = function()
   return {
     {
       id = 8,
@@ -763,6 +802,9 @@ end) == false, "type_hint_mode should return false without active hints")
 assert(browser.select_hint_mode(function()
   error("input should not be called without hints")
 end) == false, "select_hint_mode should return false without active hints")
+assert(browser.upload_hint_mode(function()
+  error("input should not be called without hints")
+end) == false, "upload_hint_mode should return false without active hints")
 assert(browser.toggle_hint_mode(function()
   error("input should not be called without hints")
 end) == false, "toggle_hint_mode should return false without active hints")
@@ -779,6 +821,9 @@ end) == false, "type_hint_mode should cancel on empty hint label")
 assert(browser.select_hint_mode(function()
   return ""
 end) == false, "select_hint_mode should cancel on empty hint label")
+assert(browser.upload_hint_mode(function()
+  return ""
+end) == false, "upload_hint_mode should cancel on empty hint label")
 assert(browser.toggle_hint_mode(function()
   return ""
 end) == false, "toggle_hint_mode should cancel on empty hint label")
@@ -795,6 +840,11 @@ local empty_choice_responses = { "s", "" }
 assert(browser.select_hint_mode(function()
   return table.remove(empty_choice_responses, 1)
 end) == false, "select_hint_mode should cancel on empty option choice")
+
+local empty_path_responses = { "u", "" }
+assert(browser.upload_hint_mode(function()
+  return table.remove(empty_path_responses, 1)
+end) == false, "upload_hint_mode should cancel on empty file path")
 
 terminal.type_hint = function()
   return false
@@ -817,6 +867,10 @@ end, {
 }) == false, "select_hint_mode typed fallback should propagate terminal failure")
 assert(select_fallback_errors[1] == "action_failed", "select_hint_mode typed fallback failures should call on_error")
 assert(browser.select_hint("s", "Canada") == false, "select_hint should propagate terminal failure")
+terminal.upload_hint = function()
+  return false
+end
+assert(browser.upload_hint("u", { "/tmp/example.txt" }) == false, "upload_hint should propagate terminal failure")
 terminal.toggle_hint = function()
   return false
 end
@@ -836,6 +890,7 @@ terminal.wheel_point = original_terminal_wheel_point
 terminal.wheel_mouse = original_terminal_wheel_mouse
 terminal.type_hint = original_terminal_type_hint
 terminal.select_hint = original_terminal_select_hint
+terminal.upload_hint = original_terminal_upload_hint
 terminal.toggle_hint = original_terminal_toggle_hint
 terminal.hover_point = original_terminal_hover_point
 terminal.hover_here = original_terminal_hover_here

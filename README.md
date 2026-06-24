@@ -252,12 +252,14 @@ Then run:
 :NBrowserTypeHint s hello world
 :NBrowserSubmitHint s hello world
 :NBrowserSelectHint s Canada
+:NBrowserUploadHint u /tmp/example.txt
 :NBrowserToggleHint c
 :NBrowserTypeHere hello world
 :NBrowserSubmitHere hello world
 :NBrowserTypeHintMode
 :NBrowserSubmitHintMode
 :NBrowserSelectHintMode
+:NBrowserUploadHintMode
 :NBrowserFocusHintMode
 :NBrowserToggleHintMode
 :NBrowserHintMode
@@ -330,6 +332,11 @@ or `:NBrowserKey Enter` for search box workflows.
 `:NBrowserSelectHint {id-or-label} {choice}` selects an option in a hinted
 `<select>` element. Numeric choices use 1-based option indexes; otherwise the
 runtime matches option values, then normalized visible option text.
+`:NBrowserUploadHint {id-or-label} {path...}` uploads one or more local files
+into a hinted `<input type="file">` and captures a fresh frame. Escape spaces
+with Vim filename escaping, for example `:NBrowserUploadHint u /tmp/a\ b.txt`.
+The backend validates that every path exists before sending the request to
+Chromium.
 `:NBrowserToggleHint {id-or-label}` toggles a hinted checkbox or selects a
 hinted radio input. Checkbox/radio hints show `[checked]` or `[unchecked]` in
 `:NBrowserHints`.
@@ -343,12 +350,14 @@ hinted element. `:NBrowserSubmitHintMode` does the same and presses Enter after
 the text is queued. `:NBrowserSelectHintMode` opens Neovim pickers for hinted
 `<select>` elements and their enabled options when option metadata is available,
 falling back to typed hint and option prompts for older metadata. Disabled
-options are not submitted. `:NBrowserFocusHintMode` prompts for a hint label
-and focuses the matching element. `:NBrowserToggleHintMode` prompts for a
+options are not submitted. `:NBrowserUploadHintMode` prompts for a file-input
+hint label and a path. `:NBrowserFocusHintMode` prompts for a hint label and
+focuses the matching element. `:NBrowserToggleHintMode` prompts for a
 checkbox/radio hint label. Lua mappings can call `require("nvim-browser").hint_mode()`,
 `require("nvim-browser").pick_hint({ action = "focus" })`,
 `require("nvim-browser").type_hint_mode(nil, { submit = true })`, or
 `require("nvim-browser").select_hint_mode()` /
+`require("nvim-browser").upload_hint_mode()` /
 `require("nvim-browser").focus_hint_mode()` /
 `require("nvim-browser").toggle_hint_mode()`.
 `:NBrowserAddress [url-or-search]` works like a small omnibox; host-like input

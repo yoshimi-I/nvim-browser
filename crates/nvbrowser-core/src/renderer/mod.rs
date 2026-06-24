@@ -1,5 +1,7 @@
 pub mod chromium;
 
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 use crate::session::{FrameMetadata, PageId, SessionId, Viewport};
@@ -47,6 +49,8 @@ pub trait Renderer {
     fn hover_hint(&mut self, request: HoverHintRequest) -> Result<InputResult, RendererError>;
 
     fn select_hint(&mut self, request: SelectHintRequest) -> Result<InputResult, RendererError>;
+
+    fn upload_hint(&mut self, request: UploadHintRequest) -> Result<InputResult, RendererError>;
 
     fn toggle_hint(&mut self, request: ToggleHintRequest) -> Result<InputResult, RendererError>;
 
@@ -452,6 +456,25 @@ impl SelectHintRequest {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UploadHintRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub hint_id: u32,
+    pub paths: Vec<PathBuf>,
+}
+
+impl UploadHintRequest {
+    pub fn new(session_id: SessionId, page_id: PageId, hint_id: u32, paths: Vec<PathBuf>) -> Self {
+        Self {
+            session_id,
+            page_id,
+            hint_id,
+            paths,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ToggleHintRequest {
     pub session_id: SessionId,
@@ -596,6 +619,7 @@ pub enum ElementHintKind {
     Link,
     Button,
     Input,
+    File,
     TextArea,
     Select,
     Checkbox,
@@ -874,6 +898,16 @@ mod tests {
         fn select_hint(
             &mut self,
             request: SelectHintRequest,
+        ) -> Result<InputResult, RendererError> {
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn upload_hint(
+            &mut self,
+            request: UploadHintRequest,
         ) -> Result<InputResult, RendererError> {
             Ok(InputResult {
                 session_id: request.session_id,
@@ -1257,6 +1291,23 @@ mod tests {
         assert!(select_json.contains(r#""label":"Japan""#));
         assert!(select_json.contains(r#""disabled":true"#));
         assert!(select_json.contains(r#""selected":true"#));
+
+        let file = ElementHint {
+            id: 4,
+            kind: ElementHintKind::File,
+            label: "Avatar".to_string(),
+            href: None,
+            checked: None,
+            options: Vec::new(),
+            x: 40.0,
+            y: 50.0,
+            width: 160.0,
+            height: 32.0,
+            clickable: true,
+            focusable: true,
+        };
+        let file_json = serde_json::to_string(&file).expect("file hint should serialize");
+        assert!(file_json.contains(r#""kind":"file""#));
     }
 
     #[test]

@@ -18,7 +18,7 @@ use nvbrowser_core::{
     PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
     RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest,
     SelectHintRequest, SelectionTextRequest, SessionId, TextInputRequest, ToggleHintRequest,
-    Viewport, WheelPointRequest, ZoomRequest,
+    UploadHintRequest, Viewport, WheelPointRequest, ZoomRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -348,6 +348,11 @@ enum ServeRequest {
         hint_id: u32,
         choice: String,
     },
+    UploadHint {
+        id: u64,
+        hint_id: u32,
+        paths: Vec<PathBuf>,
+    },
     ToggleHint {
         id: u64,
         hint_id: u32,
@@ -457,6 +462,33 @@ fn parse_serve_request(line: &str) -> Result<ServeRequest, serde_json::Error> {
 
 fn default_capture() -> bool {
     true
+}
+
+fn canonicalize_upload_paths(paths: Vec<PathBuf>) -> Result<Vec<PathBuf>, RendererError> {
+    if paths.is_empty() {
+        return Err(RendererError::new(
+            RendererErrorKind::InvalidState,
+            "no upload paths were provided",
+        ));
+    }
+
+    let mut canonical = Vec::with_capacity(paths.len());
+    for path in paths {
+        let resolved = fs::canonicalize(&path).map_err(|_| {
+            RendererError::new(
+                RendererErrorKind::InvalidState,
+                format!("upload path does not exist: {}", path.display()),
+            )
+        })?;
+        if !resolved.is_file() {
+            return Err(RendererError::new(
+                RendererErrorKind::InvalidState,
+                format!("upload path is not a file: {}", path.display()),
+            ));
+        }
+        canonical.push(resolved);
+    }
+    Ok(canonical)
 }
 
 fn encode_serve_response(response: &ServeResponse) -> String {
@@ -695,7 +727,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 11,
+            protocol_version: 12,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -891,6 +923,17 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.active_page_id(),
                     hint_id,
                     choice,
+                ))?;
+                self.settle_after_interaction()?;
+                self.capture_payload(true).map(Some)
+            }
+            ServeRequest::UploadHint { hint_id, paths, .. } => {
+                let paths = canonicalize_upload_paths(paths)?;
+                self.renderer.upload_hint(UploadHintRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    hint_id,
+                    paths,
                 ))?;
                 self.settle_after_interaction()?;
                 self.capture_payload(true).map(Some)
@@ -1156,6 +1199,7 @@ impl ServeRequest {
             | ServeRequest::FocusHint { id, .. }
             | ServeRequest::HoverHint { id, .. }
             | ServeRequest::SelectHint { id, .. }
+            | ServeRequest::UploadHint { id, .. }
             | ServeRequest::ToggleHint { id, .. }
             | ServeRequest::SubmitFocused { id }
             | ServeRequest::TypePoint { id, .. }
@@ -1610,7 +1654,8 @@ mod tests {
         HistoryNavigationResult, InputResult, InteractionSettleResult, NavigationResult, PageId,
         PageMetricsRequest, PageTextRequest, ReloadResult, RendererError, RendererErrorKind,
         ScrollResult, SelectHintRequest, SelectOptionHint, SelectionTextRequest,
-        SelectionTextResult, ShutdownResult, ToggleHintRequest, WheelPointRequest, ZoomResult,
+        SelectionTextResult, ShutdownResult, ToggleHintRequest, UploadHintRequest,
+        WheelPointRequest, ZoomResult,
     };
 
     struct FakeRenderer {
@@ -1625,6 +1670,7 @@ mod tests {
         clicked_hints: Vec<u32>,
         hovered_hints: Vec<u32>,
         selected_hints: Vec<(u32, String)>,
+        uploaded_hints: Vec<(u32, Vec<PathBuf>)>,
         toggled_hints: Vec<u32>,
         clicked_points: Vec<(f64, f64)>,
         hovered_points: Vec<(f64, f64)>,
@@ -1635,6 +1681,7 @@ mod tests {
         fail_click_hint: bool,
         fail_hover_hint: bool,
         fail_select_hint: bool,
+        fail_upload_hint: bool,
         fail_toggle_hint: bool,
         fail_hints: bool,
         fail_focus_hint: bool,
@@ -1666,6 +1713,7 @@ mod tests {
                 clicked_hints: Vec::new(),
                 hovered_hints: Vec::new(),
                 selected_hints: Vec::new(),
+                uploaded_hints: Vec::new(),
                 toggled_hints: Vec::new(),
                 clicked_points: Vec::new(),
                 hovered_points: Vec::new(),
@@ -1676,6 +1724,7 @@ mod tests {
                 fail_click_hint: false,
                 fail_hover_hint: false,
                 fail_select_hint: false,
+                fail_upload_hint: false,
                 fail_toggle_hint: false,
                 fail_hints: false,
                 fail_focus_hint: false,
@@ -1971,6 +2020,24 @@ mod tests {
                 return Err(RendererError::new(
                     RendererErrorKind::InvalidState,
                     "hint select failed",
+                ));
+            }
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn upload_hint(
+            &mut self,
+            request: UploadHintRequest,
+        ) -> Result<InputResult, RendererError> {
+            self.operations.push("upload_hint");
+            self.uploaded_hints.push((request.hint_id, request.paths));
+            if self.fail_upload_hint {
+                return Err(RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "hint file upload failed",
                 ));
             }
             Ok(InputResult {
@@ -2426,6 +2493,20 @@ mod tests {
             ServeRequest::ToggleHint { id: 12, hint_id: 7 }
         );
         assert_eq!(
+            parse_serve_request(
+                r##"{"type":"upload_hint","id":15,"hint_id":8,"paths":["/tmp/example.txt","/tmp/file with spaces.txt"]}"##
+            )
+            .expect("upload hint request should parse"),
+            ServeRequest::UploadHint {
+                id: 15,
+                hint_id: 8,
+                paths: vec![
+                    PathBuf::from("/tmp/example.txt"),
+                    PathBuf::from("/tmp/file with spaces.txt"),
+                ],
+            }
+        );
+        assert_eq!(
             parse_serve_request(r##"{"type":"submit_focused","id":14}"##)
                 .expect("submit focused request should parse"),
             ServeRequest::SubmitFocused { id: 14 }
@@ -2735,7 +2816,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 11,
+                protocol_version: 12,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -2764,7 +2845,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":11,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":12,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -2791,7 +2872,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 11);
+        assert_eq!(runtime_info.protocol_version, 12);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -4649,6 +4730,94 @@ mod tests {
             runtime.renderer.operations,
             vec!["capture", "hints", "toggle_hint"]
         );
+    }
+
+    #[test]
+    fn serve_runtime_uploads_hint_before_capturing_next_frame() {
+        let file = tempfile::NamedTempFile::new().expect("upload fixture should be created");
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::UploadHint {
+            id: 2,
+            hint_id: 8,
+            paths: vec![file.path().to_path_buf()],
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(
+            runtime.renderer.uploaded_hints,
+            vec![(8, vec![fs::canonicalize(file.path()).unwrap()])]
+        );
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "upload_hint",
+                "settle",
+                "capture",
+                "hints"
+            ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_rejects_missing_upload_paths_before_renderer() {
+        let missing = std::env::temp_dir().join("nvbrowser-missing-upload-fixture.txt");
+        let _ = fs::remove_file(&missing);
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::UploadHint {
+            id: 2,
+            hint_id: 8,
+            paths: vec![missing.clone()],
+        });
+
+        assert_eq!(response.status, ServeStatus::Error);
+        assert!(response.payload.is_none());
+        assert!(
+            response
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("upload path does not exist"),
+            "missing upload path should produce a clear error"
+        );
+        assert!(runtime.renderer.uploaded_hints.is_empty());
+        assert_eq!(runtime.renderer.operations, vec!["capture", "hints"]);
     }
 
     #[test]

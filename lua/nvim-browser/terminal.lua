@@ -2502,6 +2502,38 @@ function M.select_hint(id, choice)
   }, state.current_url or state.last_target or "select", "select")
 end
 
+function M.upload_hint(id, paths)
+  if type(paths) == "string" then
+    paths = { paths }
+  end
+  if type(paths) ~= "table" or #paths == 0 then
+    return false
+  end
+  local normalized = {}
+  for _, path in ipairs(paths) do
+    if path == nil or path == "" then
+      return false
+    end
+    table.insert(normalized, vim.fn.fnamemodify(tostring(path), ":p"))
+  end
+  if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
+    return false
+  end
+  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+    return false
+  end
+  local hint = find_hint(state.element_hints, id)
+  if hint == nil or hint.kind ~= "file" then
+    return false
+  end
+  cancel_in_flight_capture()
+  return send_pending_request({
+    type = "upload_hint",
+    hint_id = hint.id,
+    paths = normalized,
+  }, state.current_url or state.last_target or "upload", "upload")
+end
+
 function M.toggle_hint(id)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false

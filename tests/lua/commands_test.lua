@@ -16,6 +16,7 @@ local typed_hint = nil
 local submitted_hint = nil
 local submitted_focused = false
 local selected_hint = nil
+local uploaded_hint = nil
 local toggled_hint = nil
 local focused_hint = nil
 local typed_here = nil
@@ -144,6 +145,10 @@ local browser = {
   end,
   select_hint = function(label, choice)
     selected_hint = label .. ":" .. choice
+    return true
+  end,
+  upload_hint = function(label, paths)
+    uploaded_hint = { label = label, paths = paths }
     return true
   end,
   toggle_hint = function(label)
@@ -566,6 +571,11 @@ assert(submitted_focused == true, "NBrowserSubmitFocused should call browser.sub
 vim.cmd("NBrowserSelectHint s Canada")
 assert(selected_hint == "s:Canada", "NBrowserSelectHint should pass the label and choice to browser.select_hint")
 
+local upload_path = vim.fn.tempname() .. " upload file.txt"
+vim.cmd("NBrowserUploadHint s " .. vim.fn.fnameescape(upload_path))
+assert(uploaded_hint.label == "s", "NBrowserUploadHint should pass the label to browser.upload_hint")
+assert(uploaded_hint.paths[1] == upload_path, "NBrowserUploadHint should preserve escaped paths with spaces")
+
 vim.cmd("NBrowserToggleHint c")
 assert(toggled_hint == "c", "NBrowserToggleHint should pass the label to browser.toggle_hint")
 
@@ -615,6 +625,23 @@ commands.register(browser, {
 })
 vim.cmd("NBrowserSelectHintMode")
 assert(selected_hint == "s:Canada", "NBrowserSelectHintMode should prompt and select a hinted option")
+
+uploaded_hint = nil
+hint_responses = { "s", upload_path }
+local upload_prompts = {}
+commands.register(browser, {
+  input = function(prompt)
+    table.insert(upload_prompts, prompt)
+    return table.remove(hint_responses, 1)
+  end,
+})
+vim.cmd("NBrowserUploadHintMode")
+assert(uploaded_hint.label == "s", "NBrowserUploadHintMode should prompt and upload into a hinted file input")
+assert(uploaded_hint.paths[1] == upload_path, "NBrowserUploadHintMode should pass the prompted path")
+assert(
+  table.concat(upload_prompts, "|") == "nvim-browser hint: |nvim-browser file: ",
+  "NBrowserUploadHintMode should prompt for hint then file path"
+)
 
 browser.hints = function()
   return {
@@ -781,6 +808,9 @@ local failed_browser = {
   select_hint = function()
     return false
   end,
+  upload_hint = function()
+    return false
+  end,
   select_hint_mode = function(opts)
     if type(opts) == "table" and type(opts.on_error) == "function" then
       opts.on_error("action_failed")
@@ -844,6 +874,9 @@ assert(warnings[#warnings] == "nvim-browser: hint input failed, stale, or browse
 vim.cmd("NBrowserSelectHint s missing")
 assert(warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive", "NBrowserSelectHint should warn when select_hint fails")
 
+vim.cmd("NBrowserUploadHint s missing")
+assert(warnings[#warnings] == "nvim-browser: hint file upload failed, stale, non-file, missing path, or browser session is inactive", "NBrowserUploadHint should warn when upload_hint fails")
+
 vim.cmd("NBrowserToggleHint s")
 assert(warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive", "NBrowserToggleHint should warn when toggle_hint fails")
 
@@ -866,6 +899,12 @@ vim.cmd("NBrowserSelectHintMode")
 assert(
   warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive",
   "NBrowserSelectHintMode should warn when hinted select mode fails"
+)
+
+vim.cmd("NBrowserUploadHintMode")
+assert(
+  warnings[#warnings] == "nvim-browser: hint file upload failed, stale, non-file, missing path, or browser session is inactive",
+  "NBrowserUploadHintMode should warn when hinted file upload mode fails"
 )
 
 vim.cmd("NBrowserToggleHintMode")

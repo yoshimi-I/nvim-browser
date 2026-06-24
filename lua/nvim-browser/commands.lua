@@ -87,6 +87,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: hint input failed, stale, or browser session is inactive", "WarningMsg" } }, false, {})
   end
 
+  local function warn_hint_upload_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: hint file upload failed, stale, non-file, missing path, or browser session is inactive", "WarningMsg" } }, false, {})
+  end
+
   local function warn_submit_focused_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: focused element is not submittable or browser session is inactive", "WarningMsg" } }, false, {})
   end
@@ -538,6 +542,21 @@ function M.register(browser, opts)
     nargs = "+",
   })
 
+  vim.api.nvim_create_user_command("NBrowserUploadHint", function(opts)
+    local args = opts.fargs or {}
+    local label = args[1]
+    local paths = {}
+    for index = 2, #args do
+      table.insert(paths, args[index])
+    end
+    if label == nil or label == "" or #paths == 0 or not browser.upload_hint(label, paths) then
+      warn_hint_upload_unavailable()
+    end
+  end, {
+    nargs = "+",
+    complete = "file",
+  })
+
   vim.api.nvim_create_user_command("NBrowserToggleHint", function(opts)
     if opts.args == nil or opts.args == "" or not browser.toggle_hint(opts.args) then
       warn_hint_input_unavailable()
@@ -611,6 +630,25 @@ function M.register(browser, opts)
       select = select,
       on_error = warn_hint_input_unavailable,
     })
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserUploadHintMode", function()
+    local hints = browser.hints()
+    if #hints == 0 then
+      warn_no_hints()
+      return
+    end
+    local label = input("nvim-browser hint: ")
+    if label == nil or label == "" then
+      return
+    end
+    local path = input("nvim-browser file: ")
+    if path == nil or path == "" then
+      return
+    end
+    if not browser.upload_hint(label, { path }) then
+      warn_hint_upload_unavailable()
+    end
   end, {})
 
   vim.api.nvim_create_user_command("NBrowserFocusHintMode", function()

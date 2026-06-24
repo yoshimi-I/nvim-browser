@@ -27,7 +27,7 @@ Example lazy.nvim setup:
 >
 {
   "yoshimi-I/nvim-browser",
-  tag = "v0.1.2",
+  tag = "v0.1.3",
   build = "cargo build --release",
   config = function()
     require("nvim-browser").setup({
@@ -86,7 +86,7 @@ require("nvim-browser").setup({
   },
 })
 <
-Release tags use vMAJOR.MINOR.PATCH; replace v0.1.2 with the latest release
+Release tags use vMAJOR.MINOR.PATCH; replace v0.1.3 with the latest release
 tag when installing. Until v1.0.0, pin the plugin and backend binary to the
 same tag or commit.
 
@@ -305,6 +305,13 @@ COMMANDS                                           *nvim-browser-commands*
 	Numeric choices use 1-based option indexes. Other choices match option
 	values first, then normalized visible option text case-insensitively.
 
+							*:NBrowserUploadHint*
+:NBrowserUploadHint {id-or-label} {path...}
+	Upload one or more local files into a hinted <input type="file"> and
+	capture a fresh frame. Use Vim filename escaping for paths containing
+	spaces, for example :NBrowserUploadHint u /tmp/a\ b.txt. The backend
+	validates that every path exists before sending the request to Chromium.
+
 							*:NBrowserToggleHint*
 :NBrowserToggleHint {id-or-label}
 	Toggle a hinted checkbox or select a hinted radio input and capture a
@@ -337,6 +344,11 @@ COMMANDS                                           *nvim-browser-commands*
 	options when option metadata is available, then select the chosen option
 	and capture a fresh frame. Falls back to typed hint and option prompts
 	for older hint metadata. Disabled options are not submitted.
+
+							*:NBrowserUploadHintMode*
+:NBrowserUploadHintMode
+	Prompt for a browser file-input hint label and a local file path, upload
+	that file, and capture a fresh frame.
 
 							*:NBrowserFocusHintMode*
 :NBrowserFocusHintMode

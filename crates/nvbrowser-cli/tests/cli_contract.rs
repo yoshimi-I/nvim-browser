@@ -1277,6 +1277,107 @@ fn opt_in_e2e_serve_loop_renders_local_pdf() {
 }
 
 #[test]
+fn opt_in_e2e_serve_loop_uploads_file_input_hints() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let page_path = directory.path().join("upload.html");
+    let upload_path = directory.path().join("file with spaces.txt");
+    std::fs::write(&upload_path, "upload body").expect("upload fixture should be written");
+    std::fs::write(
+        &page_path,
+        r#"<!doctype html>
+<html>
+  <body>
+    <label>Attachment <input id="file" type="file"></label>
+    <output id="result">waiting</output>
+    <script>
+      document.getElementById('file').addEventListener('change', (event) => {
+        document.getElementById('result').textContent =
+          event.target.files.length + ':' + event.target.files[0].name;
+      });
+    </script>
+  </body>
+</html>
+"#,
+    )
+    .expect("upload page should be written");
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "72",
+            "--rows",
+            "20",
+            "--width",
+            "720",
+            "--height",
+            "420",
+            "--url",
+            &file_url(&page_path),
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(
+        initial["status"], "ok",
+        "initial upload page should render; response={initial:?}"
+    );
+    let hints = initial["hints"]
+        .as_array()
+        .expect("initial response should include element hints");
+    let file_hint_id = hints
+        .iter()
+        .find(|hint| hint["kind"] == "file")
+        .and_then(|hint| hint["id"].as_u64())
+        .expect("file input should be exposed as a file hint");
+
+    let uploaded = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "upload_hint",
+        "hint_id": file_hint_id,
+        "paths": [upload_path]
+    }));
+    assert_eq!(
+        uploaded["status"], "ok",
+        "upload hint should succeed; response={uploaded:?}"
+    );
+
+    let page_text = serve.request(serde_json::json!({
+        "id": 2,
+        "type": "page_text"
+    }));
+    assert_eq!(
+        page_text["status"], "ok",
+        "page text should be readable after upload; response={page_text:?}"
+    );
+    assert!(
+        page_text["payload"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("1:file with spaces.txt")),
+        "change handler should observe the uploaded filename; response={page_text:?}"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 3, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
+#[test]
 fn opt_in_e2e_serve_loop_adopts_delayed_about_blank_window_open() {
     if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
         return;

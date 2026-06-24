@@ -2110,8 +2110,68 @@ assert(vim.wait(1000, function()
 end), "type_hint response should clear pending state before later hint captures")
 
 sent_requests = {}
+upload_hints_response = vim.json.decode(hints_response)
+upload_hints_response.id = type_hint_pending_id + 1
+table.insert(upload_hints_response.hints, {
+  id = 9,
+  hint_label = "u",
+  kind = "file",
+  label = "Attachment",
+  x = 90,
+  y = 120,
+  width = 160,
+  height = 24,
+  clickable = true,
+  focusable = true,
+})
+serve_stdout(nil, { vim.json.encode(upload_hints_response), "" })
+assert(vim.wait(1000, function()
+  return #terminal.state().element_hints == 3
+end), "serve hint response should repopulate file hints before hinted upload")
+assert(
+  terminal.upload_hint("u", { "/tmp/file with spaces.txt" }) == true,
+  "upload_hint should upload files into the hinted file input"
+)
+upload_hint_seen = false
+upload_type_point_seen = false
+for _, request in ipairs(sent_requests) do
+  ok, decoded = pcall(vim.json.decode, request.payload)
+  if
+    ok
+    and decoded.type == "upload_hint"
+    and decoded.hint_id == 9
+    and decoded.paths[1] == "/tmp/file with spaces.txt"
+  then
+    upload_hint_seen = true
+  end
+  if ok and decoded.type == "type_point" then
+    upload_type_point_seen = true
+  end
+end
+assert(upload_hint_seen, "upload_hint should send backend hint id and file paths")
+assert(not upload_type_point_seen, "upload_hint should avoid coordinate-based input requests")
+upload_hint_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(upload_hint_pending_id ~= nil, "upload_hint should mark the upload operation as pending")
+assert(#terminal.state().element_hints > 0, "upload_hint should preserve active hints while a capture is pending")
+serve_stdout(nil, { vim.json.encode({
+  id = upload_hint_pending_id,
+  status = "ok",
+  payload = "uploaded hint frame",
+  url = "https://example.com",
+  title = "Example",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil
+end), "upload_hint response should clear pending state")
+sent_requests = {}
+assert(terminal.upload_hint("missing", { "/tmp/example.txt" }) == false, "upload_hint should fail for a missing hint label")
+assert(terminal.upload_hint("s", { "/tmp/example.txt" }) == false, "upload_hint should fail for a non-file hint")
+assert(terminal.upload_hint("u", {}) == false, "upload_hint should reject empty file lists")
+assert(#sent_requests == 0, "upload_hint should not send a request for invalid upload inputs")
+
+sent_requests = {}
 local live_hint_response = vim.json.decode(hints_response)
-live_hint_response.id = type_hint_pending_id + 1
+live_hint_response.id = upload_hint_pending_id + 1
 serve_stdout(nil, { vim.json.encode(live_hint_response), "" })
 assert(vim.wait(1000, function()
   return #terminal.state().element_hints == 2
@@ -2400,7 +2460,7 @@ terminal._test.apply_serve_response({
   url = "https://example.com/before-quiet",
   title = "Before Quiet",
   runtime = {
-    protocol_version = 11,
+    protocol_version = 12,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",
@@ -2449,7 +2509,7 @@ serve_stdout(nil, { vim.json.encode({
     submittable = true,
   },
   runtime = {
-    protocol_version = 11,
+    protocol_version = 12,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",

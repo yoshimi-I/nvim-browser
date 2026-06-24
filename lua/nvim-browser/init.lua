@@ -527,6 +527,13 @@ function M.select_hint(id, choice)
   return terminal.select_hint(id, choice)
 end
 
+function M.upload_hint(id, paths)
+  if type(paths) == "string" then
+    paths = { paths }
+  end
+  return terminal.upload_hint(id, paths)
+end
+
 function M.toggle_hint(id)
   return terminal.toggle_hint(id)
 end
@@ -715,6 +722,22 @@ function M.focus_hint_mode(input)
     return false
   end
   return M.focus_hint(label)
+end
+
+function M.upload_hint_mode(input)
+  input = input or vim.fn.input
+  if #M.hints() == 0 then
+    return false
+  end
+  local label = input("nvim-browser hint: ")
+  if label == nil or label == "" then
+    return false
+  end
+  local path = input("nvim-browser file: ")
+  if path == nil or path == "" then
+    return false
+  end
+  return M.upload_hint(label, { path })
 end
 
 function M.toggle_hint_mode(input)

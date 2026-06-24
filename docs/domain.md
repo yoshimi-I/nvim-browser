@@ -64,7 +64,8 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   focus, point clicks, CDP mouse-move hovers, native CDP mouse-wheel input at
   preview coordinates, hints, hinted focus for search/input workflows, hinted
   `<select>` option selection with Neovim pickers when option metadata is
-  available, hinted checkbox/radio toggles, direct href following,
+  available, hinted `<input type="file">` uploads through CDP
+  `DOM.setFileInputFiles`, hinted checkbox/radio toggles, direct href following,
   current URL and hinted link URL yanking, focused-element metadata, and
   submit-current-focus form UX.
 - Shows live browser state in a preview footer: status, title/URL, scroll
@@ -107,6 +108,9 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   behavior. This intentionally skips page pointer/click handlers for that link
   class; keep separate `window.open` and delayed `about:blank` E2E coverage for
   real child target adoption.
+- File uploads must validate local paths before invoking CDP. Real Chromium E2E
+  should cover file inputs because DOM-only JS cannot set true local upload
+  files.
 - Long-running Chromium lifecycle, stuck navigation cancellation, and late
   response handling remain operational risk areas and should stay covered by
   tests.

@@ -27,7 +27,7 @@ use crate::{
         PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer,
         RendererError, RendererErrorKind, ScrollRequest, ScrollResult, SelectHintRequest,
         SelectionTextRequest, SelectionTextResult, ShutdownResult, TextInputRequest,
-        ToggleHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
+        ToggleHintRequest, UploadHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -455,6 +455,53 @@ impl Renderer for ChromiumRenderer {
             return Err(RendererError::new(
                 RendererErrorKind::InvalidState,
                 "hint id was not a selectable element, was stale, or option choice was not found",
+            ));
+        }
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn upload_hint(&mut self, request: UploadHintRequest) -> Result<InputResult, RendererError> {
+        let script = upload_hint_target_script(request.hint_id, request.paths.len())?;
+        let target = self
+            .tab
+            .evaluate(&script, true)
+            .map_err(render_error)?
+            .value
+            .ok_or_else(|| {
+                RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "hint id was not a file input, was stale, or was disabled",
+                )
+            })
+            .and_then(parse_upload_hint_target_json)?;
+        let file_paths = request
+            .paths
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let file_path_refs = file_paths.iter().map(String::as_str).collect::<Vec<_>>();
+        let element = self
+            .tab
+            .find_element(&target.selector)
+            .map_err(render_error)?;
+        element
+            .set_input_files(&file_path_refs)
+            .map_err(render_error)?;
+        let change_script = upload_hint_change_script(&target.token)?;
+        let changed = self
+            .tab
+            .evaluate(&change_script, true)
+            .map_err(render_error)?
+            .value
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        if !changed {
+            return Err(RendererError::new(
+                RendererErrorKind::InvalidState,
+                "hint file upload completed but change event dispatch failed",
             ));
         }
         Ok(InputResult {
@@ -1078,6 +1125,7 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
     if (tag === 'button' || role === 'button') return 'button';
     if (tag === 'input') {
       const type = (element.getAttribute('type') || 'text').toLowerCase();
+      if (type === 'file') return 'file';
       if (type === 'checkbox') return 'checkbox';
       if (type === 'radio') return 'radio';
       return 'input';
@@ -1257,6 +1305,7 @@ const ACTIVE_ELEMENT_SCRIPT: &str = r#"
     if (tag === 'button' || role === 'button') return 'button';
     if (tag === 'input') {
       const type = (element.getAttribute('type') || 'text').toLowerCase();
+      if (type === 'file') return 'file';
       if (type === 'checkbox') return 'checkbox';
       if (type === 'radio') return 'radio';
       return 'input';
@@ -1411,6 +1460,71 @@ const SELECT_HINT_SCRIPT: &str = r#"
   }
   element.selectedIndex = selectedIndex;
   element.value = options[selectedIndex].value;
+  element.dispatchEvent(new Event('input', { bubbles: true }));
+  element.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
+})()
+"#;
+
+fn upload_hint_target_script(hint_id: u32, file_count: usize) -> Result<String, RendererError> {
+    let hint_id = serde_json::to_string(&hint_id).map_err(render_error)?;
+    let file_count = serde_json::to_string(&file_count).map_err(render_error)?;
+    let token = format!("nvbrowser-upload-{}-{}", unix_time_ms(), hint_id);
+    let token = serde_json::to_string(&token).map_err(render_error)?;
+    Ok(UPLOAD_HINT_TARGET_SCRIPT
+        .replace("__HINT_ID__", &hint_id)
+        .replace("__FILE_COUNT__", &file_count)
+        .replace("__TOKEN__", &token))
+}
+
+const UPLOAD_HINT_TARGET_SCRIPT: &str = r#"
+(() => {
+  const hintId = __HINT_ID__;
+  const fileCount = __FILE_COUNT__;
+  const token = __TOKEN__;
+  const registry = window.__nvbrowserHintRegistry;
+  const element = registry && registry.elements instanceof Map ? registry.elements.get(hintId) : null;
+  if (!element || !element.isConnected || element.tagName.toLowerCase() !== 'input') {
+    return JSON.stringify({ ok: false, error: 'hint id was not found or is stale' });
+  }
+  if (element.disabled || element.getAttribute('aria-disabled') === 'true') {
+    return JSON.stringify({ ok: false, error: 'file input is disabled' });
+  }
+  const type = (element.getAttribute('type') || 'text').toLowerCase();
+  if (type !== 'file') {
+    return JSON.stringify({ ok: false, error: 'hint is not a file input' });
+  }
+  if (!Number.isFinite(fileCount) || fileCount <= 0) {
+    return JSON.stringify({ ok: false, error: 'no files were provided' });
+  }
+  if (fileCount > 1 && !element.multiple) {
+    return JSON.stringify({ ok: false, error: 'file input does not accept multiple files' });
+  }
+  if (typeof element.scrollIntoView === 'function') {
+    element.scrollIntoView({ block: 'center', inline: 'center' });
+  }
+  element.setAttribute('data-nvbrowser-upload-token', token);
+  return JSON.stringify({
+    ok: true,
+    token,
+    selector: `input[data-nvbrowser-upload-token="${token}"]`
+  });
+})()
+"#;
+
+fn upload_hint_change_script(token: &str) -> Result<String, RendererError> {
+    let token = serde_json::to_string(token).map_err(render_error)?;
+    Ok(UPLOAD_HINT_CHANGE_SCRIPT.replace("__TOKEN__", &token))
+}
+
+const UPLOAD_HINT_CHANGE_SCRIPT: &str = r#"
+(() => {
+  const token = __TOKEN__;
+  const element = document.querySelector(`input[data-nvbrowser-upload-token="${token}"]`);
+  if (!element || !element.isConnected) return false;
+  if (typeof element.focus === 'function') {
+    element.focus({ preventScroll: true });
+  }
   element.dispatchEvent(new Event('input', { bubbles: true }));
   element.dispatchEvent(new Event('change', { bubbles: true }));
   return true;
@@ -1974,6 +2088,14 @@ struct HintPoint {
     direct_navigated: Option<bool>,
 }
 
+#[derive(Debug, Deserialize)]
+struct UploadHintTarget {
+    ok: bool,
+    token: Option<String>,
+    selector: Option<String>,
+    error: Option<String>,
+}
+
 fn parse_page_text_json(text: &str) -> Result<ExtractedPageText, serde_json::Error> {
     serde_json::from_str(text)
 }
@@ -1988,8 +2110,47 @@ fn parse_hint_point_json(value: serde_json::Value) -> Result<HintPoint, Renderer
     serde_json::from_str(text).map_err(render_error)
 }
 
+fn parse_upload_hint_target_json(
+    value: serde_json::Value,
+) -> Result<ResolvedUploadHintTarget, RendererError> {
+    let text = value.as_str().ok_or_else(|| {
+        RendererError::new(
+            RendererErrorKind::InvalidState,
+            "hint id was not a file input, was stale, or was disabled",
+        )
+    })?;
+    let target: UploadHintTarget = serde_json::from_str(text).map_err(render_error)?;
+    if !target.ok {
+        return Err(RendererError::new(
+            RendererErrorKind::InvalidState,
+            target
+                .error
+                .unwrap_or_else(|| "hint file upload target was invalid".to_string()),
+        ));
+    }
+    let token = target.token.ok_or_else(|| {
+        RendererError::new(
+            RendererErrorKind::InvalidState,
+            "hint file upload target did not return a token",
+        )
+    })?;
+    let selector = target.selector.ok_or_else(|| {
+        RendererError::new(
+            RendererErrorKind::InvalidState,
+            "hint file upload target did not return a selector",
+        )
+    })?;
+    Ok(ResolvedUploadHintTarget { token, selector })
+}
+
 fn parse_element_hints_json(text: &str) -> Result<Vec<ElementHint>, RendererError> {
     serde_json::from_str(text).map_err(render_error)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResolvedUploadHintTarget {
+    token: String,
+    selector: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2298,6 +2459,8 @@ mod tests {
         assert!(ELEMENT_HINTS_SCRIPT.contains("aria-labelledby"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("element.labels"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("closest('label')"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("type === 'file'"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("return 'file'"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("return 'checkbox'"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("return 'radio'"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("checked: checkedFor(element)"));
@@ -2342,6 +2505,17 @@ mod tests {
         assert!(!TOGGLE_HINT_SCRIPT.contains("new Event('input'"));
         assert!(!TOGGLE_HINT_SCRIPT.contains("new Event('change'"));
         assert!(!TOGGLE_HINT_SCRIPT.contains("[hintId - 1]"));
+        let upload_script =
+            upload_hint_target_script(9, 2).expect("upload target script should build");
+        assert!(upload_script.contains("__nvbrowserHintRegistry"));
+        assert!(upload_script.contains("registry.elements.get(hintId)"));
+        assert!(upload_script.contains("type !== 'file'"));
+        assert!(upload_script.contains("!element.multiple"));
+        assert!(upload_script.contains("data-nvbrowser-upload-token"));
+        let change_script = upload_hint_change_script("nvbrowser-upload-token")
+            .expect("upload change script should build");
+        assert!(change_script.contains("dispatchEvent(new Event('input'"));
+        assert!(change_script.contains("dispatchEvent(new Event('change'"));
     }
 
     #[test]
