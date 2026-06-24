@@ -1075,6 +1075,21 @@ local function last_request_of_type(kind)
   return nil
 end
 
+function _G.nvim_browser_requests_of_type(kind)
+  local matches = {}
+  for _, request in ipairs(sent_requests) do
+    local ok, decoded = pcall(vim.json.decode, request.payload)
+    if ok and decoded.type == kind then
+      table.insert(matches, decoded)
+    end
+  end
+  return matches
+end
+
+function _G.nvim_browser_latest_timer()
+  return fake_timers[#fake_timers]
+end
+
 vim.fn.jobstart = function(command, opts)
   table.insert(jobstart_calls, command)
   serve_stdout = opts and opts.on_stdout or nil
@@ -2527,14 +2542,21 @@ end), "hover response should clear the pending hover operation")
 
 sent_requests = {}
 vim.cmd("doautocmd VimResized")
-local resize_seen = false
-for _, request in ipairs(sent_requests) do
-  local ok, decoded = pcall(vim.json.decode, request.payload)
-  if ok and decoded.type == "resize" then
-    resize_seen = true
-  end
-end
-assert(resize_seen, "active serve sessions should resize when Neovim is resized")
+vim.cmd("doautocmd WinResized")
+vim.cmd("doautocmd VimResized")
+assert(#nvim_browser_requests_of_type("resize") == 0, "resize autocmds should be coalesced instead of sending immediately")
+assert(nvim_browser_latest_timer() ~= nil, "resize autocmds should create a trailing resize timer")
+assert(nvim_browser_latest_timer().starts[#nvim_browser_latest_timer().starts].timeout == 50, "resize coalescing should use a short trailing delay")
+vim.api.nvim_win_set_width(terminal.state().winid, math.max(45, vim.api.nvim_win_get_width(terminal.state().winid) - 3))
+_G.nvim_browser_resize_expected_columns = math.max(20, vim.api.nvim_win_get_width(terminal.state().winid) - 2)
+nvim_browser_latest_timer().callback()
+assert(vim.wait(1000, function()
+  return #nvim_browser_requests_of_type("resize") == 1
+end), "active serve sessions should flush one coalesced resize after Neovim resize storms")
+assert(
+  nvim_browser_requests_of_type("resize")[1].columns == _G.nvim_browser_resize_expected_columns,
+  "coalesced resize should use the latest preview geometry at flush time"
+)
 
 sent_requests = {}
 assert(terminal.refresh() == true, "test setup should create an in-flight capture before resize")
@@ -2542,14 +2564,11 @@ local stale_before_resize_capture_id = terminal.state().live_refresh_request_id
 assert(stale_before_resize_capture_id ~= nil, "test setup should track capture before resize")
 sent_requests = {}
 vim.cmd("doautocmd WinResized")
-local resize_after_capture_seen = false
-for _, request in ipairs(sent_requests) do
-  local ok, decoded = pcall(vim.json.decode, request.payload)
-  if ok and decoded.type == "resize" then
-    resize_after_capture_seen = true
-  end
-end
-assert(resize_after_capture_seen, "resize should still be sent while a capture is in flight")
+assert(#nvim_browser_requests_of_type("resize") == 0, "resize while a capture is in flight should still wait for the coalescing flush")
+nvim_browser_latest_timer().callback()
+assert(vim.wait(1000, function()
+  return #nvim_browser_requests_of_type("resize") == 1
+end), "resize should still be sent after coalescing while a capture is in flight")
 serve_stdout(nil, { vim.json.encode({
   id = stale_before_resize_capture_id,
   status = "ok",
@@ -2579,14 +2598,38 @@ assert(#terminal.state().element_hints == 0, "capture response made stale by res
 
 sent_requests = {}
 vim.cmd("doautocmd WinResized")
-local win_resize_seen = false
-for _, request in ipairs(sent_requests) do
-  local ok, decoded = pcall(vim.json.decode, request.payload)
-  if ok and decoded.type == "resize" then
-    win_resize_seen = true
-  end
+assert(#nvim_browser_requests_of_type("resize") == 0, "window resize autocmd should be delayed for coalescing")
+nvim_browser_latest_timer().callback()
+assert(vim.wait(1000, function()
+  return #nvim_browser_requests_of_type("resize") == 1
+end), "active serve sessions should resize when the preview window changes size")
+
+sent_requests = {}
+vim.cmd("doautocmd WinResized")
+terminal.open({ "nvbrowser", "show-image", "/tmp/replaces-serve-before-resize.png", "--output", "ansi" })
+if nvim_browser_latest_timer() and nvim_browser_latest_timer().callback then
+  nvim_browser_latest_timer().callback()
 end
-assert(win_resize_seen, "active serve sessions should resize when the preview window changes size")
+assert(#nvim_browser_requests_of_type("resize") == 0, "replacing a serve session should cancel pending coalesced resize timers")
+
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/resize-config" })
+terminal._test.clear_in_flight_capture()
+termopen_calls = {}
+
+sent_requests = {}
+vim.cmd("doautocmd WinResized")
+terminal.configure({
+  live_refresh = {
+    enabled = false,
+  },
+})
+if nvim_browser_latest_timer() and nvim_browser_latest_timer().callback then
+  nvim_browser_latest_timer().callback()
+end
+vim.wait(100, function()
+  return #nvim_browser_requests_of_type("resize") > 0
+end)
+assert(#nvim_browser_requests_of_type("resize") == 0, "config reset should cancel pending coalesced resize timers")
 
 sent_requests = {}
 terminal.configure({

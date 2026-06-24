@@ -16,6 +16,7 @@ local state = {
   next_request_id = 1,
   stop_timer = nil,
   resize_autocmd = nil,
+  resize_timer = nil,
   current_url = nil,
   current_title = nil,
   page_metrics = nil,
@@ -781,8 +782,10 @@ end
 
 local stop_live_refresh_timer
 local stop_live_refresh
+local stop_resize_timer
 
 local function stop_existing_job(force)
+  stop_resize_timer()
   stop_live_refresh()
   if state.job_id == nil then
     return
@@ -812,6 +815,7 @@ end
 local clear_in_flight_capture
 local cancel_in_flight_capture
 local same_preview_geometry
+local resize_coalesce_ms = 50
 
 local function request_resize()
   if state.mode ~= "serve" or not is_valid_window() then
@@ -830,6 +834,40 @@ local function request_resize()
     width = geometry.width,
     height = geometry.height,
   })
+end
+
+stop_resize_timer = function()
+  if state.resize_timer == nil then
+    return
+  end
+  state.resize_timer:stop()
+  state.resize_timer:close()
+  state.resize_timer = nil
+end
+
+local function schedule_resize()
+  if state.mode ~= "serve" or state.job_id == nil or not is_valid_window() then
+    stop_resize_timer()
+    return false
+  end
+
+  stop_resize_timer()
+  local timer = timer_factory()
+  if timer == nil then
+    return request_resize()
+  end
+  state.resize_timer = timer
+  timer:start(resize_coalesce_ms, 0, function()
+    vim.schedule(function()
+      if state.resize_timer ~= timer then
+        return
+      end
+      state.resize_timer = nil
+      timer:close()
+      request_resize()
+    end)
+  end)
+  return true
 end
 
 local send_pending_request
@@ -935,7 +973,7 @@ local function ensure_resize_autocmd()
   state.resize_autocmd = vim.api.nvim_create_autocmd({ "VimResized", "WinResized" }, {
     group = resize_augroup,
     callback = function()
-      request_resize()
+      schedule_resize()
     end,
   })
 end
@@ -1601,6 +1639,7 @@ function M.open(command)
             return
           end
           state.job_id = nil
+          stop_resize_timer()
           stop_live_refresh()
           state.mode = nil
           state.serve_output = nil
@@ -1755,6 +1794,7 @@ function M.close()
   state.hint_error = nil
   state.pending_operation = nil
   state.live_refresh_request_id = nil
+  stop_resize_timer()
   state.stopped_operation = nil
   state.canceled_request_ids = {}
   state.quiet_request_ids = {}
@@ -1828,6 +1868,7 @@ function M.stop()
   state.response_handlers[pending.id] = nil
   state.generation = state.generation + 1
   stop_live_refresh()
+  stop_resize_timer()
   hints_overlay.clear(state.bufnr)
   if is_valid_buffer() then
     refresh_preview_footer(state.bufnr)
@@ -2719,6 +2760,7 @@ end
 
 function M.configure(opts)
   opts = opts or {}
+  stop_resize_timer()
   options = vim.tbl_deep_extend("force", options, {
     live_refresh = opts.live_refresh or {},
     viewport = opts.viewport or {},
@@ -2806,6 +2848,7 @@ M._test = {
   end,
   set_timer_factory = function(factory)
     stop_live_refresh()
+    stop_resize_timer()
     timer_factory = factory or function()
       return vim.loop.new_timer()
     end
