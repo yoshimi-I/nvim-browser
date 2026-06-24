@@ -2188,8 +2188,8 @@ assert(terminal.start_text_mode({
   end,
 }) == true, "browser text mode should run while page-state responses are processed")
 assert(
-  #fake_timers == _G.nvim_browser_timer_count_during_text_mode_page_state,
-  "page-state changes should not schedule adaptive capture while text mode is active"
+  #fake_timers <= _G.nvim_browser_timer_count_during_text_mode_page_state + 1,
+  "page-state changes should not schedule adaptive capture while text mode is active beyond the exit capture watchdog"
 )
 terminal._test.clear_in_flight_capture()
 
@@ -3276,6 +3276,126 @@ vim.wait(50)
 assert(terminal.state().last_find_found ~= true, "late cancelled find stdout should not update find status")
 assert(terminal.state().last_find_match_count ~= 9, "late cancelled find stdout should not update find match count")
 
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/watchdog" })
+terminal._test.clear_in_flight_capture()
+jobstop_calls = {}
+sent_requests = {}
+assert(terminal.navigate("https://example.com/watchdog-next") == true, "test setup should create a watchdog-tracked navigation")
+_G.nvim_browser_watchdog_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(_G.nvim_browser_watchdog_pending_id ~= nil, "watchdog test should leave a pending navigation")
+_G.nvim_browser_watchdog_timer = nvim_browser_latest_timer()
+assert(_G.nvim_browser_watchdog_timer ~= nil, "pending browser operations should start a watchdog timer")
+assert(_G.nvim_browser_watchdog_timer.starts[#_G.nvim_browser_watchdog_timer.starts].timeout == 20000, "operation watchdog should derive its default from the navigation timeout")
+_G.nvim_browser_watchdog_timer.callback()
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil
+end), "operation watchdog should clear stuck pending operations")
+assert(#jobstop_calls >= 1, "operation watchdog should hard-stop the stuck serve job")
+assert(terminal.state().mode == nil, "operation watchdog should mark the serve session inactive")
+assert(terminal.state().stopped_operation ~= nil, "operation watchdog should keep stopped operation metadata for restart")
+assert(
+  terminal._test.preview_footer_line(120):match("^timeout | https://example%.com/watchdog%-next"),
+  "operation watchdog should leave a timeout footer message"
+)
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_watchdog_pending_id,
+  status = "ok",
+  payload = "late watchdog frame",
+  url = "https://example.com/watchdog-next",
+  title = "Late Watchdog",
+  hints = {
+    { id = 44, x = 10, y = 10, label = "Late" },
+  },
+  downloads = {
+    {
+      path = "/tmp/nvbrowser-downloads/late-watchdog.txt",
+      suggested_filename = "late-watchdog.txt",
+      status = "completed",
+    },
+  },
+}), "" })
+vim.wait(50)
+assert(terminal.state().current_title ~= "Late Watchdog", "watchdog late stdout should not mutate title")
+assert(#terminal.state().element_hints == 0, "watchdog late stdout should not mutate hints")
+assert(#terminal.downloads() == 0, "watchdog late stdout should not record downloads")
+_G.nvim_browser_old_watchdog_stdout = serve_stdout
+jobstart_calls = {}
+sent_requests = {}
+assert(terminal.refresh() == true, "refresh after watchdog timeout should restart the serve session")
+assert(#jobstart_calls == 1, "refresh after watchdog timeout should start one replacement serve job")
+assert(
+  _G.nvim_browser_command_option(jobstart_calls[1], "--url") == "https://example.com/watchdog-next",
+  "watchdog restart should target the stopped navigation URL"
+)
+assert(terminal._test.response_handler_count() == 0, "watchdog restart should not keep stale response handlers")
+assert(#terminal.state().element_hints == 0, "watchdog restart should start without stale hints")
+_G.nvim_browser_old_watchdog_stdout(nil, { '{"id":' .. tostring(_G.nvim_browser_watchdog_pending_id) .. ',"status":"ok","payload":"stale partial"' })
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "fresh frame after stale partial",
+  url = "https://example.com/watchdog-next",
+  title = "Fresh After Stale Partial",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Fresh After Stale Partial"
+end), "fresh restart stdout should not be poisoned by stale partial output from the old job")
+
+terminal._test.clear_in_flight_capture()
+jobstop_calls = {}
+sent_requests = {}
+assert(terminal.refresh() == true, "test setup should create a watchdog-tracked capture")
+_G.nvim_browser_capture_watchdog_id = terminal.state().live_refresh_request_id
+assert(_G.nvim_browser_capture_watchdog_id ~= nil, "watchdog test should leave an in-flight capture")
+_G.nvim_browser_capture_watchdog_timer = nvim_browser_latest_timer()
+assert(_G.nvim_browser_capture_watchdog_timer ~= nil, "capture requests should start a watchdog timer")
+assert(_G.nvim_browser_capture_watchdog_timer.starts[#_G.nvim_browser_capture_watchdog_timer.starts].timeout == 20000, "capture watchdog should derive its default from the navigation timeout")
+_G.nvim_browser_capture_watchdog_timer.callback()
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id == nil
+end), "capture watchdog should clear stuck capture requests")
+assert(#jobstop_calls >= 1, "capture watchdog should hard-stop the stuck serve job")
+assert(terminal.state().mode == nil, "capture watchdog should mark the serve session inactive")
+assert(
+  terminal._test.preview_footer_line(120):match("^timeout")
+    and terminal._test.preview_footer_line(120):find("https://example.com/watchdog-next", 1, true),
+  "capture watchdog should leave a timeout footer message"
+)
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_capture_watchdog_id,
+  status = "ok",
+  payload = "late capture watchdog frame",
+  url = "https://example.com/late-capture-watchdog",
+  title = "Late Capture Watchdog",
+}), "" })
+vim.wait(50)
+assert(terminal.state().current_title ~= "Late Capture Watchdog", "capture watchdog late stdout should not mutate title")
+assert(terminal.refresh() == true, "refresh after capture watchdog timeout should restart the serve session")
+assert(_G.nvim_browser_command_option(jobstart_calls[#jobstart_calls], "--url") == "https://example.com/watchdog-next", "capture watchdog restart should use the stopped URL")
+
+terminal._test.clear_in_flight_capture()
+sent_requests = {}
+_G.nvim_browser_timer_count_before_completed_watchdog_request = #fake_timers
+assert(terminal.navigate("https://example.com/watchdog-complete") == true, "test setup should create a completing watchdog request")
+_G.nvim_browser_completing_watchdog_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+_G.nvim_browser_completing_watchdog_timer = fake_timers[#fake_timers]
+assert(#fake_timers == _G.nvim_browser_timer_count_before_completed_watchdog_request + 1, "pending request should create one watchdog timer")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_completing_watchdog_id,
+  status = "ok",
+  payload = "completed watchdog frame",
+  url = "https://example.com/watchdog-complete",
+  title = "Watchdog Complete",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil
+end), "completed responses should clear pending operations")
+assert(_G.nvim_browser_completing_watchdog_timer.stopped == true and _G.nvim_browser_completing_watchdog_timer.closed == true, "completed responses should stop the watchdog timer")
+_G.nvim_browser_jobstop_count_after_completed_watchdog = #jobstop_calls
+_G.nvim_browser_completing_watchdog_timer.callback()
+assert(#jobstop_calls == _G.nvim_browser_jobstop_count_after_completed_watchdog, "completed watchdog callbacks should not stop the serve job")
+
+terminal.close()
 sent_requests = {}
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
 serve_stdout(nil, { hints_response, "" })

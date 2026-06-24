@@ -113,6 +113,11 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   `:NBrowserRefresh` and browser actions still capture fresh frames. Meaningful
   idle metadata changes debounce one full-frame capture so the preview image
   catches up without returning to constant screenshots.
+- Guards pending navigation-like operations and explicit frame captures with a
+  Neovim-side watchdog based on `navigation_timeout_ms`. When Chromium/CDP
+  stalls, Lua hard-stops the serve job, advances the generation so late stdout
+  is quarantined, leaves `timeout | ...` footer metadata, and can restart from
+  the stopped target through refresh, reload, or address navigation.
 - Extracts a reader buffer from the current browser page and resolves reader
   links against the snapshot page URL, including dot-segment normalization for
   relative `http(s)` and `file` links while preserving meaningful path content.
@@ -161,9 +166,10 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   response and appended to a bounded completed-download list that persists with
   the normal Neovim session state when enabled, but there is no progress UI,
   cancellation, retry, or filename prompt yet.
-- Long-running Chromium lifecycle, stuck navigation cancellation, and late
-  response handling remain operational risk areas and should stay covered by
-  tests.
+- Long-running Chromium lifecycle remains an operational risk. Lua now covers
+  stuck pending-operation and explicit-capture timeouts with hard-stop and
+  late-response quarantine tests; CDP-side lifecycle and target-adoption changes
+  should still stay covered by focused Rust and opt-in real Chromium tests.
 - Changes to the CDP renderer, JSONL `serve` protocol, frame payloads, hints,
   page text, or resize behavior should run the opt-in real Chromium E2E test
   with `NVBROWSER_E2E=1` in addition to the fake-renderer unit suite.

@@ -190,7 +190,12 @@ so URL, title, scroll, focus, and download metadata stay current without
 constant screenshots. When that lightweight state shows the page changed while
 idle, nvim-browser debounces one full-frame capture so the visible preview does
 not stay stale. Use `:NBrowserRefresh` when you want a fresh frame immediately.
-Disable it or tune the interval with:
+Navigation-like operations and explicit frame captures are guarded by a
+Neovim-side watchdog based on `navigation_timeout_ms`; if Chromium/CDP stalls,
+the preview hard-stops the serve job, ignores late output from that generation,
+shows `timeout | ...` in the footer, and can restart with `:NBrowserRefresh`,
+`:NBrowserReload`, or `:NBrowserAddress`.
+Disable live refresh or tune its interval with:
 
 ```lua
 require("nvim-browser").setup({
@@ -388,7 +393,7 @@ in the preview footer before Chromium returns a frame. Run `:NBrowserStop`, or
 press `<Esc>` in the focused preview buffer, to cancel the pending operation and
 terminate a stuck serve job. After a hard stop, `:NBrowserRefresh`,
 `:NBrowserReload`, or `:NBrowserAddress` starts a fresh serve session from the
-stopped or requested URL; closing the preview does not restart it.
+stopped, timed-out, or requested URL; closing the preview does not restart it.
 
 `:NBrowserHints` echoes the latest keyboard labels and numbered browser
 elements, including link destinations when available. On ANSI and Kitty Unicode

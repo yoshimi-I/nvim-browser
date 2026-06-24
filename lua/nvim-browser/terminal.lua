@@ -34,6 +34,8 @@ local state = {
   status_error = nil,
   hint_error = nil,
   pending_operation = nil,
+  operation_watchdog_timer = nil,
+  operation_watchdog_request_id = nil,
   navigation_admission_id = nil,
   navigation_suppressed_request_ids = {},
   live_refresh_timer = nil,
@@ -75,6 +77,7 @@ local options = {
     cell_width_px = 10,
     cell_height_px = 20,
   },
+  navigation_timeout_ms = 20000,
 }
 
 local timer_factory = function()
@@ -447,6 +450,10 @@ local function send_terminal_escape(payload)
 end
 
 local is_navigation_class_request
+local stop_operation_watchdog_timer
+local schedule_operation_watchdog
+local hard_stop_pending_operation
+local hard_stop_capture_operation
 
 local function send_serve_request(request, on_response)
   if state.mode ~= "serve" or state.job_id == nil then
@@ -1044,6 +1051,7 @@ local function apply_serve_response_metadata(response)
     and (state.pending_operation.id == response.id or (response.id == 0 and response.status == "error"))
   then
     state.pending_operation = nil
+    stop_operation_watchdog_timer()
     state.stopped_operation = nil
     if response.id == 0 and response.status == "error" then
       state.navigation_admission_id = nil
@@ -1185,6 +1193,7 @@ local flush_scroll_coalesce
 local live_refresh_interval
 
 local function stop_existing_job(force)
+  stop_operation_watchdog_timer()
   stop_text_mode_flush_timer()
   stop_resize_timer()
   clear_scroll_coalesce()
@@ -1290,6 +1299,9 @@ end
 clear_in_flight_capture = function()
   if state.live_refresh_request_id ~= nil then
     state.response_handlers[state.live_refresh_request_id] = nil
+    if state.operation_watchdog_request_id == state.live_refresh_request_id then
+      stop_operation_watchdog_timer()
+    end
   end
   state.live_refresh_request_id = nil
   state.live_refresh_request_type = nil
@@ -1481,12 +1493,18 @@ local function send_live_refresh_request(request, opts)
     return false
   end
   local ok, id = send_serve_request(request, function()
+    if state.operation_watchdog_request_id == state.live_refresh_request_id then
+      stop_operation_watchdog_timer()
+    end
     state.live_refresh_request_id = nil
     state.live_refresh_request_type = nil
   end)
   if ok then
     state.live_refresh_request_id = id
     state.live_refresh_request_type = request.type
+    if request.type == "capture" then
+      schedule_operation_watchdog(id)
+    end
   end
   return ok
 end
@@ -1843,7 +1861,8 @@ local function preview_footer_line(width)
     return truncate_cells(table.concat(parts, " | "), width)
   end
 
-  table.insert(parts, state.text_mode_active and "text" or state.stopped_operation ~= nil and "stopped" or state.status or "idle")
+  local stopped_label = state.stopped_operation ~= nil and (state.stopped_operation.reason or "stopped") or nil
+  table.insert(parts, state.text_mode_active and "text" or stopped_label or state.status or "idle")
 
   local title = state.current_title ~= nil and state.current_title ~= "" and state.current_title or nil
   local url = state.stopped_operation ~= nil
@@ -1935,6 +1954,47 @@ local function refresh_preview_footer(bufnr, geometry)
   vim.bo[bufnr].modifiable = false
 end
 
+stop_operation_watchdog_timer = function()
+  if state.operation_watchdog_timer ~= nil then
+    state.operation_watchdog_timer:stop()
+    state.operation_watchdog_timer:close()
+  end
+  state.operation_watchdog_timer = nil
+  state.operation_watchdog_request_id = nil
+end
+
+local function operation_watchdog_timeout_ms()
+  local timeout = tonumber(options.navigation_timeout_ms)
+  if timeout == nil or timeout <= 0 then
+    return 20000
+  end
+  return math.floor(timeout)
+end
+
+schedule_operation_watchdog = function(id)
+  stop_operation_watchdog_timer()
+  local timer = timer_factory()
+  if timer == nil then
+    return false
+  end
+  state.operation_watchdog_timer = timer
+  state.operation_watchdog_request_id = id
+  local generation = state.generation
+  timer:start(operation_watchdog_timeout_ms(), 0, function()
+    vim.schedule(function()
+      if state.operation_watchdog_timer ~= timer or state.operation_watchdog_request_id ~= id or state.generation ~= generation then
+        return
+      end
+      if state.pending_operation ~= nil and state.pending_operation.id == id then
+        hard_stop_pending_operation("timeout")
+      elseif state.live_refresh_request_id == id and state.live_refresh_request_type == "capture" then
+        hard_stop_capture_operation("timeout")
+      end
+    end)
+  end)
+  return true
+end
+
 local function mark_pending_operation(id, label, target)
   if id == nil then
     return
@@ -1945,8 +2005,10 @@ local function mark_pending_operation(id, label, target)
     target = target or state.current_url or state.last_target,
   }
   state.stopped_operation = nil
+  state.operation_watchdog_request_id = id
   state.status_error = nil
   state.hint_error = nil
+  schedule_operation_watchdog(id)
   if is_valid_buffer() then
     refresh_preview_footer(state.bufnr)
   end
@@ -1955,6 +2017,7 @@ end
 local function clear_pending_operation(id)
   if state.pending_operation ~= nil and (id == nil or state.pending_operation.id == id) then
     state.pending_operation = nil
+    stop_operation_watchdog_timer()
     if is_valid_buffer() then
       refresh_preview_footer(state.bufnr)
     end
@@ -2234,6 +2297,7 @@ function M.open(command)
     local target = command_target(command)
     local uses_kitty = command_uses_kitty_serve(command)
     local uses_kitty_unicode = command_uses_kitty_unicode_serve(command)
+    local stream_buffer = ""
     state.cursor_addressable_preview = uses_kitty_unicode or command_uses_ansi_serve(command)
 
     vim.bo[state.bufnr].modifiable = true
@@ -2359,14 +2423,14 @@ function M.open(command)
         if not data then
           return
         end
-        state.stream_buffer = state.stream_buffer .. table.concat(data, "\n")
+        stream_buffer = stream_buffer .. table.concat(data, "\n")
         while true do
-          local newline = state.stream_buffer:find("\n", 1, true)
+          local newline = stream_buffer:find("\n", 1, true)
           if newline == nil then
             break
           end
-          local line = state.stream_buffer:sub(1, newline - 1)
-          state.stream_buffer = state.stream_buffer:sub(newline + 1)
+          local line = stream_buffer:sub(1, newline - 1)
+          stream_buffer = stream_buffer:sub(newline + 1)
           handle_line(line)
         end
       end,
@@ -2669,13 +2733,19 @@ function M.stop()
     return false
   end
 
+  return hard_stop_pending_operation()
+end
+
+hard_stop_pending_operation = function(reason)
   local pending = state.pending_operation
   state.canceled_request_ids[pending.id] = true
   state.pending_operation = nil
+  stop_operation_watchdog_timer()
   clear_navigation_admission(pending.id)
   state.stopped_operation = {
     id = pending.id,
     target = pending.target,
+    reason = reason,
   }
   state.status_error = nil
   state.hint_error = nil
@@ -2684,6 +2754,48 @@ function M.stop()
   if state.latest_find_request_id == pending.id then
     state.latest_find_request_id = nil
   end
+  state.generation = state.generation + 1
+  stop_text_mode_flush_timer()
+  stop_live_refresh()
+  stop_resize_timer()
+  clear_scroll_coalesce()
+  hints_overlay.clear(state.bufnr)
+  if is_valid_buffer() then
+    refresh_preview_footer(state.bufnr)
+  end
+  state.mode = nil
+  state.serve_output = nil
+  state.runtime_metadata = nil
+  state.latest_download = nil
+  state.download_history = {}
+  state.download_recorded_response_ids = {}
+  state.latest_dialog = nil
+  state.dialog_history = {}
+  state.element_hints = {}
+  state.element_hints_geometry = nil
+  state.cursor_addressable_preview = false
+  if state.job_id ~= nil then
+    pcall(vim.fn.jobstop, state.job_id)
+    state.job_id = nil
+  end
+  return true
+end
+
+hard_stop_capture_operation = function(reason)
+  local request_id = state.live_refresh_request_id
+  if request_id == nil then
+    return false
+  end
+  state.canceled_request_ids[request_id] = true
+  clear_in_flight_capture()
+  state.stopped_operation = {
+    id = request_id,
+    target = state.current_url or state.last_target,
+    reason = reason,
+  }
+  state.status_error = nil
+  state.hint_error = nil
+  state.rendered_frame_geometry = nil
   state.generation = state.generation + 1
   stop_text_mode_flush_timer()
   stop_live_refresh()
@@ -3775,6 +3887,7 @@ function M.configure(opts)
   options = vim.tbl_deep_extend("force", options, {
     live_refresh = opts.live_refresh or {},
     viewport = opts.viewport or {},
+    navigation_timeout_ms = opts.navigation_timeout_ms,
   })
   if state.mode == "serve" and state.job_id ~= nil and is_valid_buffer() then
     if opts.viewport ~= nil then
@@ -3887,6 +4000,7 @@ M._test = {
     stop_live_refresh()
     stop_resize_timer()
     stop_adaptive_capture_timer()
+    stop_operation_watchdog_timer()
     clear_scroll_coalesce()
     timer_factory = factory or function()
       return vim.loop.new_timer()

@@ -95,7 +95,12 @@ default. This keeps URL, title, scroll, focus, dialog, and download metadata cur
 without constant screenshots. If the lightweight state shows the idle page
 changed, nvim-browser debounces one full-frame capture. Use :NBrowserRefresh
 when you want a fresh frame immediately.
-Disable it or tune the interval with:
+Navigation-like operations and explicit frame captures are guarded by a
+Neovim-side watchdog based on navigation_timeout_ms. If Chromium/CDP stalls,
+nvim-browser hard-stops the serve job, ignores late output from that generation,
+shows "timeout | ..." in the footer, and can restart with :NBrowserRefresh,
+:NBrowserReload, or :NBrowserAddress.
+Disable live refresh or tune its interval with:
 >
 require("nvim-browser").setup({
   live_refresh = {
@@ -135,7 +140,9 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserStop
 	Cancel the current pending browser operation. This clears local loading
 	feedback, ignores a late response for that operation, and stops the active
-	serve job when it appears stuck. Focused preview buffers map <Esc> to this
+	serve job when it appears stuck. Stuck navigation-like operations and
+	explicit frame captures are also stopped automatically by the
+	navigation_timeout_ms watchdog. Focused preview buffers map <Esc> to this
 	command by default.
 
 							*:NBrowserNavigate*
@@ -510,6 +517,9 @@ COMMANDS                                           *nvim-browser-commands*
 	idle changes schedule one debounced full-frame capture. Background requests
 	are skipped while an operation is pending and stop when the browser preview
 	is stopped, closed, or replaced.
+	Stuck navigation-like operations and explicit frame captures show
+	"timeout | ..." after the navigation_timeout_ms watchdog hard-stops the
+	serve job.
 
 							*:NBrowserDownloads*
 :NBrowserDownloads
