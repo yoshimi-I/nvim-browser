@@ -11,6 +11,8 @@ local warnings = {}
 local addressed = nil
 local opened_under_cursor = false
 local history_picked = false
+local bookmark_saved = false
+local bookmark_picked = false
 local actions_picked = false
 local found = nil
 local found_next = false
@@ -133,6 +135,21 @@ local browser = {
       { url = "https://example.com/docs", title = "Docs" },
       { url = "https://example.com/blog", title = "Blog" },
     }, { prompt = "nvim-browser history: " }, function(choice)
+      if choice ~= nil then
+        addressed = choice.url
+      end
+    end)
+    return true
+  end,
+  bookmark_current = function()
+    bookmark_saved = true
+    return true
+  end,
+  pick_bookmark = function(select)
+    bookmark_picked = true
+    select({
+      { url = "https://bookmark.example/docs", title = "Bookmark" },
+    }, { prompt = "nvim-browser bookmarks: " }, function(choice)
       if choice ~= nil then
         addressed = choice.url
       end
@@ -818,6 +835,18 @@ assert(history_picked == true, "NBrowserHistory should open the history picker")
 assert(prompted == "nvim-browser history: ", "NBrowserHistory should use a history picker prompt")
 assert(addressed == "https://example.com/docs", "NBrowserHistory should navigate to the selected history URL")
 
+bookmark_saved = false
+vim.cmd("NBrowserBookmark")
+assert(bookmark_saved == true, "NBrowserBookmark should save the active page")
+
+bookmark_picked = false
+addressed = nil
+prompted = nil
+vim.cmd("NBrowserBookmarks")
+assert(bookmark_picked == true, "NBrowserBookmarks should open the bookmark picker")
+assert(prompted == "nvim-browser bookmarks: ", "NBrowserBookmarks should use a bookmark picker prompt")
+assert(addressed == "https://bookmark.example/docs", "NBrowserBookmarks should navigate to the selected bookmark URL")
+
 resume_called = false
 vim.cmd("NBrowserResume")
 assert(resume_called == true, "NBrowserResume should resume the latest browser target")
@@ -856,6 +885,33 @@ assert(
 )
 assert(#warnings == history_warning_count + 1, "NBrowserHistory should warn once when picker action fails")
 browser.pick_history = original_pick_history
+
+local original_bookmark_current = browser.bookmark_current
+browser.bookmark_current = function()
+  return false
+end
+local bookmark_warning_count = #warnings
+vim.cmd("NBrowserBookmark")
+assert(
+  warnings[#warnings] == "nvim-browser: no active browser page to bookmark",
+  "NBrowserBookmark should warn when no active page can be bookmarked"
+)
+assert(#warnings == bookmark_warning_count + 1, "NBrowserBookmark should warn once when bookmarking fails")
+browser.bookmark_current = original_bookmark_current
+
+local original_pick_bookmark = browser.pick_bookmark
+browser.pick_bookmark = function(_, opts)
+  opts.on_error("action_failed")
+  return false
+end
+local bookmarks_warning_count = #warnings
+vim.cmd("NBrowserBookmarks")
+assert(
+  warnings[#warnings] == "nvim-browser: no browser bookmarks available or selected page could not be opened",
+  "NBrowserBookmarks should warn when the selected bookmark cannot be opened"
+)
+assert(#warnings == bookmarks_warning_count + 1, "NBrowserBookmarks should warn once when picker action fails")
+browser.pick_bookmark = original_pick_bookmark
 
 local original_actions = browser.actions
 browser.actions = function(opts)

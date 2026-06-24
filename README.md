@@ -300,6 +300,8 @@ Then run:
 :NBrowserAddress
 :NBrowserOpenUnderCursor
 :NBrowserHistory
+:NBrowserBookmark
+:NBrowserBookmarks
 :NBrowserResume
 :NBrowserActions
 :NBrowserBack
@@ -494,14 +496,16 @@ back to the last target. Command-line completion includes recent session history
 URLs. Recent pages are persisted by default in
 `stdpath("state") .. "/nvim-browser/session.json"` so they survive Neovim
 restarts. `:NBrowserHistory` opens the recent page picker and navigates to the
-selected URL, or opens it when no browser session is active. `:NBrowserResume`
+selected URL, or opens it when no browser session is active. `:NBrowserBookmark`
+saves the current browser page into the same session file, and
+`:NBrowserBookmarks` opens saved pages through a bookmark picker. `:NBrowserResume`
 opens the active session URL when available, otherwise the last persisted target,
 otherwise the newest persisted history URL.
 Lua mappings can call `require("nvim-browser").address()` or pass a value
 directly with `require("nvim-browser").address("example.com")`.
 `:NBrowserActions` opens a compact picker for common browser actions such as
-opening, previewing, inspecting, resuming, address, reload, history movement,
-find, hints, text mode, cursor click/double-click/right-click/hover/type,
+opening, previewing, inspecting, resuming, bookmarking, address, reload, history
+movement, find, hints, text mode, cursor click/double-click/right-click/hover/type,
 downloads, screenshot, reader, status, zoom, doctor, and close. Preview buffers
 map `?` to this picker by default.
 
@@ -610,9 +614,10 @@ Disable or remap them with
 Configure search with `require("nvim-browser").setup({ search_url = "https://www.google.com/search?q=%s" })`.
 The `%s` placeholder receives the encoded query; write literal percent signs as
 `%%`.
-Configure persistent recents with
+Configure persistent recents, bookmarks, and completed-download history with
 `require("nvim-browser").setup({ session = { persist = true, history_limit = 50, path = "/tmp/nvim-browser-session.json" } })`.
-Set `session.persist = false` to keep history in memory only.
+`history_limit` bounds each persisted list. Set `session.persist = false` to
+keep history and bookmarks in memory only and avoid writing download history.
 
 ## License
 

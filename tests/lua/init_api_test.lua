@@ -183,6 +183,10 @@ assert(type(browser.record_history) == "function", "history recorder API should 
 assert(type(browser.history) == "function", "history API should exist")
 assert(type(browser.history_urls) == "function", "history URL API should exist")
 assert(type(browser.pick_history) == "function", "history picker API should exist")
+assert(type(browser.bookmark_current) == "function", "bookmark API should exist")
+assert(type(browser.bookmarks) == "function", "bookmarks API should exist")
+assert(type(browser.pick_bookmark) == "function", "bookmark picker API should exist")
+assert(type(browser.clear_bookmarks) == "function", "bookmark clear API should exist")
 assert(type(browser.resume) == "function", "resume API should exist")
 
 browser.clear_history()
@@ -246,6 +250,98 @@ assert(limited_history[1].url == "https://example.com/page-55", "history limit s
 assert(limited_history[#limited_history].url == "https://example.com/page-6", "history limit should drop the oldest pages")
 browser.clear_history()
 
+_G.nvim_browser_run_bookmark_api_tests = function()
+  browser.clear_bookmarks()
+  _G.nvim_browser_original_current_url_for_bookmarks = browser.current_url
+  _G.nvim_browser_original_current_title_for_bookmarks = browser.current_title
+  browser.current_url = function()
+    return "https://example.com/docs"
+  end
+  browser.current_title = function()
+    return "Docs"
+  end
+  assert(browser.bookmark_current() == true, "bookmark_current should save the active browser URL")
+  browser.current_title = function()
+    return "Docs Updated"
+  end
+  assert(browser.bookmark_current() == true, "bookmark_current should update duplicate bookmark titles")
+  browser.current_url = function()
+    return "file:///tmp/local-preview.html"
+  end
+  browser.current_title = function()
+    return "Local Preview"
+  end
+  assert(browser.bookmark_current() == true, "bookmark_current should allow local browser preview URLs")
+  local bookmarks = browser.bookmarks()
+  assert(#bookmarks == 2, "bookmarks should de-duplicate URLs")
+  assert(bookmarks[1].url == "file:///tmp/local-preview.html", "bookmarks should keep newest entries first")
+  assert(bookmarks[1].title == "Local Preview", "bookmarks should preserve bookmark titles")
+  assert(bookmarks[2].url == "https://example.com/docs", "bookmarks should keep older unique entries")
+  assert(bookmarks[2].title == "Docs Updated", "bookmarks should update duplicate URL titles")
+  bookmarks[1].url = "mutated"
+  assert(browser.bookmarks()[1].url == "file:///tmp/local-preview.html", "bookmarks should return a copy")
+
+  local picked_bookmark_items = nil
+  local picked_bookmark_prompt = nil
+  local picked_bookmark_label = nil
+  local addressed_bookmark = nil
+  local original_address_for_bookmarks = browser.address
+  browser.address = function(target)
+    addressed_bookmark = target
+    return true
+  end
+  assert(browser.pick_bookmark({
+    select = function(items, opts, on_choice)
+      picked_bookmark_items = items
+      picked_bookmark_prompt = opts.prompt
+      picked_bookmark_label = opts.format_item(items[1])
+      on_choice(items[1])
+    end,
+  }) == true, "bookmark picker should open when bookmarks exist")
+  assert(#picked_bookmark_items == 2, "bookmark picker should offer saved pages")
+  assert(picked_bookmark_prompt == "nvim-browser bookmarks: ", "bookmark picker should use a bookmark prompt")
+  assert(picked_bookmark_label:find("Local Preview", 1, true), "bookmark picker should format page titles")
+  assert(picked_bookmark_label:find("file:///tmp/local-preview.html", 1, true), "bookmark picker should format page URLs")
+  assert(addressed_bookmark == "file:///tmp/local-preview.html", "bookmark picker should navigate to the selected URL")
+
+  addressed_bookmark = nil
+  assert(browser.pick_bookmark({
+    select = function(_, _, on_choice)
+      on_choice(nil)
+    end,
+  }) == false, "bookmark picker should return false when canceled")
+  assert(addressed_bookmark == nil, "bookmark picker should not navigate when canceled")
+  browser.address = original_address_for_bookmarks
+  browser.current_url = function()
+    return nil
+  end
+  assert(browser.bookmark_current() == false, "bookmark_current should reject missing active URLs")
+  browser.clear_bookmarks()
+  assert(browser.pick_bookmark({
+    select = function()
+      error("bookmark picker should not open without entries")
+    end,
+  }) == false, "bookmark picker should return false without entries")
+  for index = 1, 55 do
+    browser.current_url = function()
+      return "https://bookmark.example/page-" .. index
+    end
+    browser.current_title = function()
+      return "Bookmark " .. index
+    end
+    browser.bookmark_current()
+  end
+  local limited_bookmarks = browser.bookmarks()
+  assert(#limited_bookmarks == 50, "bookmarks should keep a bounded number of recent pages")
+  assert(limited_bookmarks[1].url == "https://bookmark.example/page-55", "bookmark limit should keep the newest page first")
+  assert(limited_bookmarks[#limited_bookmarks].url == "https://bookmark.example/page-6", "bookmark limit should drop the oldest pages")
+  browser.clear_bookmarks()
+  browser.current_url = _G.nvim_browser_original_current_url_for_bookmarks
+  browser.current_title = _G.nvim_browser_original_current_title_for_bookmarks
+end
+
+_G.nvim_browser_run_bookmark_api_tests()
+
 local session_dir = vim.fn.tempname()
 vim.fn.mkdir(session_dir, "p")
 local session_path = session_dir .. "/session.json"
@@ -262,10 +358,18 @@ vim.fn.writefile({
       { url = "" },
       { title = "missing url" },
     },
+    bookmarks = {
+      { url = "https://bookmark.example/older", title = "Older Updated" },
+      { url = "file:///tmp/bookmark-local.html", title = "Local" },
+      { url = "https://bookmark.example/older", title = "Older" },
+      { url = "" },
+      { title = "missing url" },
+    },
   }),
 }, session_path)
 browser.setup({ session = { persist = true, path = session_path, history_limit = 2 } })
 local persisted_history = browser.history()
+_G.nvim_browser_persisted_bookmarks = browser.bookmarks()
 assert(browser.last_target() == "https://persisted.example/last", "setup should load persisted last target")
 assert(#persisted_history == 2, "setup should load and cap persisted history")
 assert(persisted_history[1].url == "https://persisted.example/older", "loaded history should de-duplicate newest occurrences")
@@ -273,6 +377,12 @@ assert(persisted_history[1].title == "Older Updated", "loaded history should kee
 assert(persisted_history[2].url == "https://persisted.example/latest", "loaded history should keep older unique entries")
 persisted_history[1].url = "mutated"
 assert(browser.history()[1].url == "https://persisted.example/older", "loaded history should still return defensive copies")
+assert(#_G.nvim_browser_persisted_bookmarks == 2, "setup should load and cap persisted bookmarks")
+assert(_G.nvim_browser_persisted_bookmarks[1].url == "https://bookmark.example/older", "loaded bookmarks should de-duplicate newest occurrences")
+assert(_G.nvim_browser_persisted_bookmarks[1].title == "Older Updated", "loaded bookmarks should keep the newest duplicate title")
+assert(_G.nvim_browser_persisted_bookmarks[2].url == "file:///tmp/bookmark-local.html", "loaded bookmarks should preserve local preview URLs")
+_G.nvim_browser_persisted_bookmarks[1].url = "mutated"
+assert(browser.bookmarks()[1].url == "https://bookmark.example/older", "loaded bookmarks should return defensive copies")
 
 browser.record_history("https://persisted.example/new", "New")
 local saved_session = vim.fn.json_decode(table.concat(vim.fn.readfile(session_path), "\n"))
@@ -280,6 +390,20 @@ assert(saved_session.version == 1, "record_history should save a versioned sessi
 assert(saved_session.last_target == "https://persisted.example/new", "record_history should save the newest URL as last target")
 assert(#saved_session.history == 2, "record_history should save capped history")
 assert(saved_session.history[1].url == "https://persisted.example/new", "record_history should save newest entries")
+assert(#saved_session.bookmarks == 2, "record_history should preserve persisted bookmarks in session saves")
+
+browser.current_url = function()
+  return "https://bookmark.example/new"
+end
+browser.current_title = function()
+  return "New Bookmark"
+end
+assert(browser.bookmark_current() == true, "bookmark_current should save into the session file")
+saved_session = vim.fn.json_decode(table.concat(vim.fn.readfile(session_path), "\n"))
+assert(saved_session.bookmarks[1].url == "https://bookmark.example/new", "bookmark_current should save newest bookmarks")
+assert(saved_session.bookmarks[1].title == "New Bookmark", "bookmark_current should save bookmark titles")
+browser.current_url = _G.nvim_browser_original_current_url_for_bookmarks
+browser.current_title = _G.nvim_browser_original_current_title_for_bookmarks
 
 browser.record_history("https://persisted.example/from-metadata", "Metadata")
 saved_session = vim.fn.json_decode(table.concat(vim.fn.readfile(session_path), "\n"))
@@ -422,6 +546,9 @@ _G.nvim_browser_persist_disabled_path = session_dir .. "/downloads-disabled.json
 vim.fn.writefile({
   vim.fn.json_encode({
     version = 1,
+    bookmarks = {
+      { url = "https://bookmark-disabled.example", title = "Disabled Bookmark" },
+    },
     downloads = {
       {
         path = "/tmp/downloads/persist-disabled.pdf",
@@ -432,7 +559,16 @@ vim.fn.writefile({
   }),
 }, _G.nvim_browser_persist_disabled_path)
 browser.setup({ session = { persist = false, path = _G.nvim_browser_persist_disabled_path, history_limit = 3 } })
+assert(#browser.bookmarks() == 0, "session.persist=false should ignore persisted bookmarks")
 assert(#browser.downloads() == 0, "session.persist=false should ignore persisted download history")
+browser.current_url = function()
+  return "https://bookmark-disabled.example/new"
+end
+browser.current_title = function()
+  return "Disabled New Bookmark"
+end
+assert(browser.bookmark_current() == true, "bookmark_current should still work in memory when session.persist=false")
+assert(browser.bookmarks()[1].url == "https://bookmark-disabled.example/new", "session.persist=false should keep new bookmarks in memory")
 terminal._test.apply_serve_response({
   id = 12302,
   status = "ok",
@@ -443,7 +579,14 @@ terminal._test.apply_serve_response({
   },
 })
 _G.nvim_browser_disabled_session = vim.fn.json_decode(table.concat(vim.fn.readfile(_G.nvim_browser_persist_disabled_path), "\n"))
+assert(#_G.nvim_browser_disabled_session.bookmarks == 1, "session.persist=false should not write bookmarks")
+assert(
+  _G.nvim_browser_disabled_session.bookmarks[1].url == "https://bookmark-disabled.example",
+  "session.persist=false should leave persisted bookmarks unchanged"
+)
 assert(#_G.nvim_browser_disabled_session.downloads == 1, "session.persist=false should not write completed downloads")
+browser.current_url = _G.nvim_browser_original_current_url_for_bookmarks
+browser.current_title = _G.nvim_browser_original_current_title_for_bookmarks
 terminal.downloads = _G.nvim_browser_original_terminal_downloads_for_session
 browser.setup({ session = { persist = true, path = session_path, history_limit = 2 } })
 
@@ -631,6 +774,9 @@ local function with_action_stubs(fn)
     resume = browser.resume,
     last_target = browser.last_target,
     history = browser.history,
+    bookmarks = browser.bookmarks,
+    bookmark_current = browser.bookmark_current,
+    pick_bookmark = browser.pick_bookmark,
     back = browser.back,
     forward = browser.forward,
     find_text = browser.find_text,
@@ -685,6 +831,17 @@ local function with_action_stubs(fn)
   end
   browser.last_target = function()
     return "https://last.example"
+  end
+  browser.bookmarks = function()
+    return { { url = "https://bookmark.example", title = "Bookmark" } }
+  end
+  browser.bookmark_current = function()
+    table.insert(action_calls, "bookmark_current")
+    return true
+  end
+  browser.pick_bookmark = function()
+    table.insert(action_calls, "pick_bookmark")
+    return true
   end
   browser.back = function()
     table.insert(action_calls, "back")
@@ -831,6 +988,8 @@ with_action_stubs(function()
 	    "Preview current buffer",
 	    "Inspect current buffer",
 	    "Resume",
+	    "Bookmark page",
+	    "Bookmarks",
 	    "Address",
 	    "Reload",
 	    "Back",

@@ -165,6 +165,14 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: no browser history available or selected page could not be opened", "WarningMsg" } }, false, {})
   end
 
+  local function warn_bookmark_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: no active browser page to bookmark", "WarningMsg" } }, false, {})
+  end
+
+  local function warn_bookmarks_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: no browser bookmarks available or selected page could not be opened", "WarningMsg" } }, false, {})
+  end
+
   local function warn_resume_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: no browser session target to resume", "WarningMsg" } }, false, {})
   end
@@ -352,6 +360,34 @@ function M.register(browser, opts)
       end,
     }) then
       report_history_error()
+    end
+  end, {
+    nargs = 0,
+  })
+
+  vim.api.nvim_create_user_command("NBrowserBookmark", function()
+    if browser.bookmark_current == nil or not browser.bookmark_current() then
+      warn_bookmark_unavailable()
+    end
+  end, {
+    nargs = 0,
+  })
+
+  vim.api.nvim_create_user_command("NBrowserBookmarks", function()
+    local bookmark_error_reported = false
+    local function report_bookmark_error()
+      if bookmark_error_reported then
+        return
+      end
+      bookmark_error_reported = true
+      warn_bookmarks_unavailable()
+    end
+    if browser.pick_bookmark == nil or not browser.pick_bookmark(select, {
+      on_error = function()
+        report_bookmark_error()
+      end,
+    }) then
+      report_bookmark_error()
     end
   end, {
     nargs = 0,

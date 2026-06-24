@@ -11,6 +11,7 @@ local M = {}
 local state = {
   last_target = nil,
   history = {},
+  bookmarks = {},
   downloads = {},
   session_warning_messages = {},
   session_loaded_path = nil,
@@ -102,6 +103,37 @@ local function add_history_entry(url, title)
   return true
 end
 
+local function normalize_bookmark_entry(bookmark)
+  if type(bookmark) ~= "table" then
+    return nil
+  end
+  local url = normalize_history_value(bookmark.url)
+  if url == nil then
+    return nil
+  end
+  return {
+    url = url,
+    title = normalize_history_value(bookmark.title),
+  }
+end
+
+local function add_bookmark_entry(url, title)
+  local entry = normalize_bookmark_entry({ url = url, title = title })
+  if entry == nil then
+    return false
+  end
+  for index = #state.bookmarks, 1, -1 do
+    if state.bookmarks[index].url == entry.url then
+      table.remove(state.bookmarks, index)
+    end
+  end
+  table.insert(state.bookmarks, 1, entry)
+  while #state.bookmarks > history_limit do
+    table.remove(state.bookmarks)
+  end
+  return true
+end
+
 local function normalize_download_entry(download)
   if type(download) ~= "table" then
     return nil
@@ -166,6 +198,7 @@ local function save_session()
     version = session_version,
     last_target = normalize_history_value(state.last_target),
     history = M.history(),
+    bookmarks = M.bookmarks(),
     downloads = persisted_downloads(),
   }
   local encoded_ok, encoded = pcall(vim.fn.json_encode, payload)
@@ -221,6 +254,7 @@ local function load_session()
   history_limit = opts.history_limit
   if not opts.persist then
     state.session_loaded_path = nil
+    state.bookmarks = {}
     state.downloads = {}
     return
   end
@@ -231,6 +265,7 @@ local function load_session()
   state.session_loaded_path = load_signature
   state.last_target = nil
   state.history = {}
+  state.bookmarks = {}
   state.downloads = {}
   local read_ok, lines = pcall(vim.fn.readfile, opts.path)
   if not read_ok or type(lines) ~= "table" or #lines == 0 then
@@ -247,6 +282,14 @@ local function load_session()
       local entry = decoded.history[index]
       if type(entry) == "table" then
         add_history_entry(entry.url, entry.title)
+      end
+    end
+  end
+  if type(decoded.bookmarks) == "table" then
+    for index = #decoded.bookmarks, 1, -1 do
+      local entry = normalize_bookmark_entry(decoded.bookmarks[index])
+      if entry ~= nil then
+        add_bookmark_entry(entry.url, entry.title)
       end
     end
   end
@@ -768,6 +811,83 @@ local function history_picker_label(entry)
   return entry.url or ""
 end
 
+function M.clear_bookmarks()
+  state.bookmarks = {}
+  save_session()
+end
+
+function M.bookmarks()
+  local entries = {}
+  for index, entry in ipairs(state.bookmarks) do
+    entries[index] = { url = entry.url, title = entry.title }
+  end
+  return entries
+end
+
+function M.bookmark_current()
+  local url = normalize_history_value(M.current_url())
+  if url == nil then
+    return false
+  end
+  if add_bookmark_entry(url, M.current_title()) then
+    save_session()
+    return true
+  end
+  return false
+end
+
+local function bookmark_picker_label(entry)
+  if type(entry) ~= "table" then
+    return ""
+  end
+  if entry.title ~= nil and entry.title ~= "" then
+    return entry.title .. " -> " .. entry.url
+  end
+  return entry.url or ""
+end
+
+function M.pick_bookmark(select_or_opts, maybe_opts)
+  local select = vim.ui.select
+  local opts = maybe_opts or {}
+  if type(select_or_opts) == "function" then
+    select = select_or_opts
+  elseif type(select_or_opts) == "table" then
+    opts = select_or_opts
+    if type(opts.select) == "function" then
+      select = opts.select
+    end
+  end
+
+  local entries = M.bookmarks()
+  if #entries == 0 then
+    return false
+  end
+  local completed = false
+  local selected = nil
+  local action_ok = true
+  select(entries, {
+    prompt = opts.prompt or "nvim-browser bookmarks: ",
+    format_item = opts.format_item or bookmark_picker_label,
+  }, function(choice)
+    completed = true
+    selected = choice
+    if choice == nil then
+      return
+    end
+    action_ok = M.address(choice.url) ~= false
+    if not action_ok and type(opts.on_error) == "function" then
+      opts.on_error("action_failed")
+    end
+  end)
+  if completed and selected == nil then
+    return false
+  end
+  if completed and not action_ok then
+    return false
+  end
+  return true
+end
+
 function M.pick_history(select_or_opts, maybe_opts)
   local select = vim.ui.select
   local opts = maybe_opts or {}
@@ -1057,6 +1177,27 @@ local function action_items(opts, report_error)
       label = "Resume",
       run = function()
         return M.resume()
+      end,
+    })
+  end
+
+  if normalize_history_value(M.current_url()) ~= nil then
+    table.insert(items, {
+      label = "Bookmark page",
+      run = function()
+        return M.bookmark_current()
+      end,
+    })
+  end
+
+  if #M.bookmarks() > 0 then
+    table.insert(items, {
+      label = "Bookmarks",
+      run = function()
+        return M.pick_bookmark({
+          select = opts.select,
+          on_error = report_error,
+        })
       end,
     })
   end

@@ -174,6 +174,16 @@ COMMANDS                                           *nvim-browser-commands*
 	navigates the active browser session, or opens a new browser preview when
 	no browser session is active.
 
+							*:NBrowserBookmark*
+:NBrowserBookmark
+	Save the current browser page as a bookmark in the session file.
+
+							*:NBrowserBookmarks*
+:NBrowserBookmarks
+	Open the bookmark picker. Selecting a bookmark navigates the active
+	browser session, or opens a new browser preview when no browser session is
+	active.
+
 							*:NBrowserResume*
 :NBrowserResume
 	Resume browsing by opening the active session URL when available,
@@ -183,8 +193,8 @@ COMMANDS                                           *nvim-browser-commands*
 							*:NBrowserActions*
 :NBrowserActions
 	Open a compact picker for common browser actions such as opening,
-	previewing, inspecting, resuming, address, reload, back, forward, find,
-	hints, text mode, cursor click/double-click/right-click/hover/type,
+	previewing, inspecting, resuming, bookmarking, address, reload, back,
+	forward, find, hints, text mode, cursor click/double-click/right-click/hover/type,
 	downloads, screenshot, reader, status, zoom, doctor, and close. Focused
 	preview buffers map ? to this picker by default.
 
@@ -752,7 +762,12 @@ require("nvim-browser").setup({
       wheel_up = "<ScrollWheelUp>",
     },
   },
-})
-<
+	})
+	<
 
- vim:tw=78:ts=8:noet:ft=help:norl:
+	The session file stores recent pages, bookmarks, and completed-download
+	history. `history_limit` bounds each persisted list. Set `persist = false`
+	to keep history and bookmarks in memory only and avoid writing download
+	history.
+
+	 vim:tw=78:ts=8:noet:ft=help:norl:
