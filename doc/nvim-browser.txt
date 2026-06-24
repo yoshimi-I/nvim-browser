@@ -463,7 +463,8 @@ COMMANDS                                           *nvim-browser-commands*
 	Echo a diagnostic report for backend binary resolution, selected graphics
 	output, terminal/multiplexer detection, auto-selection reason, active
 	preview session, Chromium/CDP backend readiness, serve runtime metadata,
-	and viewport calibration status. The backend readiness check uses
+	viewport calibration status, and click calibration diagnostics for the
+	active cursor-addressable preview. The backend readiness check uses
 	`nvbrowser doctor --json` and does not launch Chrome.
 
 							*:NBrowserCalibrate*

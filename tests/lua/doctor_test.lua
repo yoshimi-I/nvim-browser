@@ -176,6 +176,114 @@ assert(
   "doctor should warn when runtime viewport does not match configured calibration"
 )
 
+local inactive_click_calibration = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+}, {})
+assert(
+  has_line(inactive_click_calibration, "click calibration: inactive"),
+  "doctor should report inactive click calibration without an active serve session"
+)
+
+local unavailable_click_calibration = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+}, {
+  mode = "serve",
+  serve_output = "kitty",
+  cursor_addressable_preview = false,
+  status = "ok",
+})
+assert(
+  has_line(unavailable_click_calibration, "click calibration: unavailable output=kitty"),
+  "doctor should report unavailable click calibration for non cursor-addressable output"
+)
+
+local pending_click_calibration = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+}, {
+  mode = "serve",
+  serve_output = "ansi",
+  cursor_addressable_preview = true,
+  current_preview_geometry = { columns = 80, rows = 24, width = 800, height = 480 },
+  status = "ok",
+})
+assert(
+  has_line(pending_click_calibration, "click calibration: pending rendered frame"),
+  "doctor should wait for rendered frame geometry before reporting click calibration ok"
+)
+
+local ok_click_calibration = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+  viewport = {
+    cell_width_px = 10,
+    cell_height_px = 20,
+  },
+}, {
+  mode = "serve",
+  serve_output = "ansi",
+  cursor_addressable_preview = true,
+  rendered_frame_geometry = { columns = 80, rows = 24, width = 800, height = 480 },
+  current_preview_geometry = { columns = 80, rows = 24, width = 800, height = 480 },
+  status = "ok",
+})
+assert(
+  has_line(
+    ok_click_calibration,
+    "click calibration: ok rendered=80x24 viewport=800x480 cell=10x20 sample=1,1->5,10 80,24->795,470"
+  ),
+  "doctor should report exact click sample mapping when rendered and current geometry match"
+)
+
+local stale_click_calibration = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+}, {
+  mode = "serve",
+  serve_output = "ansi",
+  cursor_addressable_preview = true,
+  rendered_frame_geometry = { columns = 80, rows = 24, width = 800, height = 480 },
+  current_preview_geometry = { columns = 90, rows = 20, width = 900, height = 400 },
+  status = "ok",
+})
+assert(
+  has_line(
+    stale_click_calibration,
+    "warning: click calibration rendered frame is stale; rendered=80x24 viewport=800x480 current=90x20 viewport=900x400"
+  ),
+  "doctor should warn when rendered geometry no longer matches the current preview geometry"
+)
+
+local malformed_click_calibration = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+}, {
+  mode = "serve",
+  serve_output = "ansi",
+  cursor_addressable_preview = true,
+  rendered_frame_geometry = { columns = vim.NIL, rows = vim.NIL, width = vim.NIL, height = vim.NIL },
+  current_preview_geometry = { columns = vim.NIL, rows = vim.NIL, width = vim.NIL, height = vim.NIL },
+  status = "ok",
+})
+assert(
+  has_line(malformed_click_calibration, "click calibration: pending rendered frame"),
+  "doctor should not sample malformed click calibration geometry"
+)
+
 local backend_ready = doctor.run({
   binary = "nvbrowser-test",
   graphics = "auto",

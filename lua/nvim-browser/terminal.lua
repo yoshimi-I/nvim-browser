@@ -2922,6 +2922,8 @@ function M.state()
     has_payload = state.last_payload ~= nil,
     mode = state.mode,
     serve_output = state.serve_output,
+    cursor_addressable_preview = state.cursor_addressable_preview,
+    current_preview_geometry = valid_preview_geometry(),
     text_mode_active = state.text_mode_active,
     last_target = state.last_target,
     current_url = state.current_url,

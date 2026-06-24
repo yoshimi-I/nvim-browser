@@ -756,6 +756,11 @@ terminal._test.apply_serve_response({
     viewport = { width = 450, height = 165, device_scale_factor = 1 },
   },
 })
+assert(terminal.state().cursor_addressable_preview == true, "serve state should expose cursor-addressable previews for doctor")
+assert(
+  terminal.state().current_preview_geometry ~= nil,
+  "serve state should expose current preview geometry for click calibration diagnostics"
+)
 local footer_click_requests = {}
 local original_chansend_for_footer = vim.fn.chansend
 vim.fn.chansend = function(job_id, payload)

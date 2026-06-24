@@ -1,4 +1,5 @@
 local backend = require("nvim-browser.backend")
+local terminal = require("nvim-browser.terminal")
 
 local M = {}
 
@@ -81,6 +82,116 @@ local function runtime_calibration(config, state, cell)
     .. expected
     .. " actual viewport="
     .. actual
+end
+
+local function number_label(value)
+  if type(value) ~= "number" then
+    value = tonumber(value)
+  end
+  if value == nil then
+    return "unknown"
+  end
+  if value % 1 == 0 then
+    return tostring(math.floor(value))
+  end
+  return tostring(value)
+end
+
+local function geometry_label(geometry)
+  return tostring(geometry.columns)
+    .. "x"
+    .. tostring(geometry.rows)
+    .. " viewport="
+    .. tostring(geometry.width)
+    .. "x"
+    .. tostring(geometry.height)
+end
+
+local function normalized_geometry(geometry)
+  if type(geometry) ~= "table" then
+    return nil
+  end
+  local columns = tonumber(geometry.columns)
+  local rows = tonumber(geometry.rows)
+  local width = tonumber(geometry.width)
+  local height = tonumber(geometry.height)
+  if columns == nil or rows == nil or width == nil or height == nil then
+    return nil
+  end
+  if columns <= 0 or rows <= 0 or width <= 0 or height <= 0 then
+    return nil
+  end
+  return {
+    columns = columns,
+    rows = rows,
+    width = width,
+    height = height,
+  }
+end
+
+local function same_geometry(left, right)
+  return left ~= nil
+    and right ~= nil
+    and left.columns == right.columns
+    and left.rows == right.rows
+    and left.width == right.width
+    and left.height == right.height
+end
+
+local function output_is_cursor_addressable(output)
+  return output == "ansi" or output == "kitty-unicode"
+end
+
+local function cursor_addressable(state)
+  if state.cursor_addressable_preview ~= nil then
+    return state.cursor_addressable_preview == true
+  end
+  local runtime = type(state.runtime_metadata) == "table" and state.runtime_metadata or nil
+  return output_is_cursor_addressable(state.serve_output or (runtime and runtime.output))
+end
+
+local function click_calibration_line(state, cell)
+  if state == nil or state.mode ~= "serve" then
+    return "click calibration: inactive"
+  end
+
+  if not cursor_addressable(state) then
+    return "click calibration: unavailable output=" .. tostring(state.serve_output or "unknown")
+  end
+
+  local rendered = normalized_geometry(state.rendered_frame_geometry)
+  local current = normalized_geometry(state.current_preview_geometry)
+  if rendered == nil or current == nil then
+    return "click calibration: pending rendered frame"
+  end
+
+  if not same_geometry(rendered, current) then
+    return "warning: click calibration rendered frame is stale; rendered="
+      .. geometry_label(rendered)
+      .. " current="
+      .. geometry_label(current)
+  end
+
+  local first = terminal.viewport_point_for_cell(1, 1, rendered)
+  local last = terminal.viewport_point_for_cell(rendered.rows, rendered.columns, rendered)
+  return "click calibration: ok rendered="
+    .. geometry_label(rendered)
+    .. " cell="
+    .. tostring(cell.width)
+    .. "x"
+    .. tostring(cell.height)
+    .. " sample=1,1->"
+    .. number_label(first.x)
+    .. ","
+    .. number_label(first.y)
+    .. " "
+    .. tostring(rendered.columns)
+    .. ","
+    .. tostring(rendered.rows)
+    .. "->"
+    .. number_label(last.x)
+    .. ","
+    .. number_label(last.y)
 end
 
 local function viewport_cell_pixels(config)
@@ -188,6 +299,7 @@ function M.run(config, terminal_state)
     table.insert(report.lines, runtime)
   end
   table.insert(report.lines, runtime_calibration(config, terminal_state, cell))
+  table.insert(report.lines, click_calibration_line(terminal_state, cell))
   append_backend_diagnostics(report, config)
 
   if vim.fn.executable(config.binary or "nvbrowser") == 1 then

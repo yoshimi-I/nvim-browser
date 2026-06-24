@@ -117,8 +117,9 @@ session:
 :NBrowserDoctor
 ```
 
-`NBrowserDoctor` reports whether Chromium/CDP is available and whether the
-latest browser runtime metadata matches the configured cell-pixel calibration.
+`NBrowserDoctor` reports whether Chromium/CDP is available, whether the latest
+browser runtime metadata matches the configured cell-pixel calibration, and
+whether the active preview has click geometry that matches the rendered frame.
 
 To attach to an already-running Chrome DevTools Protocol browser instead of
 letting `nvbrowser` launch Chrome, pass the browser WebSocket URL:
