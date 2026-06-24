@@ -1085,6 +1085,14 @@ function M.click_point(x, y)
   return terminal.click_point(x, y)
 end
 
+function M.drag_point(start_x, start_y, end_x, end_y)
+  return terminal.drag_point(start_x, start_y, end_x, end_y)
+end
+
+function M.select_region(start_row, start_col, end_row, end_col)
+  return terminal.select_region(start_row, start_col, end_row, end_col)
+end
+
 function M.right_click_point(x, y)
   return terminal.right_click_point(x, y)
 end

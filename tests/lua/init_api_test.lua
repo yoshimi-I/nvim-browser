@@ -35,6 +35,7 @@ assert(type(browser.toggle_hint) == "function", "toggle_hint API should exist")
 assert(type(browser.toggle_hint_mode) == "function", "toggle_hint_mode API should exist")
 assert(type(browser.input_text_mode) == "function", "focused input text mode API should exist")
 assert(type(browser.paste_register) == "function", "register paste API should exist")
+assert(type(browser.select_region) == "function", "browser region selection API should exist")
 assert(type(browser.yank_selection) == "function", "browser selection yank API should exist")
 assert(type(browser.yank_current_url) == "function", "current URL yank API should exist")
 assert(type(browser.yank_hint_url) == "function", "hint URL yank API should exist")
@@ -923,6 +924,7 @@ local original_terminal_press_key = terminal.press_key
 local original_terminal_submit_focused = terminal.submit_focused
 local original_terminal_start_text_mode = terminal.start_text_mode
 local original_terminal_page_scroll = terminal.page_scroll
+local original_terminal_select_region = terminal.select_region
 local original_terminal_yank_selection = terminal.yank_selection
 local original_terminal_yank_current_url = terminal.yank_current_url
 local original_terminal_yank_hint_url = terminal.yank_hint_url
@@ -1670,6 +1672,17 @@ yanked_register = nil
 assert(browser.yank_selection("+") == true, "yank_selection should yank into an explicit register")
 assert(yanked_register == "+", "yank_selection should pass explicit register to terminal")
 
+local selected_region = nil
+terminal.select_region = function(start_row, start_col, end_row, end_col)
+  selected_region = { start_row, start_col, end_row, end_col }
+  return true
+end
+assert(browser.select_region(2, 3, 4, 25) == true, "select_region should delegate to terminal")
+assert(
+  table.concat(selected_region, ",") == "2,3,4,25",
+  "select_region should pass preview-cell coordinates to terminal"
+)
+
 local screenshot_path = nil
 terminal.screenshot = function(path)
   screenshot_path = path
@@ -2184,6 +2197,7 @@ terminal.press_key = original_terminal_press_key
 terminal.submit_focused = original_terminal_submit_focused
 terminal.start_text_mode = original_terminal_start_text_mode
 terminal.page_scroll = original_terminal_page_scroll
+terminal.select_region = original_terminal_select_region
 terminal.yank_selection = original_terminal_yank_selection
 terminal.screenshot = original_terminal_screenshot
 terminal.yank_current_url = original_terminal_yank_current_url

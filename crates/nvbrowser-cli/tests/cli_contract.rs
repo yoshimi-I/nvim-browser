@@ -332,9 +332,9 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
   <head>
     <title>NBrowser E2E Fixture</title>
     <style>
-      #hover-menu {{ display: none; margin-top: 8px; }}
-      #hover-source:hover + #hover-menu {{ display: inline-block; }}
-      #wheel-box {{ position: fixed; left: 16px; top: 220px; width: 220px; height: 60px; overflow: auto; border: 1px solid #333; }}
+	      #hover-menu {{ display: none; margin-top: 8px; }}
+	      #hover-source:hover + #hover-menu {{ display: inline-block; }}
+	      #wheel-box {{ position: fixed; left: 16px; top: 220px; width: 220px; height: 60px; overflow: auto; border: 1px solid #333; }}
       #wheel-box-inner {{ height: 240px; }}
     </style>
   </head>
@@ -350,9 +350,9 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
       <button id="context-target" oncontextmenu="event.preventDefault(); document.getElementById('out').textContent='context menu handled'">Context Target</button>
       <button id="hover-source">Menu</button>
       <a id="hover-menu" href="#hovered">Hover Docs</a>
-      <div contenteditable="true">Editable target</div>
-      <p id="out">empty</p>
-      <div id="wheel-box" onwheel="document.getElementById('out').textContent='wheel box wheeled'" onscroll="document.getElementById('out').textContent='wheel box scrolled'"><button id="wheel-button">Wheel Target</button><div id="wheel-box-inner">Wheel space</div></div>
+	      <div contenteditable="true">Editable target</div>
+	      <p id="out">empty</p>
+	      <div id="wheel-box" onwheel="document.getElementById('out').textContent='wheel box wheeled'" onscroll="document.getElementById('out').textContent='wheel box scrolled'"><button id="wheel-button">Wheel Target</button><div id="wheel-box-inner">Wheel space</div></div>
       <section id="docs">Docs section</section>
       <section id="hovered">Hovered section</section>
     </main>
@@ -744,6 +744,96 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
     assert_eq!(quit["id"], 22);
     assert_eq!(quit["status"], "ok");
 
+    serve.wait_success();
+}
+
+#[test]
+fn opt_in_e2e_serve_loop_selects_text_with_drag_point() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let fixture_path = directory.path().join("drag-selection.html");
+    std::fs::write(
+        &fixture_path,
+        r##"<!doctype html>
+<html>
+  <head>
+    <title>Drag Selection Fixture</title>
+    <style>
+      body { margin: 0; }
+      #select-line {
+        position: fixed;
+        left: 20px;
+        top: 150px;
+        font-size: 16px;
+        line-height: 20px;
+        font-family: Arial, sans-serif;
+        user-select: text;
+      }
+    </style>
+  </head>
+  <body>
+    <p id="select-line">drag selectable phrase for browser selection</p>
+  </body>
+</html>"##,
+    )
+    .expect("drag selection fixture should be written");
+    let fixture_url = format!("file://{}", fixture_path.display());
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--url",
+            &fixture_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok", "initial navigation should succeed");
+
+    let dragged = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "drag_point",
+        "start_x": 20.0,
+        "start_y": 166.0,
+        "end_x": 260.0,
+        "end_y": 166.0
+    }));
+    assert_eq!(
+        dragged["status"], "ok",
+        "drag_point should succeed; response={dragged:?}"
+    );
+    let selected = serve.request(serde_json::json!({ "id": 2, "type": "selection_text" }));
+    assert!(
+        selected["selection"]
+            .as_str()
+            .is_some_and(|text| text.contains("drag selectable phrase")),
+        "selection_text should read text selected by drag_point; response={selected:?}"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 3, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
     serve.wait_success();
 }
 

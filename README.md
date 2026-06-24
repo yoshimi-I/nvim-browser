@@ -265,6 +265,7 @@ Then run:
 :NBrowserInputMode
 :NBrowserTextMode
 :NBrowserPaste +
+:NBrowserSelectRegion 12 8 12 40
 :NBrowserYankSelection +
 :NBrowserYankUrl +
 :NBrowserYankHintUrl a +
@@ -438,6 +439,10 @@ element by sending Enter only when the backend reports the active element as
 submittable.
 `:NBrowserYankSelection [register]` reads the browser's current selected text
 and writes it into a Neovim register, defaulting to the unnamed register.
+`:NBrowserSelectRegion [start-row start-col end-row end-col]` drags across the
+cursor-addressable preview to create a native browser text selection. With four
+arguments it uses those preview-cell coordinates; without arguments it uses the
+current Visual selection marks. Follow it with `:NBrowserYankSelection`.
 `:NBrowserYankUrl [register]` writes the active browser page URL into a Neovim
 register without recapturing the page. `:NBrowserYankHintUrl {id-or-label}
 [register]` writes a hinted link destination from the latest frame.

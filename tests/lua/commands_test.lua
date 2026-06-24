@@ -51,6 +51,7 @@ local half_page_down_count = 0
 local half_page_up_count = 0
 local zoomed = {}
 local picked_action = nil
+local selected_region = nil
 local browser = {
   hints = function()
     return {
@@ -70,6 +71,10 @@ local browser = {
   end,
   right_click_here = function()
     right_clicked_here = true
+    return true
+  end,
+  select_region = function(start_row, start_col, end_row, end_col)
+    selected_region = { start_row = start_row, start_col = start_col, end_row = end_row, end_col = end_col }
     return true
   end,
   right_click_hint = function(identifier)
@@ -1121,6 +1126,42 @@ assert(hovered_here == true, "NBrowserHoverHere should call hover_here")
 vim.cmd("NBrowserRightClick 12.5 24.25")
 assert(right_clicked.x == "12.5", "NBrowserRightClick should pass the x coordinate")
 assert(right_clicked.y == "24.25", "NBrowserRightClick should pass the y coordinate")
+
+vim.cmd("NBrowserSelectRegion 2 3 4 25")
+assert(
+  selected_region.start_row == "2"
+    and selected_region.start_col == "3"
+    and selected_region.end_row == "4"
+    and selected_region.end_col == "25",
+  "NBrowserSelectRegion should pass preview-cell coordinates"
+)
+
+selected_region = nil
+local warning_count_before_bad_region = #warnings
+vim.cmd("NBrowserSelectRegion 2 3")
+assert(selected_region == nil, "NBrowserSelectRegion should reject partial explicit coordinates")
+assert(
+  #warnings == warning_count_before_bad_region + 1,
+  "NBrowserSelectRegion should warn on malformed explicit coordinates"
+)
+
+selected_region = nil
+local original_buffer = vim.api.nvim_get_current_buf()
+local visual_buffer = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_set_current_buf(visual_buffer)
+vim.api.nvim_buf_set_lines(visual_buffer, 0, -1, false, { "あbcdef", "あghijk" })
+vim.fn.setpos("'<", { visual_buffer, 1, 4, 0 })
+vim.fn.setpos("'>", { visual_buffer, 2, 4, 0 })
+vim.cmd("NBrowserSelectRegion")
+assert(
+  selected_region.start_row == 1
+    and selected_region.start_col == vim.fn.virtcol("'<")
+    and selected_region.end_row == 2
+    and selected_region.end_col == vim.fn.virtcol("'>"),
+  "NBrowserSelectRegion without args should use Visual mark virtual columns"
+)
+vim.api.nvim_set_current_buf(original_buffer)
+vim.api.nvim_buf_delete(visual_buffer, { force = true })
 
 vim.cmd("NBrowserRightClickHere")
 assert(right_clicked_here == true, "NBrowserRightClickHere should call right_click_here")

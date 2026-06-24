@@ -560,6 +560,36 @@ function M.register(browser, opts)
     nargs = "+",
   })
 
+  vim.api.nvim_create_user_command("NBrowserSelectRegion", function(opts)
+    local parts = vim.split(opts.args or "", "%s+", { trimempty = true })
+    local start_row
+    local start_col
+    local end_row
+    local end_col
+    if #parts == 4 then
+      start_row = parts[1]
+      start_col = parts[2]
+      end_row = parts[3]
+      end_col = parts[4]
+    elseif #parts == 0 then
+      local visual_start = vim.fn.getpos("'<")
+      local visual_end = vim.fn.getpos("'>")
+      start_row = visual_start[2]
+      start_col = vim.fn.virtcol("'<")
+      end_row = visual_end[2]
+      end_col = vim.fn.virtcol("'>")
+    else
+      vim.api.nvim_echo({ { "nvim-browser: NBrowserSelectRegion expects either zero arguments or four preview-cell coordinates", "WarningMsg" } }, false, {})
+      return
+    end
+    if not browser.select_region(start_row, start_col, end_row, end_col) then
+      vim.api.nvim_echo({ { "nvim-browser: region selection requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+    end
+  end, {
+    nargs = "*",
+    range = true,
+  })
+
   vim.api.nvim_create_user_command("NBrowserClickHere", function()
     if not browser.click_here() then
       vim.api.nvim_echo({ { "nvim-browser: cursor click requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})

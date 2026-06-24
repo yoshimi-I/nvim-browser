@@ -820,6 +820,37 @@ terminal._test.apply_serve_response({
 assert(terminal.state().pending_operation == nil, "matching click response should clear pending click state")
 
 footer_click_requests = {}
+expected_drag_start = terminal.viewport_drag_point_for_cell(6, 10, { columns = 50, rows = 11, width = 450, height = 165 }, "start")
+expected_drag_end = terminal.viewport_drag_point_for_cell(6, 25, { columns = 50, rows = 11, width = 450, height = 165 }, "end")
+assert(terminal.select_region(6, 10, 6, 25) == true, "preview region selection should send a browser drag")
+drag_seen = false
+drag_request_id = nil
+for _, request in ipairs(footer_click_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if
+    ok
+    and decoded.type == "drag_point"
+    and decoded.start_x == expected_drag_start.x
+    and decoded.start_y == expected_drag_start.y
+    and decoded.end_x == expected_drag_end.x
+    and decoded.end_y == expected_drag_end.y
+  then
+    drag_seen = true
+    drag_request_id = decoded.id
+  end
+end
+assert(drag_seen, "preview region selection should map two cells to a native drag request")
+assert(terminal.state().pending_operation ~= nil, "preview region selection should mark the drag as pending")
+assert(terminal.state().pending_operation.label == "select", "preview region selection pending footer should use a select label")
+terminal._test.apply_serve_response({
+  id = drag_request_id,
+  status = "ok",
+  payload = "selected frame",
+  runtime = interactive_runtime(450, 165),
+})
+assert(terminal.state().pending_operation == nil, "matching drag response should clear pending select state")
+
+footer_click_requests = {}
 assert(terminal.right_click_mouse({ winid = image_win, line = 6, column = 25 }) == true, "mouse right click should send a browser right click")
 right_mouse_click_seen = false
 right_mouse_click_request_id = nil
@@ -990,6 +1021,7 @@ terminal.configure({
 assert(terminal.click_here() == false, "stale rendered frame geometry should block cursor click")
 assert(terminal.hover_here() == false, "stale rendered frame geometry should block cursor hover")
 assert(terminal.type_here("stale text") == false, "stale rendered frame geometry should block cursor typing")
+assert(terminal.select_region(6, 10, 6, 25) == false, "stale rendered frame geometry should block region selection")
 assert(terminal.click_mouse({ winid = image_win, line = 6, column = 25 }) == false, "stale rendered frame geometry should block mouse click")
 assert(terminal.wheel_mouse(120, 0, { winid = image_win, line = 6, column = 25 }) == false, "stale rendered frame geometry should block mouse wheel")
 local stale_resize_seen = false
@@ -999,7 +1031,7 @@ for _, request in ipairs(footer_click_requests) do
   if ok and decoded.type == "resize" then
     stale_resize_seen = true
   end
-  if ok and (decoded.type == "click_point" or decoded.type == "hover_point" or decoded.type == "type_point" or decoded.type == "wheel_point") then
+  if ok and (decoded.type == "click_point" or decoded.type == "hover_point" or decoded.type == "type_point" or decoded.type == "wheel_point" or decoded.type == "drag_point") then
     stale_point_seen = true
   end
 end
@@ -1050,6 +1082,7 @@ footer_click_requests = {}
 assert(terminal.click_here() == false, "cursor click beyond rendered columns should be ignored")
 assert(terminal.hover_here() == false, "cursor hover beyond rendered columns should be ignored")
 assert(terminal.type_here("outside") == false, "cursor typing beyond rendered columns should be ignored")
+assert(terminal.select_region(6, 10, 6, 51) == false, "region selection beyond rendered columns should be ignored")
 assert(#footer_click_requests == 0, "out-of-column cursor actions should not reach the serve backend")
 
 footer_click_requests = {}
@@ -1060,6 +1093,7 @@ assert(#footer_click_requests == 0, "out-of-column mouse clicks should not reach
 footer_click_requests = {}
 assert(terminal.click_mouse({ winid = image_win, line = 12, column = 25 }) == false, "mouse click on footer should be ignored")
 assert(terminal.wheel_mouse(120, 0, { winid = image_win, line = 12, column = 25 }) == false, "mouse wheel on footer should be ignored")
+assert(terminal.select_region(6, 10, 12, 25) == false, "region selection ending on footer should be ignored")
 assert(#footer_click_requests == 0, "footer mouse clicks should not reach the serve backend")
 
 footer_click_requests = {}

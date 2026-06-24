@@ -13,8 +13,8 @@ use nvbrowser_core::{
     render_markdown_document_with_base_url,
     renderer::chromium::{render_url_png, ChromiumOptions},
     BrowserSession, ChromiumRenderer, ClickHintRequest, ClickPointRequest, DownloadInfo,
-    DownloadStatus, ElementHint, ElementHintsRequest, FindTextRequest, FocusHintRequest,
-    FocusSelectorRequest, FocusedElement, FocusedElementRequest, FrameArtifact,
+    DownloadStatus, DragPointRequest, ElementHint, ElementHintsRequest, FindTextRequest,
+    FocusHintRequest, FocusSelectorRequest, FocusedElement, FocusedElementRequest, FrameArtifact,
     HistoryNavigationRequest, HoverHintRequest, HoverPointRequest, KeyPressRequest,
     KittyImageDelete, KittyImageTransfer, NavigateRequest, PageMetrics, PageMetricsRequest,
     PageTextRequest, PageTextSnapshot, ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer,
@@ -385,6 +385,13 @@ enum ServeRequest {
         id: u64,
         x: f64,
         y: f64,
+    },
+    DragPoint {
+        id: u64,
+        start_x: f64,
+        start_y: f64,
+        end_x: f64,
+        end_y: f64,
     },
     RightClickPoint {
         id: u64,
@@ -1017,6 +1024,24 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload(true).map(Some)
             }
+            ServeRequest::DragPoint {
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                ..
+            } => {
+                self.renderer.drag_point(DragPointRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    start_x,
+                    start_y,
+                    end_x,
+                    end_y,
+                ))?;
+                self.settle_after_interaction()?;
+                self.capture_payload(true).map(Some)
+            }
             ServeRequest::RightClickPoint { x, y, .. } => {
                 self.renderer
                     .right_click_point(RightClickPointRequest::new(
@@ -1403,6 +1428,7 @@ impl ServeRequest {
             | ServeRequest::KeyPress { id, .. }
             | ServeRequest::FocusSelector { id, .. }
             | ServeRequest::ClickPoint { id, .. }
+            | ServeRequest::DragPoint { id, .. }
             | ServeRequest::RightClickPoint { id, .. }
             | ServeRequest::HoverPoint { id, .. }
             | ServeRequest::WheelPoint { id, .. }
@@ -1916,6 +1942,7 @@ mod tests {
         right_clicked_points: Vec<(f64, f64)>,
         hovered_points: Vec<(f64, f64)>,
         wheeled_points: Vec<(f64, f64, f64, f64)>,
+        dragged_points: Vec<(f64, f64, f64, f64)>,
         find_queries: Vec<String>,
         find_directions: Vec<bool>,
         fail_click: bool,
@@ -1963,6 +1990,7 @@ mod tests {
                 right_clicked_points: Vec::new(),
                 hovered_points: Vec::new(),
                 wheeled_points: Vec::new(),
+                dragged_points: Vec::new(),
                 find_queries: Vec::new(),
                 find_directions: Vec::new(),
                 fail_click: false,
@@ -2341,6 +2369,20 @@ mod tests {
                 ));
             }
             self.clicked_points.push((request.x, request.y));
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn drag_point(&mut self, request: DragPointRequest) -> Result<InputResult, RendererError> {
+            self.operations.push("drag_point");
+            self.dragged_points.push((
+                request.start_x,
+                request.start_y,
+                request.end_x,
+                request.end_y,
+            ));
             Ok(InputResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
@@ -2757,6 +2799,19 @@ mod tests {
                 y: 240.25,
                 delta_x: 0.0,
                 delta_y: 120.0,
+            }
+        );
+        assert_eq!(
+            parse_serve_request(
+                r##"{"type":"drag_point","id":18,"start_x":10.5,"start_y":20.25,"end_x":120.5,"end_y":20.25}"##
+            )
+            .expect("drag point request should parse"),
+            ServeRequest::DragPoint {
+                id: 18,
+                start_x: 10.5,
+                start_y: 20.25,
+                end_x: 120.5,
+                end_y: 20.25,
             }
         );
         assert_eq!(
@@ -4490,6 +4545,56 @@ mod tests {
                 "capture",
                 "hints",
                 "click_point",
+                "settle",
+                "capture",
+                "hints"
+            ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_drags_point_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::DragPoint {
+            id: 2,
+            start_x: 10.5,
+            start_y: 20.25,
+            end_x: 120.5,
+            end_y: 20.25,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(
+            runtime.renderer.dragged_points,
+            vec![(10.5, 20.25, 120.5, 20.25)]
+        );
+        assert_eq!(runtime.renderer.captures, 2);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "drag_point",
                 "settle",
                 "capture",
                 "hints"

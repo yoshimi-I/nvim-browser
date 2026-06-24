@@ -267,6 +267,13 @@ COMMANDS                                           *nvim-browser-commands*
 	Read the browser's current selected text and write it into a Neovim
 	register. Defaults to the unnamed register.
 
+							*:NBrowserSelectRegion*
+:NBrowserSelectRegion [start-row start-col end-row end-col]
+	Drag across the cursor-addressable browser preview to create a native
+	browser text selection. With four arguments, use those preview-cell
+	coordinates. Without arguments, use the current Visual selection marks.
+	Follow with |:NBrowserYankSelection| to copy the selected browser text.
+
 							*:NBrowserYankUrl*
 :NBrowserYankUrl [register]
 	Write the active browser page URL into a Neovim register without

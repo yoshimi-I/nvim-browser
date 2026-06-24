@@ -61,6 +61,8 @@ pub trait Renderer {
 
     fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError>;
 
+    fn drag_point(&mut self, request: DragPointRequest) -> Result<InputResult, RendererError>;
+
     fn right_click_point(
         &mut self,
         request: RightClickPointRequest,
@@ -559,6 +561,16 @@ pub struct ClickPointRequest {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct DragPointRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub start_x: f64,
+    pub start_y: f64,
+    pub end_x: f64,
+    pub end_y: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct RightClickPointRequest {
     pub session_id: SessionId,
     pub page_id: PageId,
@@ -729,6 +741,26 @@ impl ClickPointRequest {
             page_id,
             x,
             y,
+        }
+    }
+}
+
+impl DragPointRequest {
+    pub const fn new(
+        session_id: SessionId,
+        page_id: PageId,
+        start_x: f64,
+        start_y: f64,
+        end_x: f64,
+        end_y: f64,
+    ) -> Self {
+        Self {
+            session_id,
+            page_id,
+            start_x,
+            start_y,
+            end_x,
+            end_y,
         }
     }
 }
@@ -1023,6 +1055,13 @@ mod tests {
             })
         }
 
+        fn drag_point(&mut self, request: DragPointRequest) -> Result<InputResult, RendererError> {
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
         fn right_click_point(
             &mut self,
             request: RightClickPointRequest,
@@ -1223,6 +1262,11 @@ mod tests {
                 session_id, page_id, 12.5, 24.25, 0.0, 120.0,
             ))
             .expect("point wheel should succeed");
+        let drag = renderer
+            .drag_point(DragPointRequest::new(
+                session_id, page_id, 12.5, 24.25, 72.0, 24.25,
+            ))
+            .expect("point drag should succeed");
         let focus_hint = renderer
             .focus_hint(FocusHintRequest::new(session_id, page_id, 2))
             .expect("hint focus should succeed");
@@ -1264,6 +1308,8 @@ mod tests {
         assert_eq!(hover.page_id, page_id);
         assert_eq!(wheel.session_id, session_id);
         assert_eq!(wheel.page_id, page_id);
+        assert_eq!(drag.session_id, session_id);
+        assert_eq!(drag.page_id, page_id);
     }
 
     #[test]

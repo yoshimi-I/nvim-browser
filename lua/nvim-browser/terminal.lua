@@ -1077,6 +1077,26 @@ function M.viewport_point_for_cell(row, column, geometry)
   }
 end
 
+function M.viewport_drag_point_for_cell(row, column, geometry, edge)
+  if geometry == nil then
+    geometry = current_preview_geometry()
+  end
+
+  row = math.max(1, math.min(tonumber(row) or 1, geometry.rows))
+  column = math.max(1, math.min(tonumber(column) or 1, geometry.columns))
+  local cell_width = geometry.width / geometry.columns
+  local x
+  if edge == "end" then
+    x = column * cell_width - math.min(1, cell_width * 0.15)
+  else
+    x = (column - 1) * cell_width + math.min(1, cell_width * 0.15)
+  end
+  return {
+    x = math.max(0, math.min(x, geometry.width)),
+    y = (row - 0.5) * geometry.height / geometry.rows,
+  }
+end
+
 same_preview_geometry = function(left, right)
   if left == nil or right == nil then
     return false
@@ -2446,6 +2466,24 @@ function M.click_point(x, y)
   }, state.current_url or state.last_target or "click", "click")
 end
 
+function M.drag_point(start_x, start_y, end_x, end_y)
+  start_x = tonumber(start_x)
+  start_y = tonumber(start_y)
+  end_x = tonumber(end_x)
+  end_y = tonumber(end_y)
+  if start_x == nil or start_y == nil or end_x == nil or end_y == nil then
+    return false
+  end
+  request_resize()
+  return send_pending_request({
+    type = "drag_point",
+    start_x = start_x,
+    start_y = start_y,
+    end_x = end_x,
+    end_y = end_y,
+  }, state.current_url or state.last_target or "select", "select")
+end
+
 function M.right_click_point(x, y)
   x = tonumber(x)
   y = tonumber(y)
@@ -2630,6 +2668,37 @@ function M.click_here()
   end
   local point = M.viewport_point_for_cell(cursor[1], column, geometry)
   return M.click_point(point.x, point.y)
+end
+
+function M.select_region(start_row, start_col, end_row, end_col)
+  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+    return false
+  end
+
+  start_row = tonumber(start_row)
+  start_col = tonumber(start_col)
+  end_row = tonumber(end_row)
+  end_col = tonumber(end_col)
+  if start_row == nil or start_col == nil or end_row == nil or end_col == nil then
+    return false
+  end
+
+  local preview_geometry = current_preview_geometry()
+  if not cell_within_geometry(start_row, start_col, preview_geometry) then
+    return false
+  end
+  if not cell_within_geometry(end_row, end_col, preview_geometry) then
+    return false
+  end
+
+  local rendered_geometry = current_rendered_frame_geometry()
+  if rendered_geometry == nil then
+    return false
+  end
+
+  local start_point = M.viewport_drag_point_for_cell(start_row, start_col, rendered_geometry, "start")
+  local end_point = M.viewport_drag_point_for_cell(end_row, end_col, rendered_geometry, "end")
+  return M.drag_point(start_point.x, start_point.y, end_point.x, end_point.y)
 end
 
 function M.right_click_here()

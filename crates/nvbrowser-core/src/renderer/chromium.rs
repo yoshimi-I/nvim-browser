@@ -25,22 +25,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     renderer::{
-        ClickHintRequest, ClickPointRequest, DownloadInfo, ElementHint, ElementHintsRequest,
-        FindTextRequest, FindTextResult, FocusHintRequest, FocusSelectorRequest, FocusedElement,
-        FocusedElementRequest, FrameArtifact, HistoryNavigationRequest, HistoryNavigationResult,
-        HoverHintRequest, HoverPointRequest, InputResult, InteractionSettleResult, KeyPressRequest,
-        NavigateRequest, NavigationResult, PageMetrics, PageMetricsRequest, PageTextRequest,
-        PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer,
-        RendererError, RendererErrorKind, RightClickHintRequest, RightClickPointRequest,
-        ScrollRequest, ScrollResult, SelectHintRequest, SelectionTextRequest, SelectionTextResult,
-        ShutdownResult, TextInputRequest, ToggleHintRequest, UploadHintRequest, WheelPointRequest,
-        ZoomRequest, ZoomResult,
+        ClickHintRequest, ClickPointRequest, DownloadInfo, DragPointRequest, ElementHint,
+        ElementHintsRequest, FindTextRequest, FindTextResult, FocusHintRequest,
+        FocusSelectorRequest, FocusedElement, FocusedElementRequest, FrameArtifact,
+        HistoryNavigationRequest, HistoryNavigationResult, HoverHintRequest, HoverPointRequest,
+        InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
+        PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
+        ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
+        RendererErrorKind, RightClickHintRequest, RightClickPointRequest, ScrollRequest,
+        ScrollResult, SelectHintRequest, SelectionTextRequest, SelectionTextResult, ShutdownResult,
+        TextInputRequest, ToggleHintRequest, UploadHintRequest, WheelPointRequest, ZoomRequest,
+        ZoomResult,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
 
 const INTERACTION_SETTLE_STABLE_SAMPLES: usize = 3;
 pub const DEFAULT_NAVIGATION_TIMEOUT_MS: u64 = 20_000;
+const BROWSER_IDLE_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChromiumOptions {
@@ -531,13 +533,6 @@ impl Renderer for ChromiumRenderer {
                 )
             })
             .and_then(parse_hint_point_json)?;
-        if point.direct_navigated.unwrap_or(false) {
-            self.skip_next_target_adoption = true;
-            return Ok(InputResult {
-                session_id: request.session_id,
-                page_id: request.page_id,
-            });
-        }
         if let Err(error) = dispatch_mouse_click(&self.tab, point.x, point.y)
             .map_err(|error| render_context_error("hint click failed", error))
         {
@@ -708,6 +703,21 @@ impl Renderer for ChromiumRenderer {
                 y: request.y,
             })
             .map_err(render_error)?;
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn drag_point(&mut self, request: DragPointRequest) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
+        dispatch_mouse_drag(
+            &self.tab,
+            request.start_x,
+            request.start_y,
+            request.end_x,
+            request.end_y,
+        )?;
         Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
@@ -1705,19 +1715,9 @@ const CLICK_HINT_ACTION_SCRIPT: &str = r#"
   }
   const rect = element.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return null;
-  const link = typeof element.closest === 'function' ? element.closest('a[href]') : null;
-  const href = link && typeof link.href === 'string' ? link.href : null;
-  const target = link ? link.getAttribute('target') : null;
-  const directNavigated = !!(href && target && target.toLowerCase() === '_blank');
-  if (directNavigated) {
-    window.location.assign(href);
-  }
   return JSON.stringify({
     x: Math.max(0, Math.min(window.innerWidth || rect.right, rect.left + rect.width / 2)),
-    y: Math.max(0, Math.min(window.innerHeight || rect.bottom, rect.top + rect.height / 2)),
-    href,
-    target,
-    direct_navigated: directNavigated
+    y: Math.max(0, Math.min(window.innerHeight || rect.bottom, rect.top + rect.height / 2))
   });
 })()
 "#;
@@ -2133,6 +2133,7 @@ fn build_launch_options(
         .path(Some(binary.to_path_buf()))
         .user_data_dir(user_data_dir.map(Path::to_path_buf))
         .window_size(Some((viewport.width, viewport.height)))
+        .idle_browser_timeout(BROWSER_IDLE_TIMEOUT)
         .sandbox(false)
         .args(vec![OsStr::new("--disable-popup-blocking")])
         .build()
@@ -2156,14 +2157,12 @@ fn open_browser(options: &ChromiumOptions, viewport: Viewport) -> Result<Browser
 }
 
 fn connect_browser(cdp_ws_url: &str) -> Result<Browser, RendererError> {
-    Browser::connect_with_timeout(cdp_ws_url.to_string(), Duration::from_secs(300)).map_err(
-        |error| {
-            RendererError::new(
-                RendererErrorKind::BackendUnavailable,
-                format!("failed to connect to Chrome CDP websocket: {error}"),
-            )
-        },
-    )
+    Browser::connect_with_timeout(cdp_ws_url.to_string(), BROWSER_IDLE_TIMEOUT).map_err(|error| {
+        RendererError::new(
+            RendererErrorKind::BackendUnavailable,
+            format!("failed to connect to Chrome CDP websocket: {error}"),
+        )
+    })
 }
 
 fn configure_download_behavior(
@@ -2379,6 +2378,74 @@ fn dispatch_mouse_click_with_button(
         y,
         button,
     )
+}
+
+fn dispatch_mouse_drag(
+    tab: &Arc<Tab>,
+    start_x: f64,
+    start_y: f64,
+    end_x: f64,
+    end_y: f64,
+) -> Result<(), RendererError> {
+    dispatch_mouse_event(
+        tab,
+        Input::DispatchMouseEventTypeOption::MouseMoved,
+        start_x,
+        start_y,
+        MouseDispatchButton::Left,
+    )?;
+    dispatch_mouse_event(
+        tab,
+        Input::DispatchMouseEventTypeOption::MousePressed,
+        start_x,
+        start_y,
+        MouseDispatchButton::Left,
+    )?;
+    for step in 1..=4 {
+        let ratio = step as f64 / 4.0;
+        let x = start_x + (end_x - start_x) * ratio;
+        let y = start_y + (end_y - start_y) * ratio;
+        dispatch_mouse_drag_move(tab, x, y)?;
+    }
+    dispatch_mouse_event(
+        tab,
+        Input::DispatchMouseEventTypeOption::MouseReleased,
+        end_x,
+        end_y,
+        MouseDispatchButton::Left,
+    )
+}
+
+fn dispatch_mouse_drag_move(tab: &Arc<Tab>, x: f64, y: f64) -> Result<(), RendererError> {
+    let options = mouse_drag_move_options(MouseDispatchButton::Left);
+    tab.call_method(Input::DispatchMouseEvent {
+        Type: Input::DispatchMouseEventTypeOption::MouseMoved,
+        x,
+        y,
+        modifiers: None,
+        timestamp: None,
+        button: options.button,
+        buttons: options.buttons,
+        click_count: options.click_count,
+        force: None,
+        tangential_pressure: None,
+        tilt_x: None,
+        tilt_y: None,
+        twist: None,
+        delta_x: None,
+        delta_y: None,
+        pointer_Type: None,
+    })
+    .map(|_| ())
+    .map_err(render_error)
+}
+
+fn mouse_drag_move_options(button: MouseDispatchButton) -> MouseDispatchOptions {
+    MouseDispatchOptions {
+        button: Some(button.cdp_button()),
+        buttons: Some(button.buttons_mask()),
+        click_count: None,
+    }
 }
 
 fn dispatch_mouse_event(
@@ -2652,7 +2719,6 @@ struct ExtractedPageText {
 struct HintPoint {
     x: f64,
     y: f64,
-    direct_navigated: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3193,6 +3259,7 @@ mod tests {
         );
         assert_eq!(options.path, Some(PathBuf::from("/custom/chrome")));
         assert_eq!(options.window_size, Some((640, 480)));
+        assert_eq!(options.idle_browser_timeout, BROWSER_IDLE_TIMEOUT);
     }
 
     #[test]
@@ -3278,8 +3345,7 @@ mod tests {
         assert!(!CLICK_HINT_POINT_SCRIPT.contains("[hintId - 1]"));
         assert!(!CLICK_HINT_POINT_SCRIPT.contains("element.click()"));
         assert!(!CLICK_HINT_POINT_SCRIPT.contains("location.assign"));
-        assert!(CLICK_HINT_ACTION_SCRIPT.contains("location.assign(href)"));
-        assert!(CLICK_HINT_ACTION_SCRIPT.contains("direct_navigated"));
+        assert!(!CLICK_HINT_ACTION_SCRIPT.contains("location.assign"));
         assert!(!CLICK_HINT_ACTION_SCRIPT.contains("element.click()"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("optionsFor(element)"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("Array.from(element.options || [])"));
@@ -3343,6 +3409,15 @@ mod tests {
         assert_eq!(released.button, Some(Input::MouseButton::Right));
         assert_eq!(released.buttons, Some(2));
         assert_eq!(released.click_count, Some(1));
+    }
+
+    #[test]
+    fn mouse_drag_move_options_hold_left_button_without_click_count() {
+        let drag_move = mouse_drag_move_options(MouseDispatchButton::Left);
+
+        assert_eq!(drag_move.button, Some(Input::MouseButton::Left));
+        assert_eq!(drag_move.buttons, Some(1));
+        assert_eq!(drag_move.click_count, None);
     }
 
     #[test]
