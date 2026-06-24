@@ -46,6 +46,11 @@ pub trait Renderer {
 
     fn click_hint(&mut self, request: ClickHintRequest) -> Result<InputResult, RendererError>;
 
+    fn right_click_hint(
+        &mut self,
+        request: RightClickHintRequest,
+    ) -> Result<InputResult, RendererError>;
+
     fn hover_hint(&mut self, request: HoverHintRequest) -> Result<InputResult, RendererError>;
 
     fn select_hint(&mut self, request: SelectHintRequest) -> Result<InputResult, RendererError>;
@@ -55,6 +60,11 @@ pub trait Renderer {
     fn toggle_hint(&mut self, request: ToggleHintRequest) -> Result<InputResult, RendererError>;
 
     fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError>;
+
+    fn right_click_point(
+        &mut self,
+        request: RightClickPointRequest,
+    ) -> Result<InputResult, RendererError>;
 
     fn hover_point(&mut self, request: HoverPointRequest) -> Result<InputResult, RendererError>;
 
@@ -416,6 +426,23 @@ impl ClickHintRequest {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct RightClickHintRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub hint_id: u32,
+}
+
+impl RightClickHintRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId, hint_id: u32) -> Self {
+        Self {
+            session_id,
+            page_id,
+            hint_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct HoverHintRequest {
     pub session_id: SessionId,
     pub page_id: PageId,
@@ -494,6 +521,14 @@ impl ToggleHintRequest {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct ClickPointRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct RightClickPointRequest {
     pub session_id: SessionId,
     pub page_id: PageId,
     pub x: f64,
@@ -656,6 +691,17 @@ pub struct ElementHint {
 }
 
 impl ClickPointRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId, x: f64, y: f64) -> Self {
+        Self {
+            session_id,
+            page_id,
+            x,
+            y,
+        }
+    }
+}
+
+impl RightClickPointRequest {
     pub const fn new(session_id: SessionId, page_id: PageId, x: f64, y: f64) -> Self {
         Self {
             session_id,
@@ -888,6 +934,16 @@ mod tests {
             })
         }
 
+        fn right_click_hint(
+            &mut self,
+            request: RightClickHintRequest,
+        ) -> Result<InputResult, RendererError> {
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
         fn hover_hint(&mut self, request: HoverHintRequest) -> Result<InputResult, RendererError> {
             Ok(InputResult {
                 session_id: request.session_id,
@@ -928,6 +984,16 @@ mod tests {
         fn click_point(
             &mut self,
             request: ClickPointRequest,
+        ) -> Result<InputResult, RendererError> {
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn right_click_point(
+            &mut self,
+            request: RightClickPointRequest,
         ) -> Result<InputResult, RendererError> {
             Ok(InputResult {
                 session_id: request.session_id,
@@ -1111,6 +1177,11 @@ mod tests {
         let click = renderer
             .click_point(ClickPointRequest::new(session_id, page_id, 12.5, 24.25))
             .expect("point click should succeed");
+        let right_click = renderer
+            .right_click_point(RightClickPointRequest::new(
+                session_id, page_id, 12.5, 24.25,
+            ))
+            .expect("point right click should succeed");
         let hover = renderer
             .hover_point(HoverPointRequest::new(session_id, page_id, 12.5, 24.25))
             .expect("point hover should succeed");
@@ -1125,6 +1196,9 @@ mod tests {
         let click_hint = renderer
             .click_hint(ClickHintRequest::new(session_id, page_id, 2))
             .expect("hint click should succeed");
+        let right_click_hint = renderer
+            .right_click_hint(RightClickHintRequest::new(session_id, page_id, 2))
+            .expect("hint right click should succeed");
         let hover_hint = renderer
             .hover_hint(HoverHintRequest::new(session_id, page_id, 2))
             .expect("hint hover should succeed");
@@ -1141,6 +1215,8 @@ mod tests {
         assert_eq!(focus_hint.page_id, page_id);
         assert_eq!(click_hint.session_id, session_id);
         assert_eq!(click_hint.page_id, page_id);
+        assert_eq!(right_click_hint.session_id, session_id);
+        assert_eq!(right_click_hint.page_id, page_id);
         assert_eq!(hover_hint.session_id, session_id);
         assert_eq!(hover_hint.page_id, page_id);
         assert_eq!(select_hint.session_id, session_id);
@@ -1149,6 +1225,8 @@ mod tests {
         assert_eq!(toggle_hint.page_id, page_id);
         assert_eq!(click.session_id, session_id);
         assert_eq!(click.page_id, page_id);
+        assert_eq!(right_click.session_id, session_id);
+        assert_eq!(right_click.page_id, page_id);
         assert_eq!(hover.session_id, session_id);
         assert_eq!(hover.page_id, page_id);
         assert_eq!(wheel.session_id, session_id);

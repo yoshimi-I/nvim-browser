@@ -775,6 +775,31 @@ terminal._test.apply_serve_response({
 assert(terminal.state().pending_operation == nil, "matching click response should clear pending click state")
 
 footer_click_requests = {}
+assert(terminal.right_click_mouse({ winid = image_win, line = 6, column = 25 }) == true, "mouse right click should send a browser right click")
+right_mouse_click_seen = false
+right_mouse_click_request_id = nil
+for _, request in ipairs(footer_click_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "right_click_point" and decoded.x == expected_mouse_point.x and decoded.y == expected_mouse_point.y then
+    right_mouse_click_seen = true
+    right_mouse_click_request_id = decoded.id
+  end
+end
+assert(right_mouse_click_seen, "mouse right click should map preview cells to viewport pixels")
+assert(terminal.state().pending_operation ~= nil, "mouse right click should mark the browser right click as pending")
+assert(terminal.state().pending_operation.label == "right-click", "mouse right click pending footer should use a right-click label")
+assert(#terminal.state().element_hints == 0, "mouse right click should clear stale hints while a capture is pending")
+terminal._test.apply_serve_response({
+  id = right_mouse_click_request_id,
+  status = "ok",
+  payload = "right clicked frame",
+  url = "https://example.com/right-clicked",
+  title = "Right Clicked",
+  runtime = interactive_runtime(450, 165),
+})
+assert(terminal.state().pending_operation == nil, "matching right click response should clear pending right click state")
+
+footer_click_requests = {}
 assert(terminal.wheel_mouse(120, 0, { winid = image_win, line = 6, column = 25 }) == true, "mouse wheel should send a browser wheel")
 local mouse_wheel_seen = false
 local mouse_wheel_request_id = nil
@@ -804,6 +829,21 @@ terminal._test.apply_serve_response({
   runtime = interactive_runtime(450, 165),
 })
 assert(terminal.state().pending_operation == nil, "matching wheel response should clear pending wheel state")
+
+footer_click_requests = {}
+vim.api.nvim_win_set_cursor(image_win, { 6, 24 })
+expected_cursor_right_click_point = terminal.viewport_point_for_cell(6, vim.api.nvim_win_call(image_win, function()
+  return vim.fn.virtcol(".")
+end), { columns = 50, rows = 11, width = 450, height = 165 })
+assert(terminal.right_click_here() == true, "cursor right click should send a browser right click")
+cursor_right_click_seen = false
+for _, request in ipairs(footer_click_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "right_click_point" and decoded.x == expected_cursor_right_click_point.x and decoded.y == expected_cursor_right_click_point.y then
+    cursor_right_click_seen = true
+  end
+end
+assert(cursor_right_click_seen, "cursor right click should map preview cells to viewport pixels")
 
 footer_click_requests = {}
 vim.api.nvim_win_set_cursor(image_win, { 6, 24 })
@@ -2041,8 +2081,60 @@ assert(vim.wait(1000, function()
 end), "direct hint click response should clear pending state")
 
 sent_requests = {}
+right_click_hints_response = vim.json.decode(hints_response)
+right_click_hints_response.id = direct_click_pending_id + 2
+serve_stdout(nil, { vim.json.encode(right_click_hints_response), "" })
+assert(vim.wait(1000, function()
+  return #terminal.state().element_hints == 2
+end), "serve hint response should repopulate element hints before direct hint right click")
+assert(terminal.refresh() == true, "manual refresh should create an in-flight capture before hint right click")
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id ~= nil
+end), "refresh capture should be in flight before hint right click")
+stale_live_before_right_click_hint_id = terminal.state().live_refresh_request_id
+sent_requests = {}
+assert(terminal.right_click_hint("s") == true, "right_click_hint should right click the hinted element")
+direct_right_click_hint_seen = false
+direct_right_click_point_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "right_click_hint" and decoded.hint_id == 2 then
+    direct_right_click_hint_seen = true
+  end
+  if ok and decoded.type == "right_click_point" then
+    direct_right_click_point_seen = true
+  end
+end
+assert(direct_right_click_hint_seen, "right_click_hint should send the backend hint id")
+assert(not direct_right_click_point_seen, "right_click_hint should avoid coordinate click requests")
+assert(terminal.state().live_refresh_request_id == nil, "right_click_hint should cancel in-flight refresh before using backend hint ids")
+serve_stdout(nil, { vim.json.encode({
+  id = stale_live_before_right_click_hint_id,
+  status = "ok",
+  payload = "stale live frame",
+  url = "https://example.com/stale-right-click",
+  title = "Stale Right Click",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title ~= "Stale Right Click"
+end), "canceled refresh responses should not update metadata after right_click_hint starts")
+direct_right_click_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(direct_right_click_pending_id ~= nil, "right_click_hint should mark the hint right click as pending")
+assert(terminal.state().pending_operation.label == "right-click", "right_click_hint pending footer should use a right-click label")
+serve_stdout(nil, { vim.json.encode({
+  id = direct_right_click_pending_id,
+  status = "ok",
+  payload = "direct right clicked hint frame",
+  url = "https://example.com",
+  title = "Example",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil
+end), "direct hint right click response should clear pending state")
+
+sent_requests = {}
 local focus_hints_response = vim.json.decode(hints_response)
-focus_hints_response.id = direct_click_pending_id + 1
+focus_hints_response.id = direct_right_click_pending_id + 1
 serve_stdout(nil, { vim.json.encode(focus_hints_response), "" })
 assert(vim.wait(1000, function()
   return #terminal.state().element_hints == 2
@@ -2460,7 +2552,7 @@ terminal._test.apply_serve_response({
   url = "https://example.com/before-quiet",
   title = "Before Quiet",
   runtime = {
-    protocol_version = 12,
+    protocol_version = 13,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",
@@ -2509,7 +2601,7 @@ serve_stdout(nil, { vim.json.encode({
     submittable = true,
   },
   runtime = {
-    protocol_version = 12,
+    protocol_version = 13,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",

@@ -66,14 +66,16 @@ browser frames into stable row-major image tiles. Tile payloads clear the full
 stable tile ID range before reusing IDs so frame replacement is deterministic
 when a large capture is followed by a smaller one.
 
-The persistent `serve` protocol is JSONL over stdin/stdout. Most browser actions
-default to returning a fresh frame payload after applying the action. Text input
-and key press requests also accept `capture = false`; that quiet path applies
-the CDP input and settles browser state without returning a frame. Neovim uses
-quiet requests inside browser text mode to avoid per-key screenshot recapture,
-then requests an explicit capture when text mode exits. Quiet responses should
-not clear preview metadata, page metrics, or hint overlays unless they report an
-error.
+The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 13
+adds native browser right-click requests (`right_click_point` and
+`right_click_hint`) alongside the existing click, hover, wheel, focus, and hint
+actions. Most browser actions default to returning a fresh frame payload after
+applying the action. Text input and key press requests also accept
+`capture = false`; that quiet path applies the CDP input and settles browser
+state without returning a frame. Neovim uses quiet requests inside browser text
+mode to avoid per-key screenshot recapture, then requests an explicit capture
+when text mode exits. Quiet responses should not clear preview metadata, page
+metrics, or hint overlays unless they report an error.
 
 Image preview should also follow this contract. Direct image handling can be a
 renderer adapter that accepts a file target, produces a `RenderedFrame` with a
@@ -87,5 +89,6 @@ Current renderer-independent concepts:
 - `PageState`: current URL, loading state, viewport, and last frame metadata.
 - `Viewport`: pixel dimensions plus device scale factor.
 - `FrameMetadata`: frame ID, page ID, URL, viewport, and capture timestamp.
-- `Renderer`: trait for navigate, render frame, scroll, find text, hinted
-  focus/selection/toggle, reload, and shutdown.
+- `Renderer`: trait for navigate, render frame, scroll, find text, point
+  click/right-click/hover/wheel input, hinted click/right-click/focus/
+  selection/toggle, reload, and shutdown.

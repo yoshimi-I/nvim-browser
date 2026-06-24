@@ -266,6 +266,7 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
       <button onclick="alert('hello'); document.getElementById('out').textContent='alert handled'">Alert Dialog</button>
       <button onclick="document.getElementById('out').textContent = confirm('continue?') ? 'confirm accepted' : 'confirm dismissed'">Confirm Dialog</button>
       <button onclick="const value = prompt('name', 'default'); document.getElementById('out').textContent = value === null ? 'prompt dismissed' : value">Prompt Dialog</button>
+      <button id="context-target" oncontextmenu="event.preventDefault(); document.getElementById('out').textContent='context menu handled'">Context Target</button>
       <button id="hover-source">Menu</button>
       <a id="hover-menu" href="#hovered">Hover Docs</a>
       <div contenteditable="true">Editable target</div>
@@ -403,6 +404,36 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
             .as_str()
             .is_some_and(|text| text.contains("clicked from jsonl")),
         "page_text should observe DOM updated by clicked button"
+    );
+
+    let context_hint = clicked["hints"]
+        .as_array()
+        .expect("clicked response should include hints")
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Context Target")
+        .expect("real Chromium hints should include the context target");
+    let context_x = context_hint["x"]
+        .as_f64()
+        .expect("context hint should include x");
+    let context_y = context_hint["y"]
+        .as_f64()
+        .expect("context hint should include y");
+    let context_clicked = serve.request(serde_json::json!({
+        "id": 23,
+        "type": "right_click_point",
+        "x": context_x,
+        "y": context_y
+    }));
+    assert_eq!(
+        context_clicked["status"], "ok",
+        "right_click_point should succeed; response={context_clicked:?}"
+    );
+    let context_text = serve.request(serde_json::json!({ "id": 24, "type": "page_text" }));
+    assert!(
+        context_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("context menu handled")),
+        "page_text should observe DOM updated by contextmenu handler; response={context_text:?}"
     );
 
     let dialog_hints = clicked["hints"]

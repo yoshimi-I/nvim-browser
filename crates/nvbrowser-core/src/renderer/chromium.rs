@@ -25,9 +25,10 @@ use crate::{
         HoverHintRequest, HoverPointRequest, InputResult, InteractionSettleResult, KeyPressRequest,
         NavigateRequest, NavigationResult, PageMetrics, PageMetricsRequest, PageTextRequest,
         PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer,
-        RendererError, RendererErrorKind, ScrollRequest, ScrollResult, SelectHintRequest,
-        SelectionTextRequest, SelectionTextResult, ShutdownResult, TextInputRequest,
-        ToggleHintRequest, UploadHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
+        RendererError, RendererErrorKind, RightClickHintRequest, RightClickPointRequest,
+        ScrollRequest, ScrollResult, SelectHintRequest, SelectionTextRequest, SelectionTextResult,
+        ShutdownResult, TextInputRequest, ToggleHintRequest, UploadHintRequest, WheelPointRequest,
+        ZoomRequest, ZoomResult,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -415,6 +416,32 @@ impl Renderer for ChromiumRenderer {
         })
     }
 
+    fn right_click_hint(
+        &mut self,
+        request: RightClickHintRequest,
+    ) -> Result<InputResult, RendererError> {
+        let hint_id = serde_json::to_string(&request.hint_id).map_err(render_error)?;
+        let script = CLICK_HINT_POINT_SCRIPT.replace("__HINT_ID__", &hint_id);
+        let point = self
+            .tab
+            .evaluate(&script, true)
+            .map_err(|error| render_context_error("hint point evaluation failed", error))?
+            .value
+            .ok_or_else(|| {
+                RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "hint id was not found or is stale",
+                )
+            })
+            .and_then(parse_hint_point_json)?;
+        dispatch_mouse_click_with_button(&self.tab, point.x, point.y, MouseDispatchButton::Right)
+            .map_err(|error| render_context_error("hint right click failed", error))?;
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
     fn hover_hint(&mut self, request: HoverHintRequest) -> Result<InputResult, RendererError> {
         let hint_id = serde_json::to_string(&request.hint_id).map_err(render_error)?;
         let script = CLICK_HINT_POINT_SCRIPT.replace("__HINT_ID__", &hint_id);
@@ -538,6 +565,22 @@ impl Renderer for ChromiumRenderer {
                 y: request.y,
             })
             .map_err(render_error)?;
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn right_click_point(
+        &mut self,
+        request: RightClickPointRequest,
+    ) -> Result<InputResult, RendererError> {
+        dispatch_mouse_click_with_button(
+            &self.tab,
+            request.x,
+            request.y,
+            MouseDispatchButton::Right,
+        )?;
         Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
@@ -1864,14 +1907,85 @@ fn connect_browser(cdp_ws_url: &str) -> Result<Browser, RendererError> {
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MouseDispatchButton {
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct MouseDispatchOptions {
+    button: Option<Input::MouseButton>,
+    buttons: Option<u32>,
+    click_count: Option<u32>,
+}
+
+impl MouseDispatchButton {
+    const fn cdp_button(self) -> Input::MouseButton {
+        match self {
+            Self::Left => Input::MouseButton::Left,
+            Self::Right => Input::MouseButton::Right,
+        }
+    }
+
+    const fn buttons_mask(self) -> u32 {
+        match self {
+            Self::Left => 1,
+            Self::Right => 2,
+        }
+    }
+}
+
+fn mouse_dispatch_options(
+    event_type: &Input::DispatchMouseEventTypeOption,
+    button: MouseDispatchButton,
+) -> MouseDispatchOptions {
+    let is_press_or_release = matches!(
+        event_type,
+        &Input::DispatchMouseEventTypeOption::MousePressed
+            | &Input::DispatchMouseEventTypeOption::MouseReleased
+    );
+    MouseDispatchOptions {
+        button: is_press_or_release.then_some(button.cdp_button()),
+        buttons: Some(if is_press_or_release {
+            button.buttons_mask()
+        } else {
+            0
+        }),
+        click_count: is_press_or_release.then_some(1),
+    }
+}
+
 fn dispatch_mouse_click(tab: &Arc<Tab>, x: f64, y: f64) -> Result<(), RendererError> {
-    dispatch_mouse_event(tab, Input::DispatchMouseEventTypeOption::MouseMoved, x, y)?;
-    dispatch_mouse_event(tab, Input::DispatchMouseEventTypeOption::MousePressed, x, y)?;
+    dispatch_mouse_click_with_button(tab, x, y, MouseDispatchButton::Left)
+}
+
+fn dispatch_mouse_click_with_button(
+    tab: &Arc<Tab>,
+    x: f64,
+    y: f64,
+    button: MouseDispatchButton,
+) -> Result<(), RendererError> {
+    dispatch_mouse_event(
+        tab,
+        Input::DispatchMouseEventTypeOption::MouseMoved,
+        x,
+        y,
+        button,
+    )?;
+    dispatch_mouse_event(
+        tab,
+        Input::DispatchMouseEventTypeOption::MousePressed,
+        x,
+        y,
+        button,
+    )?;
     dispatch_mouse_event(
         tab,
         Input::DispatchMouseEventTypeOption::MouseReleased,
         x,
         y,
+        button,
     )
 }
 
@@ -1880,21 +1994,18 @@ fn dispatch_mouse_event(
     event_type: Input::DispatchMouseEventTypeOption,
     x: f64,
     y: f64,
+    button: MouseDispatchButton,
 ) -> Result<(), RendererError> {
-    let is_press_or_release = matches!(
-        event_type,
-        Input::DispatchMouseEventTypeOption::MousePressed
-            | Input::DispatchMouseEventTypeOption::MouseReleased
-    );
+    let options = mouse_dispatch_options(&event_type, button);
     tab.call_method(Input::DispatchMouseEvent {
         Type: event_type,
         x,
         y,
         modifiers: None,
         timestamp: None,
-        button: is_press_or_release.then_some(Input::MouseButton::Left),
-        buttons: None,
-        click_count: is_press_or_release.then_some(1),
+        button: options.button,
+        buttons: options.buttons,
+        click_count: options.click_count,
         force: None,
         tangential_pressure: None,
         tilt_x: None,
@@ -2505,6 +2616,7 @@ mod tests {
         assert!(!TOGGLE_HINT_SCRIPT.contains("new Event('input'"));
         assert!(!TOGGLE_HINT_SCRIPT.contains("new Event('change'"));
         assert!(!TOGGLE_HINT_SCRIPT.contains("[hintId - 1]"));
+        assert!(CLICK_HINT_POINT_SCRIPT.contains("registry.elements.get(hintId)"));
         let upload_script =
             upload_hint_target_script(9, 2).expect("upload target script should build");
         assert!(upload_script.contains("__nvbrowserHintRegistry"));
@@ -2516,6 +2628,32 @@ mod tests {
             .expect("upload change script should build");
         assert!(change_script.contains("dispatchEvent(new Event('input'"));
         assert!(change_script.contains("dispatchEvent(new Event('change'"));
+    }
+
+    #[test]
+    fn mouse_dispatch_options_preserve_right_button_press_and_release() {
+        let moved = mouse_dispatch_options(
+            &Input::DispatchMouseEventTypeOption::MouseMoved,
+            MouseDispatchButton::Right,
+        );
+        let pressed = mouse_dispatch_options(
+            &Input::DispatchMouseEventTypeOption::MousePressed,
+            MouseDispatchButton::Right,
+        );
+        let released = mouse_dispatch_options(
+            &Input::DispatchMouseEventTypeOption::MouseReleased,
+            MouseDispatchButton::Right,
+        );
+
+        assert_eq!(moved.button, None);
+        assert_eq!(moved.buttons, Some(0));
+        assert_eq!(moved.click_count, None);
+        assert_eq!(pressed.button, Some(Input::MouseButton::Right));
+        assert_eq!(pressed.buttons, Some(2));
+        assert_eq!(pressed.click_count, Some(1));
+        assert_eq!(released.button, Some(Input::MouseButton::Right));
+        assert_eq!(released.buttons, Some(2));
+        assert_eq!(released.click_count, Some(1));
     }
 
     #[test]

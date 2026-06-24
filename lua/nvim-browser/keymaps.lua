@@ -260,6 +260,10 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.click_here()
   end, "nvim-browser: click cursor", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "right_click_here", "gr"), function()
+    browser.right_click_here()
+  end, "nvim-browser: right click cursor", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "hover_here", "gh"), function()
     browser.hover_here()
   end, "nvim-browser: hover cursor", buffer_opts)
@@ -355,6 +359,10 @@ function M.setup_buffer(browser, bufnr, opts)
   set_mapping(nil, mapping_lhs(mappings, "left_click", "<LeftMouse>"), function()
     browser.click_mouse()
   end, "nvim-browser: click preview", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "right_click_mouse", "<RightMouse>"), function()
+    browser.right_click_mouse()
+  end, "nvim-browser: right click preview", buffer_opts)
 
   set_mapping(nil, mapping_lhs(mappings, "wheel_down", "<ScrollWheelDown>"), function()
     if not browser.wheel_mouse(scroll_pixels, 0) then

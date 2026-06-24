@@ -254,6 +254,17 @@ COMMANDS                                           *nvim-browser-commands*
 	previews reserve the bottom preview row for a compact status footer; clicks
 	on that footer row are ignored instead of being mapped into page pixels.
 
+							*:NBrowserRightClick*
+:NBrowserRightClick {x} {y}
+	Right-click viewport coordinates in the active browser page and capture a
+	fresh frame. This dispatches native Chromium right-button mouse events.
+
+							*:NBrowserRightClickHere*
+:NBrowserRightClickHere
+	Right-click the viewport point under the preview cursor and capture a fresh
+	frame. This can trigger page contextmenu handlers without leaving Neovim.
+	The preview footer row is ignored.
+
 							*:NBrowserHoverHere*
 :NBrowserHoverHere
 	Move the Chromium mouse cursor to the viewport point under the preview
@@ -271,6 +282,12 @@ COMMANDS                                           *nvim-browser-commands*
 	Click a browser hint by backend hint id and capture a fresh frame. This
 	avoids viewport coordinate drift for hinted buttons and controls.
 
+							*:NBrowserRightClickHint*
+:NBrowserRightClickHint {id-or-label}
+	Right-click a browser hint by backend hint id and capture a fresh frame.
+	This dispatches native Chromium right-button mouse events at the hinted
+	element center.
+
 							*:NBrowserHoverHint*
 :NBrowserHoverHint {id-or-label}
 	Move the Chromium mouse cursor to the center point of a browser hint and
@@ -287,6 +304,11 @@ COMMANDS                                           *nvim-browser-commands*
 	Follow a keyboard-labeled browser hint. Link hints with an href navigate
 	the active browser session directly to that URL. Non-link hints fall back
 	to backend hint clicks and capture a fresh frame.
+
+							*:NBrowserPickHint*
+:NBrowserPickHint [follow|click|right-click|focus|hover|toggle]
+	Open a picker for the latest browser hints and run the selected action.
+	The default action is follow.
 
 							*:NBrowserTypeHint*
 :NBrowserTypeHint {id-or-label} {text}
@@ -513,9 +535,11 @@ gl       press Meta-L to focus the browser location
 <Left>   press ArrowLeft
 <Right>  press ArrowRight
 gc       click browser viewport at cursor
+gr       right-click browser viewport at cursor
 gh       hover browser viewport at cursor
 <Esc> stop pending load
 <LeftMouse>        click browser viewport
+<RightMouse>       right-click browser viewport
 <ScrollWheelDown> native browser wheel down at mouse position
 <ScrollWheelUp>   native browser wheel up at mouse position
 q  close preview
@@ -527,7 +551,9 @@ require("nvim-browser").setup({
     enabled = false,
     mappings = {
       click_here = "gc",
+      right_click_here = "gr",
       left_click = false,
+      right_click_mouse = "<RightMouse>",
       scroll_down = "j",
       scroll_up = "k",
       scroll_top = "gg",

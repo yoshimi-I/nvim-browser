@@ -105,12 +105,18 @@ local browser = {
   click_mouse = function()
     table.insert(calls, "click_mouse")
   end,
+  right_click_mouse = function()
+    table.insert(calls, "right_click_mouse")
+  end,
   wheel_mouse = function(delta_y, delta_x)
     table.insert(calls, "wheel:" .. tostring(delta_y) .. ":" .. tostring(delta_x))
     return true
   end,
   click_here = function()
     table.insert(calls, "click_here")
+  end,
+  right_click_here = function()
+    table.insert(calls, "right_click_here")
   end,
   hover_here = function()
     table.insert(calls, "hover_here")
@@ -362,9 +368,11 @@ trigger_buffer(first_bufnr, "<Down>")
 trigger_buffer(first_bufnr, "<Left>")
 trigger_buffer(first_bufnr, "<Right>")
 trigger_buffer(first_bufnr, "gc")
+trigger_buffer(first_bufnr, "gr")
 trigger_buffer(first_bufnr, "gh")
 trigger_buffer(first_bufnr, "q")
 trigger_buffer(first_bufnr, "<LeftMouse>")
+trigger_buffer(first_bufnr, "<RightMouse>")
 trigger_buffer(first_bufnr, "<ScrollWheelDown>")
 trigger_buffer(first_bufnr, "<ScrollWheelUp>")
 trigger_buffer(first_bufnr, "<Esc>")
@@ -375,7 +383,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,hover_here,close,click_mouse,wheel:120:0,wheel:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,right_click_here,hover_here,close,click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
 

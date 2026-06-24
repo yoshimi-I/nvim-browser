@@ -35,6 +35,9 @@ local reader_follow_called = false
 local stop_called = false
 local hovered_here = false
 local hovered_hint = nil
+local right_clicked = nil
+local right_clicked_here = false
+local right_clicked_hint = nil
 local page_scroll_direction = nil
 local scrolled_top_count = 0
 local scrolled_bottom_count = 0
@@ -53,6 +56,18 @@ local browser = {
   end,
   click_hint = function(identifier)
     clicked = identifier
+    return true
+  end,
+  right_click_point = function(x, y)
+    right_clicked = { x = x, y = y }
+    return true
+  end,
+  right_click_here = function()
+    right_clicked_here = true
+    return true
+  end,
+  right_click_hint = function(identifier)
+    right_clicked_hint = identifier
     return true
   end,
   follow_hint = function(identifier)
@@ -191,6 +206,7 @@ local browser = {
       or action == "click"
       or action == "focus"
       or action == "hover"
+      or action == "right-click"
       or action == "toggle"
   end,
   status = function()
@@ -363,6 +379,11 @@ assert(prompted == "nvim-browser hint: ", "NBrowserPickHint should pass configur
 
 vim.cmd("NBrowserPickHint focus")
 assert(picked_action == "focus", "NBrowserPickHint should pass explicit action")
+
+vim.cmd("NBrowserPickHint right-click")
+assert(picked_action == "right-click", "NBrowserPickHint should pass explicit right-click action")
+local pick_hint_completions = vim.fn.getcompletion("NBrowserPickHint ", "cmdline")
+assert(vim.tbl_contains(pick_hint_completions, "right-click"), "NBrowserPickHint completion should include right-click")
 
 local invalid_warning_count = #warnings
 vim.cmd("NBrowserPickHint bogus")
@@ -753,8 +774,18 @@ assert(clicked == nil, "NBrowserFollowHint should not call click_hint when follo
 vim.cmd("NBrowserHoverHere")
 assert(hovered_here == true, "NBrowserHoverHere should call hover_here")
 
+vim.cmd("NBrowserRightClick 12.5 24.25")
+assert(right_clicked.x == "12.5", "NBrowserRightClick should pass the x coordinate")
+assert(right_clicked.y == "24.25", "NBrowserRightClick should pass the y coordinate")
+
+vim.cmd("NBrowserRightClickHere")
+assert(right_clicked_here == true, "NBrowserRightClickHere should call right_click_here")
+
 vim.cmd("NBrowserHoverHint m")
 assert(hovered_hint == "m", "NBrowserHoverHint should pass the label to hover_hint")
+
+vim.cmd("NBrowserRightClickHint m")
+assert(right_clicked_hint == "m", "NBrowserRightClickHint should pass the label to right_click_hint")
 
 followed = nil
 vim.cmd("NBrowserHintMode")

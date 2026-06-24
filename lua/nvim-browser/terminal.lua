@@ -2088,6 +2088,20 @@ function M.click_point(x, y)
   }, state.current_url or state.last_target or "click", "click")
 end
 
+function M.right_click_point(x, y)
+  x = tonumber(x)
+  y = tonumber(y)
+  if x == nil or y == nil then
+    return false
+  end
+  request_resize()
+  return send_pending_request({
+    type = "right_click_point",
+    x = x,
+    y = y,
+  }, state.current_url or state.last_target or "right-click", "right-click")
+end
+
 function M.hover_point(x, y)
   x = tonumber(x)
   y = tonumber(y)
@@ -2246,6 +2260,30 @@ function M.click_here()
   return M.click_point(point.x, point.y)
 end
 
+function M.right_click_here()
+  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+    return false
+  end
+
+  local cursor = vim.api.nvim_win_get_cursor(state.winid)
+  local geometry = current_preview_geometry()
+  if cursor[1] > geometry.rows then
+    return false
+  end
+  local column = vim.api.nvim_win_call(state.winid, function()
+    return vim.fn.virtcol(".")
+  end)
+  if column > geometry.columns then
+    return false
+  end
+  geometry = current_rendered_frame_geometry()
+  if geometry == nil then
+    return false
+  end
+  local point = M.viewport_point_for_cell(cursor[1], column, geometry)
+  return M.right_click_point(point.x, point.y)
+end
+
 function M.hover_here()
   if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
     return false
@@ -2325,6 +2363,34 @@ function M.click_mouse(mousepos)
   return M.click_point(point.x, point.y)
 end
 
+function M.right_click_mouse(mousepos)
+  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+    return false
+  end
+  mousepos = mousepos or vim.fn.getmousepos()
+  if type(mousepos) ~= "table" or mousepos.winid ~= state.winid then
+    return false
+  end
+
+  local row = tonumber(mousepos.line)
+  local column = tonumber(mousepos.column)
+  if row == nil or column == nil or row <= 0 or column <= 0 then
+    return false
+  end
+
+  local geometry = current_preview_geometry()
+  if not cell_within_geometry(row, column, geometry) then
+    return false
+  end
+  geometry = current_rendered_frame_geometry()
+  if geometry == nil then
+    return false
+  end
+
+  local point = M.viewport_point_for_cell(row, column, geometry)
+  return M.right_click_point(point.x, point.y)
+end
+
 function M.wheel_mouse(delta_y, delta_x, mousepos)
   if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
     return false
@@ -2361,6 +2427,14 @@ local function send_click_hint_request(hint)
   }, state.current_url or state.last_target or "click", "click")
 end
 
+local function send_right_click_hint_request(hint)
+  cancel_in_flight_capture()
+  return send_pending_request({
+    type = "right_click_hint",
+    hint_id = hint.id,
+  }, state.current_url or state.last_target or "right-click", "right-click")
+end
+
 function M.click_hint(id)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false
@@ -2371,6 +2445,20 @@ function M.click_hint(id)
   local hint = find_hint(state.element_hints, id)
   if hint ~= nil then
     return send_click_hint_request(hint)
+  end
+  return false
+end
+
+function M.right_click_hint(id)
+  if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
+    return false
+  end
+  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+    return false
+  end
+  local hint = find_hint(state.element_hints, id)
+  if hint ~= nil then
+    return send_right_click_hint_request(hint)
   end
   return false
 end

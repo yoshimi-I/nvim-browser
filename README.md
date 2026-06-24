@@ -22,7 +22,7 @@ This repository is an early MVP scaffold. Today it includes:
   with cursor-addressable placeholder cells
 - large literal Kitty browser frames are split into stable image tiles to keep
   oversized transfers replaceable inside the preview surface
-- Neovim commands for opening, navigating, reloading, stopping pending loads, history, scrolling, finding text, text input, keys, selector focus, point clicks, point hovers, and hinted element actions
+- Neovim commands for opening, navigating, reloading, stopping pending loads, history, scrolling, finding text, text input, keys, selector focus, point clicks, right-clicks, point hovers, and hinted element actions
 - browser element hints overlaid on cursor-addressable previews
 - persistent Neovim preview surface reuse
 - current URL, title, scroll progress, status, runtime diagnostics, preview footer, live recapture, and preview buffer naming from the active browser session
@@ -242,10 +242,13 @@ Then run:
 :NBrowserKey Enter
 :NBrowserKey A ctrl
 :NBrowserClick 120 240
+:NBrowserRightClick 120 240
 :NBrowserClickHere
+:NBrowserRightClickHere
 :NBrowserHoverHere
 :NBrowserHints
 :NBrowserClickHint 1
+:NBrowserRightClickHint 1
 :NBrowserHoverHint 1
 :NBrowserFocusHint s
 :NBrowserFollowHint a
@@ -283,6 +286,9 @@ HTML, SVG, PDF, and raster image files are opened through Chromium using
 available for ANSI and Kitty Unicode browser previews. Active browser previews
 reserve the bottom preview row for a compact status footer, so cursor clicks in
 that footer are not sent to the browser page.
+`:NBrowserRightClickHere` uses the same cursor-to-viewport mapping and sends a
+native Chromium right-click, so page `contextmenu` handlers can run inside the
+preview.
 `:NBrowserHoverHere` sends a real Chromium mouse-move event to the browser
 viewport point under the preview cursor. Use it to reveal CSS `:hover` menus or
 tooltips without leaving Neovim. Preview scroll-wheel events are also sent as
@@ -311,12 +317,13 @@ terminate a stuck serve job.
 elements, including link destinations when available. On ANSI and Kitty Unicode
 browser previews, the same labels are also overlaid on the preview.
 `:NBrowserClickHint {id-or-label}` clicks the backend hint id without relying
-on viewport coordinates. `:NBrowserHoverHint {id-or-label}` moves to the
-matching element coordinates.
+on viewport coordinates. `:NBrowserRightClickHint {id-or-label}` dispatches a
+native right-click at the hinted element. `:NBrowserHoverHint {id-or-label}`
+moves to the matching element coordinates.
 `:NBrowserFollowHint {label}` uses a link hint's `href` directly when
 available, which avoids coordinate-click drift and keeps the active browser
 session on the navigated URL; non-link hints fall back to backend hint clicks.
-`:NBrowserPickHint [follow|click|focus|hover|toggle]` opens a `vim.ui.select`
+`:NBrowserPickHint [follow|click|right-click|focus|hover|toggle]` opens a `vim.ui.select`
 picker for the current hints and runs the selected action, defaulting to
 `follow`.
 `:NBrowserHintMode` prompts for a label and follows it. In preview buffers, the
@@ -438,10 +445,11 @@ register into the focused element, `y` yank the browser selection into the
 selected register, `Y` yank the active browser URL into the selected register,
 `<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
 Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` Meta-L
-focus location, arrow keys, `gc` click the browser viewport at the cursor, `gh`
-hover the browser viewport at the cursor, `<Esc>` stop a pending load, left
-click to click the browser viewport, scroll wheel to send a native browser
-wheel event at the mouse position, and `q` close.
+focus location, arrow keys, `gc` click the browser viewport at the cursor, `gr`
+right-click at the cursor, `gh` hover the browser viewport at the cursor,
+`<Esc>` stop a pending load, left click to click the browser viewport, right
+click to send a native browser right-click, scroll wheel to send a native
+browser wheel event at the mouse position, and `q` close.
 Disable or remap them with
 `preview_keymaps = { enabled = false }` or `preview_keymaps.mappings`.
 

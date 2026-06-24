@@ -279,6 +279,10 @@ function M.click_point(x, y)
   return terminal.click_point(x, y)
 end
 
+function M.right_click_point(x, y)
+  return terminal.right_click_point(x, y)
+end
+
 function M.hover_point(x, y)
   return terminal.hover_point(x, y)
 end
@@ -320,6 +324,10 @@ function M.click_here()
   return terminal.click_here()
 end
 
+function M.right_click_here()
+  return terminal.right_click_here()
+end
+
 function M.hover_here()
   return terminal.hover_here()
 end
@@ -332,12 +340,20 @@ function M.click_mouse(mousepos)
   return terminal.click_mouse(mousepos)
 end
 
+function M.right_click_mouse(mousepos)
+  return terminal.right_click_mouse(mousepos)
+end
+
 function M.wheel_mouse(delta_y, delta_x, mousepos)
   return terminal.wheel_mouse(delta_y, delta_x, mousepos)
 end
 
 function M.click_hint(id)
   return terminal.click_hint(id)
+end
+
+function M.right_click_hint(id)
+  return terminal.right_click_hint(id)
 end
 
 function M.hover_hint(id)
@@ -449,6 +465,9 @@ local function pick_hint_action(action)
   end
   if action == "click" then
     return M.click_hint
+  end
+  if action == "right-click" then
+    return M.right_click_hint
   end
   if action == "focus" then
     return M.focus_hint

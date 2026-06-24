@@ -412,9 +412,22 @@ function M.register(browser, opts)
     nargs = "+",
   })
 
+  vim.api.nvim_create_user_command("NBrowserRightClick", function(opts)
+    local parts = vim.split(opts.args, "%s+", { trimempty = true })
+    browser.right_click_point(parts[1], parts[2])
+  end, {
+    nargs = "+",
+  })
+
   vim.api.nvim_create_user_command("NBrowserClickHere", function()
     if not browser.click_here() then
       vim.api.nvim_echo({ { "nvim-browser: cursor click requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+    end
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserRightClickHere", function()
+    if not browser.right_click_here() then
+      vim.api.nvim_echo({ { "nvim-browser: cursor right click requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
     end
   end, {})
 
@@ -473,12 +486,20 @@ function M.register(browser, opts)
   end, {
     nargs = "?",
     complete = function()
-      return { "follow", "click", "focus", "hover", "toggle" }
+      return { "follow", "click", "right-click", "focus", "hover", "toggle" }
     end,
   })
 
   vim.api.nvim_create_user_command("NBrowserClickHint", function(opts)
     if not browser.click_hint(opts.args) then
+      warn_hint_unavailable()
+    end
+  end, {
+    nargs = 1,
+  })
+
+  vim.api.nvim_create_user_command("NBrowserRightClickHint", function(opts)
+    if not browser.right_click_hint(opts.args) then
       warn_hint_unavailable()
     end
   end, {

@@ -6,6 +6,10 @@ local keymaps = require("nvim-browser.keymaps")
 local terminal = require("nvim-browser.terminal")
 
 assert(type(browser.click_hint) == "function", "click_hint API should exist")
+assert(type(browser.right_click_point) == "function", "right_click_point API should exist")
+assert(type(browser.right_click_here) == "function", "right_click_here API should exist")
+assert(type(browser.right_click_mouse) == "function", "right_click_mouse API should exist")
+assert(type(browser.right_click_hint) == "function", "right_click_hint API should exist")
 assert(type(browser.follow_hint) == "function", "follow_hint API should exist")
 assert(type(browser.pick_hint) == "function", "pick_hint API should exist")
 assert(type(browser.hint_mode) == "function", "hint_mode API should exist")
@@ -69,6 +73,10 @@ assert(browser.resolve_address_target("") == nil, "address resolver should rejec
 
 local original_hints = browser.hints
 local original_click_hint = browser.click_hint
+local original_terminal_right_click_point = terminal.right_click_point
+local original_terminal_right_click_here = terminal.right_click_here
+local original_terminal_right_click_mouse = terminal.right_click_mouse
+local original_terminal_right_click_hint = terminal.right_click_hint
 local original_follow_hint = browser.follow_hint
 local original_focus_hint = browser.focus_hint
 local original_hover_hint = browser.hover_hint
@@ -208,6 +216,7 @@ assert(browser.pick_hint({
 }) == false, "pick_hint should reject invalid actions before launching the picker")
 assert(browser.pick_hint_action_available("bogus") == false, "invalid picker actions should be detectable")
 assert(browser.pick_hint_action_available("toggle") == true, "valid picker actions should be detectable")
+assert(browser.pick_hint_action_available("right-click") == true, "right-click picker action should be detectable")
 
 assert(browser.pick_hint(function(_, _, on_choice)
   on_choice(nil)
@@ -337,6 +346,36 @@ end
 local mousepos = { winid = 10, line = 3, column = 8 }
 assert(browser.click_mouse(mousepos) == "clicked", "click_mouse should delegate to terminal mouse click semantics")
 assert(clicked_mouse == mousepos, "click_mouse should pass explicit mouse position to terminal")
+
+local right_clicked_point = nil
+terminal.right_click_point = function(x, y)
+  right_clicked_point = { x = x, y = y }
+  return "right-point"
+end
+assert(browser.right_click_point(12, 24) == "right-point", "right_click_point should delegate to terminal")
+assert(right_clicked_point.x == 12, "right_click_point should pass the x coordinate")
+assert(right_clicked_point.y == 24, "right_click_point should pass the y coordinate")
+
+terminal.right_click_here = function()
+  return "right-here"
+end
+assert(browser.right_click_here() == "right-here", "right_click_here should delegate to terminal")
+
+local right_clicked_mouse = nil
+terminal.right_click_mouse = function(explicit_mousepos)
+  right_clicked_mouse = explicit_mousepos
+  return "right-mouse"
+end
+assert(browser.right_click_mouse(mousepos) == "right-mouse", "right_click_mouse should delegate to terminal")
+assert(right_clicked_mouse == mousepos, "right_click_mouse should pass explicit mouse position to terminal")
+
+local right_clicked_hint = nil
+terminal.right_click_hint = function(identifier)
+  right_clicked_hint = identifier
+  return "right-hint"
+end
+assert(browser.right_click_hint("s") == "right-hint", "right_click_hint should delegate to terminal")
+assert(right_clicked_hint == "s", "right_click_hint should pass hint identifiers to terminal")
 
 local wheeled_mouse = nil
 terminal.wheel_mouse = function(delta_y, delta_x, explicit_mousepos)
@@ -881,6 +920,10 @@ end
 assert(browser.focus_hint("i") == false, "focus_hint should propagate terminal failure")
 
 browser.click_hint = original_click_hint
+terminal.right_click_point = original_terminal_right_click_point
+terminal.right_click_here = original_terminal_right_click_here
+terminal.right_click_mouse = original_terminal_right_click_mouse
+terminal.right_click_hint = original_terminal_right_click_hint
 browser.follow_hint = original_follow_hint
 browser.input_text = original_input_text
 browser.press_key = original_press_key

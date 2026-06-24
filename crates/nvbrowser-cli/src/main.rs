@@ -16,9 +16,10 @@ use nvbrowser_core::{
     FocusedElementRequest, FrameArtifact, HistoryNavigationRequest, HoverHintRequest,
     HoverPointRequest, KeyPressRequest, KittyImageDelete, KittyImageTransfer, NavigateRequest,
     PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
-    RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest,
-    SelectHintRequest, SelectionTextRequest, SessionId, TextInputRequest, ToggleHintRequest,
-    UploadHintRequest, Viewport, WheelPointRequest, ZoomRequest,
+    RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
+    RightClickHintRequest, RightClickPointRequest, ScrollRequest, SelectHintRequest,
+    SelectionTextRequest, SessionId, TextInputRequest, ToggleHintRequest, UploadHintRequest,
+    Viewport, WheelPointRequest, ZoomRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -319,6 +320,11 @@ enum ServeRequest {
         x: f64,
         y: f64,
     },
+    RightClickPoint {
+        id: u64,
+        x: f64,
+        y: f64,
+    },
     HoverPoint {
         id: u64,
         x: f64,
@@ -332,6 +338,10 @@ enum ServeRequest {
         delta_y: f64,
     },
     ClickHint {
+        id: u64,
+        hint_id: u32,
+    },
+    RightClickHint {
         id: u64,
         hint_id: u32,
     },
@@ -727,7 +737,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 12,
+            protocol_version: 13,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -860,6 +870,17 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload(true).map(Some)
             }
+            ServeRequest::RightClickPoint { x, y, .. } => {
+                self.renderer
+                    .right_click_point(RightClickPointRequest::new(
+                        self.session.id(),
+                        self.session.active_page_id(),
+                        x,
+                        y,
+                    ))?;
+                self.settle_after_interaction()?;
+                self.capture_payload(true).map(Some)
+            }
             ServeRequest::HoverPoint { x, y, .. } => {
                 self.renderer.hover_point(HoverPointRequest::new(
                     self.session.id(),
@@ -890,6 +911,15 @@ impl<R: Renderer> ServeRuntime<R> {
             }
             ServeRequest::ClickHint { hint_id, .. } => {
                 self.renderer.click_hint(ClickHintRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    hint_id,
+                ))?;
+                self.settle_after_interaction()?;
+                self.capture_payload(true).map(Some)
+            }
+            ServeRequest::RightClickHint { hint_id, .. } => {
+                self.renderer.right_click_hint(RightClickHintRequest::new(
                     self.session.id(),
                     self.session.active_page_id(),
                     hint_id,
@@ -1193,9 +1223,11 @@ impl ServeRequest {
             | ServeRequest::KeyPress { id, .. }
             | ServeRequest::FocusSelector { id, .. }
             | ServeRequest::ClickPoint { id, .. }
+            | ServeRequest::RightClickPoint { id, .. }
             | ServeRequest::HoverPoint { id, .. }
             | ServeRequest::WheelPoint { id, .. }
             | ServeRequest::ClickHint { id, .. }
+            | ServeRequest::RightClickHint { id, .. }
             | ServeRequest::FocusHint { id, .. }
             | ServeRequest::HoverHint { id, .. }
             | ServeRequest::SelectHint { id, .. }
@@ -1668,17 +1700,20 @@ mod tests {
         focused_selectors: Vec<String>,
         focused_hints: Vec<u32>,
         clicked_hints: Vec<u32>,
+        right_clicked_hints: Vec<u32>,
         hovered_hints: Vec<u32>,
         selected_hints: Vec<(u32, String)>,
         uploaded_hints: Vec<(u32, Vec<PathBuf>)>,
         toggled_hints: Vec<u32>,
         clicked_points: Vec<(f64, f64)>,
+        right_clicked_points: Vec<(f64, f64)>,
         hovered_points: Vec<(f64, f64)>,
         wheeled_points: Vec<(f64, f64, f64, f64)>,
         find_queries: Vec<String>,
         find_directions: Vec<bool>,
         fail_click: bool,
         fail_click_hint: bool,
+        fail_right_click_hint: bool,
         fail_hover_hint: bool,
         fail_select_hint: bool,
         fail_upload_hint: bool,
@@ -1711,17 +1746,20 @@ mod tests {
                 focused_selectors: Vec::new(),
                 focused_hints: Vec::new(),
                 clicked_hints: Vec::new(),
+                right_clicked_hints: Vec::new(),
                 hovered_hints: Vec::new(),
                 selected_hints: Vec::new(),
                 uploaded_hints: Vec::new(),
                 toggled_hints: Vec::new(),
                 clicked_points: Vec::new(),
+                right_clicked_points: Vec::new(),
                 hovered_points: Vec::new(),
                 wheeled_points: Vec::new(),
                 find_queries: Vec::new(),
                 find_directions: Vec::new(),
                 fail_click: false,
                 fail_click_hint: false,
+                fail_right_click_hint: false,
                 fail_hover_hint: false,
                 fail_select_hint: false,
                 fail_upload_hint: false,
@@ -1995,6 +2033,24 @@ mod tests {
             })
         }
 
+        fn right_click_hint(
+            &mut self,
+            request: RightClickHintRequest,
+        ) -> Result<InputResult, RendererError> {
+            self.operations.push("right_click_hint");
+            self.right_clicked_hints.push(request.hint_id);
+            if self.fail_right_click_hint {
+                return Err(RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "hint right click failed",
+                ));
+            }
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
         fn hover_hint(&mut self, request: HoverHintRequest) -> Result<InputResult, RendererError> {
             self.operations.push("hover_hint");
             self.hovered_hints.push(request.hint_id);
@@ -2076,6 +2132,18 @@ mod tests {
                 ));
             }
             self.clicked_points.push((request.x, request.y));
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn right_click_point(
+            &mut self,
+            request: RightClickPointRequest,
+        ) -> Result<InputResult, RendererError> {
+            self.operations.push("right_click_point");
+            self.right_clicked_points.push((request.x, request.y));
             Ok(InputResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
@@ -2438,6 +2506,15 @@ mod tests {
                 y: 240.25,
             }
         );
+        assert_eq!(
+            parse_serve_request(r##"{"type":"right_click_point","id":16,"x":120.5,"y":240.25}"##)
+                .expect("right click point request should parse"),
+            ServeRequest::RightClickPoint {
+                id: 16,
+                x: 120.5,
+                y: 240.25,
+            }
+        );
 
         assert_eq!(
             parse_serve_request(r##"{"type":"hover_point","id":7,"x":120.5,"y":240.25}"##)
@@ -2465,6 +2542,11 @@ mod tests {
             parse_serve_request(r##"{"type":"click_hint","id":9,"hint_id":2}"##)
                 .expect("click hint request should parse"),
             ServeRequest::ClickHint { id: 9, hint_id: 2 }
+        );
+        assert_eq!(
+            parse_serve_request(r##"{"type":"right_click_hint","id":17,"hint_id":2}"##)
+                .expect("right click hint request should parse"),
+            ServeRequest::RightClickHint { id: 17, hint_id: 2 }
         );
         assert_eq!(
             parse_serve_request(r##"{"type":"hover_hint","id":10,"hint_id":3}"##)
@@ -2816,7 +2898,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 12,
+                protocol_version: 13,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -2845,7 +2927,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":12,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":13,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -2872,7 +2954,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 12);
+        assert_eq!(runtime_info.protocol_version, 13);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -3963,6 +4045,49 @@ mod tests {
     }
 
     #[test]
+    fn serve_runtime_right_clicks_point_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::RightClickPoint {
+            id: 2,
+            x: 120.5,
+            y: 240.25,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(runtime.renderer.right_clicked_points, vec![(120.5, 240.25)]);
+        assert_eq!(runtime.renderer.captures, 2);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "right_click_point",
+                "settle",
+                "capture",
+                "hints"
+            ]
+        );
+    }
+
+    #[test]
     fn serve_runtime_hovers_point_before_capturing_next_frame() {
         let mut runtime = ServeRuntime::new(
             FakeRenderer::new(),
@@ -4372,6 +4497,47 @@ mod tests {
     }
 
     #[test]
+    fn serve_runtime_right_clicks_hint_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::RightClickHint { id: 2, hint_id: 2 });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(runtime.renderer.right_clicked_hints, vec![2]);
+        assert!(runtime.renderer.clicked_points.is_empty());
+        assert!(runtime.renderer.right_clicked_points.is_empty());
+        assert_eq!(runtime.renderer.captures, 2);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "right_click_hint",
+                "settle",
+                "capture",
+                "hints"
+            ]
+        );
+    }
+
+    #[test]
     fn serve_runtime_does_not_capture_when_hint_click_fails() {
         let mut renderer = FakeRenderer::new();
         renderer.fail_click_hint = true;
@@ -4405,6 +4571,44 @@ mod tests {
         assert_eq!(
             runtime.renderer.operations,
             vec!["capture", "hints", "click_hint"]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_does_not_capture_when_hint_right_click_fails() {
+        let mut renderer = FakeRenderer::new();
+        renderer.fail_right_click_hint = true;
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::RightClickHint {
+            id: 2,
+            hint_id: 404,
+        });
+
+        assert_eq!(response.status, ServeStatus::Error);
+        assert!(response.payload.is_none());
+        assert_eq!(runtime.renderer.right_clicked_hints, vec![404]);
+        assert!(runtime.renderer.clicked_points.is_empty());
+        assert!(runtime.renderer.right_clicked_points.is_empty());
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["capture", "hints", "right_click_hint"]
         );
     }
 
