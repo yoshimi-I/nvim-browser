@@ -220,6 +220,7 @@ Then run:
 :NBrowserNavigate https://example.org
 :NBrowserAddress
 :NBrowserHistory
+:NBrowserResume
 :NBrowserActions
 :NBrowserBack
 :NBrowserForward
@@ -380,8 +381,12 @@ checkbox/radio hint label. Lua mappings can call `require("nvim-browser").hint_m
 opens as a URL, and plain words use the configured search URL. With no
 argument, the prompt is prefilled with the current URL when available, falling
 back to the last target. Command-line completion includes recent session history
-URLs. `:NBrowserHistory` opens a recent page picker for this Neovim session and
-navigates to the selected URL, or opens it when no browser session is active.
+URLs. Recent pages are persisted by default in
+`stdpath("state") .. "/nvim-browser/session.json"` so they survive Neovim
+restarts. `:NBrowserHistory` opens the recent page picker and navigates to the
+selected URL, or opens it when no browser session is active. `:NBrowserResume`
+opens the active session URL when available, otherwise the last persisted target,
+otherwise the newest persisted history URL.
 Lua mappings can call `require("nvim-browser").address()` or pass a value
 directly with `require("nvim-browser").address("example.com")`.
 `:NBrowserActions` opens a compact picker for common browser actions such as
@@ -474,6 +479,9 @@ Disable or remap them with
 Configure search with `require("nvim-browser").setup({ search_url = "https://www.google.com/search?q=%s" })`.
 The `%s` placeholder receives the encoded query; write literal percent signs as
 `%%`.
+Configure persistent recents with
+`require("nvim-browser").setup({ session = { persist = true, history_limit = 50, path = "/tmp/nvim-browser-session.json" } })`.
+Set `session.persist = false` to keep history in memory only.
 
 ## License
 

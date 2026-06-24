@@ -37,6 +37,7 @@ local calibrated = nil
 local reader_called = false
 local reader_follow_called = false
 local stop_called = false
+local resume_called = false
 local hovered_here = false
 local hovered_hint = nil
 local right_clicked = nil
@@ -348,6 +349,10 @@ local browser = {
   end,
   stop = function()
     stop_called = true
+    return true
+  end,
+  resume = function()
+    resume_called = true
     return true
   end,
   page_down = function()
@@ -726,6 +731,23 @@ vim.cmd("NBrowserHistory")
 assert(history_picked == true, "NBrowserHistory should open the history picker")
 assert(prompted == "nvim-browser history: ", "NBrowserHistory should use a history picker prompt")
 assert(addressed == "https://example.com/docs", "NBrowserHistory should navigate to the selected history URL")
+
+resume_called = false
+vim.cmd("NBrowserResume")
+assert(resume_called == true, "NBrowserResume should resume the latest browser target")
+
+local original_resume = browser.resume
+browser.resume = function()
+  return false
+end
+local resume_warning_count = #warnings
+vim.cmd("NBrowserResume")
+assert(
+  warnings[#warnings] == "nvim-browser: no browser session target to resume",
+  "NBrowserResume should warn when there is no target to resume"
+)
+assert(#warnings == resume_warning_count + 1, "NBrowserResume should warn once when nothing can be resumed")
+browser.resume = original_resume
 
 actions_picked = false
 addressed = nil

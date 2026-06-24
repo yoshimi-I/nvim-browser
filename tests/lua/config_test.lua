@@ -34,6 +34,12 @@ assert(
   "setup should preserve a custom backend binary path"
 )
 assert(configured.user_data_dir == nil, "persistent Chromium profile directory should default to nil")
+assert(configured.session.persist == true, "session recents should persist by default")
+assert(configured.session.history_limit == 50, "session recents should default to the existing history limit")
+assert(
+  configured.session.path == vim.fn.stdpath("state") .. "/nvim-browser/session.json",
+  "session persistence path should default to the plugin state path"
+)
 assert(configured.preview_keymaps.enabled == true, "preview-local keymaps should be enabled by default")
 assert(configured.preview_keymaps.mappings.close == "q", "preview-local keymaps should include a close mapping")
 assert(
@@ -124,6 +130,9 @@ assert(
   "preview-local keymaps should include a hinted checkbox/radio toggle mapping"
 )
 local remapped = config.setup({
+  session = {
+    path = "/tmp/nvim-browser-session.json",
+  },
   live_refresh = {
     enabled = false,
   },
@@ -135,6 +144,15 @@ local remapped = config.setup({
 })
 assert(remapped.live_refresh.enabled == false, "live refresh should allow disabling automatic capture")
 assert(remapped.live_refresh.interval_ms == 1500, "live refresh partial config should retain the default interval")
+assert(remapped.session.persist == true, "session partial config should retain persistence default")
+assert(remapped.session.history_limit == 50, "session partial config should retain the default history limit")
+assert(remapped.session.path == "/tmp/nvim-browser-session.json", "session persistence path should be configurable")
+local negative_history_limit = config.setup({
+  session = {
+    history_limit = -1,
+  },
+})
+assert(negative_history_limit.session.history_limit == 0, "session history limit should clamp negative values")
 assert(remapped.viewport.cell_width_px == 10, "partial config should retain default viewport cell width")
 assert(remapped.viewport.cell_height_px == 20, "partial config should retain default viewport cell height")
 assert(remapped.preview_keymaps.mappings.scroll_down == "<C-d>", "preview-local keymaps should allow partial remaps")

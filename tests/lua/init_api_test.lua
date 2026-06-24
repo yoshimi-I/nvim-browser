@@ -5,6 +5,8 @@ local browser = require("nvim-browser")
 local keymaps = require("nvim-browser.keymaps")
 local terminal = require("nvim-browser.terminal")
 
+browser.setup({ session = { persist = false } })
+
 assert(type(browser.click_hint) == "function", "click_hint API should exist")
 assert(type(browser.right_click_point) == "function", "right_click_point API should exist")
 assert(type(browser.right_click_here) == "function", "right_click_here API should exist")
@@ -76,6 +78,7 @@ assert(type(browser.record_history) == "function", "history recorder API should 
 assert(type(browser.history) == "function", "history API should exist")
 assert(type(browser.history_urls) == "function", "history URL API should exist")
 assert(type(browser.pick_history) == "function", "history picker API should exist")
+assert(type(browser.resume) == "function", "resume API should exist")
 
 browser.clear_history()
 browser.record_history("https://example.com/docs", "Docs")
@@ -136,6 +139,250 @@ local limited_history = browser.history()
 assert(#limited_history == 50, "history should keep a bounded number of recent pages")
 assert(limited_history[1].url == "https://example.com/page-55", "history limit should keep the newest page first")
 assert(limited_history[#limited_history].url == "https://example.com/page-6", "history limit should drop the oldest pages")
+browser.clear_history()
+
+local session_dir = vim.fn.tempname()
+vim.fn.mkdir(session_dir, "p")
+local session_path = session_dir .. "/session.json"
+vim.fn.writefile({
+  vim.fn.json_encode({
+    version = 1,
+    last_target = "https://persisted.example/last",
+    history = {
+      { url = "https://persisted.example/older", title = "Older Updated" },
+      { url = "https://persisted.example/latest", title = "Latest" },
+      { url = "https://persisted.example/older", title = "Older" },
+      { url = "file:///tmp/loaded-local.html", title = "Loaded Local" },
+      { url = "about:blank", title = "Blank" },
+      { url = "" },
+      { title = "missing url" },
+    },
+  }),
+}, session_path)
+browser.setup({ session = { persist = true, path = session_path, history_limit = 2 } })
+local persisted_history = browser.history()
+assert(browser.last_target() == "https://persisted.example/last", "setup should load persisted last target")
+assert(#persisted_history == 2, "setup should load and cap persisted history")
+assert(persisted_history[1].url == "https://persisted.example/older", "loaded history should de-duplicate newest occurrences")
+assert(persisted_history[1].title == "Older Updated", "loaded history should keep the newest duplicate title")
+assert(persisted_history[2].url == "https://persisted.example/latest", "loaded history should keep older unique entries")
+persisted_history[1].url = "mutated"
+assert(browser.history()[1].url == "https://persisted.example/older", "loaded history should still return defensive copies")
+
+browser.record_history("https://persisted.example/new", "New")
+local saved_session = vim.fn.json_decode(table.concat(vim.fn.readfile(session_path), "\n"))
+assert(saved_session.version == 1, "record_history should save a versioned session file")
+assert(saved_session.last_target == "https://persisted.example/new", "record_history should save the newest URL as last target")
+assert(#saved_session.history == 2, "record_history should save capped history")
+assert(saved_session.history[1].url == "https://persisted.example/new", "record_history should save newest entries")
+
+browser.record_history("https://persisted.example/from-metadata", "Metadata")
+saved_session = vim.fn.json_decode(table.concat(vim.fn.readfile(session_path), "\n"))
+assert(
+  saved_session.last_target == "https://persisted.example/from-metadata",
+  "record_history should persist metadata-driven URLs as the resume target"
+)
+
+browser.record_history("file:///tmp/from-metadata.html", "Metadata File")
+saved_session = vim.fn.json_decode(table.concat(vim.fn.readfile(session_path), "\n"))
+assert(saved_session.last_target == "file:///tmp/from-metadata.html", "record_history should persist non-web metadata URLs as last target")
+assert(
+  saved_session.history[1].url == "https://persisted.example/from-metadata",
+  "record_history should not add non-web URLs to URL history"
+)
+
+local original_terminal_open_for_session = terminal.open
+terminal.open = function() end
+browser.open("/tmp/persisted-local.md")
+terminal.open = original_terminal_open_for_session
+saved_session = vim.fn.json_decode(table.concat(vim.fn.readfile(session_path), "\n"))
+assert(saved_session.last_target == "/tmp/persisted-local.md", "open should persist local file targets as last target")
+assert(
+  saved_session.history[1].url == "https://persisted.example/from-metadata",
+  "open should not add local file targets to URL history"
+)
+
+terminal.open = function() end
+browser.open("file:///tmp/persisted-local.html")
+terminal.open = original_terminal_open_for_session
+saved_session = vim.fn.json_decode(table.concat(vim.fn.readfile(session_path), "\n"))
+assert(saved_session.last_target == "file:///tmp/persisted-local.html", "open should persist file URLs as last target")
+assert(
+  saved_session.history[1].url == "https://persisted.example/from-metadata",
+  "open should not add file URLs to URL history"
+)
+
+browser.clear_history()
+saved_session = vim.fn.json_decode(table.concat(vim.fn.readfile(session_path), "\n"))
+assert(#saved_session.history == 0, "clear_history should save an empty history")
+
+local function run_session_edge_tests()
+  local delayed_session_path = session_dir .. "/delayed-session.json"
+  browser.setup({ session = { persist = true, path = delayed_session_path, history_limit = 3 } })
+  assert(browser.resume() == false, "missing session file should not create a resume target")
+  vim.fn.writefile({
+    vim.fn.json_encode({
+      version = 1,
+      last_target = "https://persisted.example/delayed",
+      history = {
+        { url = "https://persisted.example/delayed-history", title = "Delayed History" },
+      },
+    }),
+  }, delayed_session_path)
+  browser.setup({ session = { persist = true, path = delayed_session_path, history_limit = 3 } })
+  assert(browser.last_target() == "https://persisted.example/delayed", "setup should reload a session file that appears later")
+  vim.fn.delete(delayed_session_path)
+  browser.setup({ session = { persist = true, path = delayed_session_path, history_limit = 3 } })
+  assert(browser.last_target() == nil, "setup should clear stale session state when a loaded file disappears")
+  assert(#browser.history() == 0, "setup should clear stale history when a loaded file disappears")
+  vim.fn.writefile({ "{ not json" }, delayed_session_path)
+  local original_echo_for_edge_session = vim.api.nvim_echo
+  local edge_session_warnings = {}
+  vim.api.nvim_echo = function(chunks)
+    if chunks[1][2] == "WarningMsg" then
+      table.insert(edge_session_warnings, chunks[1][1])
+    end
+  end
+  browser.setup({ session = { persist = true, path = delayed_session_path, history_limit = 3 } })
+  vim.api.nvim_echo = original_echo_for_edge_session
+  assert(browser.last_target() == nil, "setup should keep stale last target cleared when a session file becomes malformed")
+  assert(#browser.history() == 0, "setup should keep stale history cleared when a session file becomes malformed")
+  assert(edge_session_warnings[1] == "nvim-browser: ignored malformed session state", "malformed session replacement should warn")
+
+  local write_count_path = session_dir .. "/write-count.json"
+  local write_count = 0
+  local original_writefile_for_count = vim.fn.writefile
+  local original_terminal_open_for_count = terminal.open
+  vim.fn.writefile = function(lines, path, ...)
+    if path == write_count_path then
+      write_count = write_count + 1
+    end
+    return original_writefile_for_count(lines, path, ...)
+  end
+  terminal.open = function() end
+  browser.setup({ session = { persist = true, path = write_count_path, history_limit = 3 } })
+  browser.open("https://persisted.example/write-count")
+  terminal.open = original_terminal_open_for_count
+  vim.fn.writefile = original_writefile_for_count
+  assert(write_count == 1, "open should save a direct URL session once")
+
+  local address_write_count_path = session_dir .. "/address-write-count.json"
+  write_count = 0
+  vim.fn.writefile = function(lines, path, ...)
+    if path == address_write_count_path then
+      write_count = write_count + 1
+    end
+    return original_writefile_for_count(lines, path, ...)
+  end
+  terminal.open = function() end
+  browser.setup({ session = { persist = true, path = address_write_count_path, history_limit = 3 } })
+  assert(browser.address("https://persisted.example/address-count", { is_active = false }) == true, "address should open inactive targets")
+  terminal.open = original_terminal_open_for_count
+  vim.fn.writefile = original_writefile_for_count
+  assert(write_count == 1, "address should save a direct URL session once")
+
+  local active_address_write_count_path = session_dir .. "/active-address-write-count.json"
+  write_count = 0
+  local original_terminal_navigate_for_count = terminal.navigate
+  vim.fn.writefile = function(lines, path, ...)
+    if path == active_address_write_count_path then
+      write_count = write_count + 1
+    end
+    return original_writefile_for_count(lines, path, ...)
+  end
+  terminal.navigate = function()
+    return true
+  end
+  browser.setup({ session = { persist = true, path = active_address_write_count_path, history_limit = 3 } })
+  assert(browser.address("https://persisted.example/active-address-count", { is_active = true }) == true, "address should navigate active targets")
+  terminal.navigate = original_terminal_navigate_for_count
+  vim.fn.writefile = original_writefile_for_count
+  assert(write_count == 1, "active address should save a direct URL session once")
+end
+
+run_session_edge_tests()
+
+local malformed_path = session_dir .. "/malformed.json"
+vim.fn.writefile({ "{ not json" }, malformed_path)
+local original_echo_for_session = vim.api.nvim_echo
+local session_warnings = {}
+vim.api.nvim_echo = function(chunks)
+  if chunks[1][2] == "WarningMsg" then
+    table.insert(session_warnings, chunks[1][1])
+  end
+end
+local malformed_ok = pcall(function()
+  browser.setup({ session = { persist = true, path = malformed_path, history_limit = 3 } })
+end)
+vim.api.nvim_echo = original_echo_for_session
+assert(malformed_ok == true, "setup should ignore malformed persisted session JSON without throwing")
+if #session_warnings > 0 then
+  assert(session_warnings[1] == "nvim-browser: ignored malformed session state", "malformed session JSON should warn once")
+end
+assert(#session_warnings <= 1, "malformed session JSON should not warn more than once")
+assert(#browser.history() == 0, "malformed persisted session JSON should not keep stale history")
+
+local unwritable_path = session_dir .. "/unwritable/session.json"
+local original_writefile = vim.fn.writefile
+local unwritable_warnings = {}
+vim.fn.writefile = function(...)
+  local path = select(2, ...)
+  if path == unwritable_path then
+    error("permission denied")
+  end
+  return original_writefile(...)
+end
+vim.api.nvim_echo = function(chunks)
+  if chunks[1][2] == "WarningMsg" then
+    table.insert(unwritable_warnings, chunks[1][1])
+  end
+end
+local unwritable_ok = pcall(function()
+  browser.setup({ session = { persist = true, path = unwritable_path, history_limit = 3 } })
+  browser.record_history("https://persisted.example/write-failure", "Write Failure")
+  browser.record_history("https://persisted.example/write-failure-2", "Write Failure 2")
+end)
+vim.fn.writefile = original_writefile
+vim.api.nvim_echo = original_echo_for_session
+assert(unwritable_ok == true, "session write failures should never block browsing")
+assert(unwritable_warnings[1] == "nvim-browser: failed to write session state", "session write failures should warn")
+assert(#unwritable_warnings == 1, "session write failures should warn at most once")
+
+local original_open_for_resume = browser.open
+local resumed_target = nil
+browser.open = function(target)
+  resumed_target = target
+  return true
+end
+local resume_path = session_dir .. "/resume.json"
+vim.fn.writefile({
+  vim.fn.json_encode({
+    version = 1,
+    last_target = "https://persisted.example/last",
+    history = {
+      { url = "https://persisted.example/fallback", title = "Fallback" },
+    },
+  }),
+}, resume_path)
+browser.setup({ session = { persist = true, path = resume_path, history_limit = 3 } })
+assert(browser.resume() == true, "resume should open a persisted last target")
+assert(resumed_target == "https://persisted.example/last", "resume should prefer persisted last target")
+
+local fallback_path = session_dir .. "/fallback.json"
+vim.fn.writefile({
+  vim.fn.json_encode({
+    version = 1,
+    history = {
+      { url = "https://persisted.example/history", title = "History" },
+    },
+  }),
+}, fallback_path)
+resumed_target = nil
+browser.setup({ session = { persist = true, path = fallback_path, history_limit = 3 } })
+assert(browser.resume() == true, "resume should fall back to newest persisted history")
+assert(resumed_target == "https://persisted.example/history", "resume should open newest history when no last target exists")
+browser.open = original_open_for_resume
+browser.setup({ session = { persist = false, history_limit = 50 } })
 browser.clear_history()
 
 local action_calls = {}
@@ -1874,6 +2121,7 @@ browser.open = function(target)
 end
 browser.navigate = function(target)
   navigated = target
+  browser.record_history(target)
   return true
 end
 assert(browser.address(function()

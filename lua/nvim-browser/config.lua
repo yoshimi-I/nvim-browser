@@ -15,6 +15,22 @@ local function default_binary()
   return default_binary_for_root(root)
 end
 
+local function default_session_path()
+  return vim.fn.stdpath("state") .. "/nvim-browser/session.json"
+end
+
+local function normalize_history_limit(value, fallback)
+  value = tonumber(value)
+  if value == nil then
+    return fallback
+  end
+  value = math.floor(value)
+  if value < 0 then
+    return 0
+  end
+  return value
+end
+
 M.options = {
   binary = default_binary(),
   graphics = "auto",
@@ -25,6 +41,11 @@ M.options = {
     cell_height_px = 20,
   },
   search_url = "https://www.google.com/search?q=%s",
+  session = {
+    persist = true,
+    history_limit = 50,
+    path = default_session_path(),
+  },
   live_refresh = {
     enabled = true,
     interval_ms = 1500,
@@ -107,11 +128,19 @@ M.options = {
 
 function M.setup(opts)
   M.options = vim.tbl_deep_extend("force", M.options, opts or {})
+  M.options.session = M.options.session or {}
+  M.options.session.history_limit = normalize_history_limit(M.options.session.history_limit, 50)
+  M.options.session.path = M.options.session.path or default_session_path()
+  if M.options.session.persist == nil then
+    M.options.session.persist = true
+  end
   return M.options
 end
 
 M._test = {
   default_binary_for_root = default_binary_for_root,
+  default_session_path = default_session_path,
+  normalize_history_limit = normalize_history_limit,
 }
 
 return M

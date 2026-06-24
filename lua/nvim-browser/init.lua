@@ -10,9 +10,12 @@ local M = {}
 local state = {
   last_target = nil,
   history = {},
+  session_warning_messages = {},
+  session_loaded_path = nil,
 }
 
 local history_limit = 50
+local session_version = 1
 
 local function plugin_root()
   return vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h")
@@ -20,6 +23,167 @@ end
 
 local function calibration_fixture_path()
   return plugin_root() .. "/data/html/calibrate.html"
+end
+
+local function default_session_path()
+  return vim.fn.stdpath("state") .. "/nvim-browser/session.json"
+end
+
+local function session_options()
+  local opts = (M.config and M.config.session) or {}
+  local limit = math.floor(tonumber(opts.history_limit) or history_limit)
+  if limit < 0 then
+    limit = 0
+  end
+  return {
+    persist = opts.persist ~= false,
+    history_limit = limit,
+    path = opts.path or default_session_path(),
+  }
+end
+
+local function warn_session(message)
+  if state.session_warning_messages[message] then
+    return
+  end
+  state.session_warning_messages[message] = true
+  vim.api.nvim_echo({ { message, "WarningMsg" } }, false, {})
+end
+
+local function normalize_history_value(value)
+  if value == nil or value == vim.NIL then
+    return nil
+  end
+  value = tostring(value):gsub("^%s+", ""):gsub("%s+$", "")
+  if value == "" then
+    return nil
+  end
+  return value
+end
+
+local function is_direct_history_url(target)
+  return type(target) == "string" and target:match("^https?://") ~= nil
+end
+
+local function add_history_entry(url, title)
+  url = normalize_history_value(url)
+  if url == nil then
+    return false
+  end
+  if not is_direct_history_url(url) then
+    return false
+  end
+  title = normalize_history_value(title)
+  for index = #state.history, 1, -1 do
+    if state.history[index].url == url then
+      table.remove(state.history, index)
+    end
+  end
+  table.insert(state.history, 1, { url = url, title = title })
+  while #state.history > history_limit do
+    table.remove(state.history)
+  end
+  return true
+end
+
+local function save_session()
+  local opts = session_options()
+  if not opts.persist then
+    return true
+  end
+  local directory = vim.fn.fnamemodify(opts.path, ":h")
+  if directory ~= nil and directory ~= "" and directory ~= "." then
+    local mkdir_ok, mkdir_result = pcall(vim.fn.mkdir, directory, "p")
+    if not mkdir_ok or mkdir_result == 0 then
+      warn_session("nvim-browser: failed to create session state directory")
+      return false
+    end
+  end
+  local payload = {
+    version = session_version,
+    last_target = normalize_history_value(state.last_target),
+    history = M.history(),
+  }
+  local encoded_ok, encoded = pcall(vim.fn.json_encode, payload)
+  if not encoded_ok then
+    warn_session("nvim-browser: failed to encode session state")
+    return false
+  end
+  local write_ok, write_result = pcall(vim.fn.writefile, { encoded }, opts.path)
+  if not write_ok or write_result ~= 0 then
+    warn_session("nvim-browser: failed to write session state")
+    return false
+  end
+  return true
+end
+
+local function set_last_target(target)
+  target = normalize_history_value(target)
+  if target == nil then
+    return false
+  end
+  state.last_target = target
+  save_session()
+  return true
+end
+
+local function record_target(target, title)
+  target = normalize_history_value(target)
+  if target == nil then
+    return false
+  end
+  add_history_entry(target, title)
+  state.last_target = target
+  save_session()
+  return true
+end
+
+local function session_file_signature(path, limit)
+  local stat_ok, stat = pcall(vim.loop.fs_stat, path)
+  if not stat_ok or stat == nil then
+    return path .. "\n" .. tostring(limit) .. "\nmissing"
+  end
+  return table.concat({
+    path,
+    tostring(limit),
+    tostring(stat.size or 0),
+    tostring((stat.mtime or {}).sec or 0),
+    tostring((stat.mtime or {}).nsec or 0),
+  }, "\n")
+end
+
+local function load_session()
+  local opts = session_options()
+  history_limit = opts.history_limit
+  if not opts.persist then
+    state.session_loaded_path = nil
+    return
+  end
+  local load_signature = session_file_signature(opts.path, opts.history_limit)
+  if state.session_loaded_path == load_signature then
+    return
+  end
+  state.session_loaded_path = load_signature
+  state.last_target = nil
+  state.history = {}
+  local read_ok, lines = pcall(vim.fn.readfile, opts.path)
+  if not read_ok or type(lines) ~= "table" or #lines == 0 then
+    return
+  end
+  local decode_ok, decoded = pcall(vim.fn.json_decode, table.concat(lines, "\n"))
+  if not decode_ok or type(decoded) ~= "table" then
+    warn_session("nvim-browser: ignored malformed session state")
+    return
+  end
+  state.last_target = normalize_history_value(decoded.last_target)
+  if type(decoded.history) == "table" then
+    for index = #decoded.history, 1, -1 do
+      local entry = decoded.history[index]
+      if type(entry) == "table" then
+        add_history_entry(entry.url, entry.title)
+      end
+    end
+  end
 end
 
 local function parse_cell_pixels(cell_width_px, cell_height_px)
@@ -36,6 +200,7 @@ end
 
 function M.setup(opts)
   M.config = config.setup(opts)
+  load_session()
   terminal.configure(M.config)
   terminal.set_metadata_observer(function(metadata)
     M.record_history(metadata.url, metadata.title)
@@ -61,10 +226,6 @@ local function setup_preview_keymaps()
   end
 end
 
-local function is_direct_history_url(target)
-  return type(target) == "string" and target:match("^[%a][%w+.-]*://") ~= nil
-end
-
 function M.inspect(target)
   target = resolve_target(target)
   state.last_target = target
@@ -79,10 +240,7 @@ end
 
 function M.open(target)
   target = resolve_target(target)
-  state.last_target = target
-  if is_direct_history_url(target) then
-    M.record_history(target)
-  end
+  record_target(target)
   local previous_bufnr = terminal.state().bufnr
   terminal.open(backend.command_for(M.config.binary, "open", target, M.config))
   local current_bufnr = terminal.state().bufnr
@@ -147,7 +305,7 @@ function M.navigate(target)
   end
   local ok = terminal.navigate(target)
   if ok then
-    state.last_target = target
+    set_last_target(target)
   end
   return ok
 end
@@ -172,51 +330,19 @@ function M.address(input, opts)
     is_active = has_active_browser_session()
   end
   if is_active then
-    local ok = M.navigate(target)
-    if ok then
-      state.last_target = target
-    end
-    return ok
+    return M.navigate(target)
   end
   local ok = M.open(target)
-  state.last_target = target
-  if ok ~= false then
-    M.record_history(target)
-  end
   return ok ~= false
 end
 
-local function normalize_history_value(value)
-  if value == nil or value == vim.NIL then
-    return nil
-  end
-  value = tostring(value):gsub("^%s+", ""):gsub("%s+$", "")
-  if value == "" then
-    return nil
-  end
-  return value
-end
-
 function M.record_history(url, title)
-  url = normalize_history_value(url)
-  if url == nil then
-    return false
-  end
-  title = normalize_history_value(title)
-  for index = #state.history, 1, -1 do
-    if state.history[index].url == url then
-      table.remove(state.history, index)
-    end
-  end
-  table.insert(state.history, 1, { url = url, title = title })
-  while #state.history > history_limit do
-    table.remove(state.history)
-  end
-  return true
+  return record_target(url, title)
 end
 
 function M.clear_history()
   state.history = {}
+  save_session()
 end
 
 function M.history()
@@ -285,6 +411,21 @@ function M.pick_history(select_or_opts, maybe_opts)
     return false
   end
   return true
+end
+
+function M.resume()
+  local target = nil
+  if has_active_browser_session() then
+    target = normalize_history_value(M.current_url())
+  end
+  target = target or normalize_history_value(state.last_target)
+  if target == nil and #state.history > 0 then
+    target = normalize_history_value(state.history[1].url)
+  end
+  if target == nil then
+    return false
+  end
+  return M.open(target) ~= false
 end
 
 local function action_picker_label(item)
@@ -785,7 +926,7 @@ function M.reader_follow()
   if target == false or target == nil then
     return false
   end
-  state.last_target = target
+  set_last_target(target)
   return true
 end
 

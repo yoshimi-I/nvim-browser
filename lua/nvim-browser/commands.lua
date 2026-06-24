@@ -123,6 +123,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: no browser history available or selected page could not be opened", "WarningMsg" } }, false, {})
   end
 
+  local function warn_resume_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: no browser session target to resume", "WarningMsg" } }, false, {})
+  end
+
   local function warn_action_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: selected browser action failed or browser session is inactive", "WarningMsg" } }, false, {})
   end
@@ -280,6 +284,14 @@ function M.register(browser, opts)
       end,
     }) then
       report_history_error()
+    end
+  end, {
+    nargs = 0,
+  })
+
+  vim.api.nvim_create_user_command("NBrowserResume", function()
+    if browser.resume == nil or not browser.resume() then
+      warn_resume_unavailable()
     end
   end, {
     nargs = 0,

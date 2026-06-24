@@ -128,9 +128,16 @@ COMMANDS                                           *nvim-browser-commands*
 
 							*:NBrowserHistory*
 :NBrowserHistory
-	Open a recent page picker for this Neovim session. Selecting a page
+	Open the recent page picker. Recent pages are persisted by default under
+	stdpath("state") . "/nvim-browser/session.json". Selecting a page
 	navigates the active browser session, or opens a new browser preview when
 	no browser session is active.
+
+							*:NBrowserResume*
+:NBrowserResume
+	Resume browsing by opening the active session URL when available,
+	otherwise the last persisted target, otherwise the newest persisted
+	history URL.
 
 							*:NBrowserActions*
 :NBrowserActions
@@ -573,6 +580,11 @@ q  close preview
 Disable or remap these with:
 >
 require("nvim-browser").setup({
+  session = {
+    persist = true,
+    history_limit = 50,
+    path = vim.fn.stdpath("state") .. "/nvim-browser/session.json",
+  },
   preview_keymaps = {
     enabled = false,
     mappings = {
