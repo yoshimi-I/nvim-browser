@@ -40,6 +40,7 @@ local state = {
   element_hints_geometry = nil,
   cursor_addressable_preview = false,
   text_mode_active = false,
+  zoom_scale = 1.0,
   reader_bufnr = nil,
   reader_base_url = nil,
 }
@@ -1256,8 +1257,8 @@ local function clear_pending_operation(id)
   end
 end
 
-function send_pending_request(request, target, label)
-  local ok, id = send_serve_request(request)
+function send_pending_request(request, target, label, on_response)
+  local ok, id = send_serve_request(request, on_response)
   if ok then
     mark_pending_operation(id, label or "loading", target)
   end
@@ -1380,6 +1381,7 @@ function M.open(command)
   state.element_hints = {}
   state.element_hints_geometry = nil
   state.cursor_addressable_preview = false
+  state.zoom_scale = 1.0
   delete_reader_buffer()
   pcall(send_terminal_escape, kitty_cleanup_escape())
 
@@ -1702,6 +1704,7 @@ function M.close()
   state.element_hints_geometry = nil
   state.cursor_addressable_preview = false
   state.text_mode_active = false
+  state.zoom_scale = 1.0
   if state.stop_timer ~= nil then
     state.stop_timer:stop()
     state.stop_timer:close()
@@ -1866,6 +1869,38 @@ end
 function M.scroll_bottom()
   local delta = metrics_scroll_delta_to_bottom() or ((viewport_scroll_height() or 400) * 100)
   return M.scroll(delta, 0)
+end
+
+local function normalized_zoom_scale(value)
+  value = tonumber(value) or 1.0
+  value = math.max(0.25, math.min(3.0, value))
+  return math.floor((value * 100) + 0.5) / 100
+end
+
+local function send_zoom(scale)
+  request_resize()
+  local next_scale = normalized_zoom_scale(scale)
+  local ok = send_pending_request({
+    type = "zoom",
+    scale = next_scale,
+  }, state.current_url or state.last_target or "zoom", "zoom", function(response)
+    if response.status == "ok" then
+      state.zoom_scale = next_scale
+    end
+  end)
+  return ok
+end
+
+function M.zoom_in()
+  return send_zoom(state.zoom_scale * 1.1)
+end
+
+function M.zoom_out()
+  return send_zoom(state.zoom_scale / 1.1)
+end
+
+function M.zoom_reset()
+  return send_zoom(1.0)
 end
 
 function M.input_text(text, opts)
@@ -2500,6 +2535,7 @@ M._test = {
     return hints_overlay.namespace()
   end,
   handle_find_text_response = handle_find_text_response,
+  dispatch_serve_response_handler = dispatch_serve_response_handler,
   handle_reader_response = handle_reader_response,
   reader_url_at_line = reader_url_at_line,
   apply_serve_response = apply_serve_response_metadata,

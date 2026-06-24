@@ -27,7 +27,7 @@ use crate::{
         PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer,
         RendererError, RendererErrorKind, ScrollRequest, ScrollResult, SelectHintRequest,
         SelectionTextRequest, SelectionTextResult, ShutdownResult, TextInputRequest,
-        ToggleHintRequest, WheelPointRequest,
+        ToggleHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -152,6 +152,7 @@ pub struct ChromiumRenderer {
     active_viewport: Viewport,
     current_url: Option<String>,
     current_title: Option<String>,
+    current_zoom_scale: f64,
     next_frame_id: u64,
 }
 
@@ -176,6 +177,7 @@ impl ChromiumRenderer {
             active_viewport: viewport,
             current_url: None,
             current_title: None,
+            current_zoom_scale: 1.0,
             next_frame_id: 1,
         })
     }
@@ -231,6 +233,7 @@ impl Renderer for ChromiumRenderer {
     ) -> Result<RenderedFrame, RendererError> {
         self.active_viewport = request.viewport;
         resize_tab(&self.tab, request.viewport)?;
+        apply_page_zoom(&self.tab, request.viewport, self.current_zoom_scale)?;
         let png = self
             .tab
             .capture_screenshot(
@@ -267,6 +270,22 @@ impl Renderer for ChromiumRenderer {
             page_id: request.page_id,
             delta_x: request.delta_x,
             delta_y: request.delta_y,
+        })
+    }
+
+    fn zoom(&mut self, request: ZoomRequest) -> Result<ZoomResult, RendererError> {
+        if !request.scale.is_finite() || request.scale <= 0.0 {
+            return Err(RendererError::new(
+                RendererErrorKind::InvalidState,
+                "page zoom scale must be a positive finite number",
+            ));
+        }
+        apply_page_zoom(&self.tab, self.active_viewport, request.scale)?;
+        self.current_zoom_scale = request.scale;
+        Ok(ZoomResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+            scale: request.scale,
         })
     }
 
@@ -695,6 +714,14 @@ impl ChromiumRenderer {
             return Err(error);
         }
         if let Err(error) = resize_tab(&tab, self.active_viewport) {
+            if is_closed_target_error(&error) {
+                self.pending_page_target_ids.remove(&target_id);
+                self.known_target_ids.insert(target_id);
+                return Ok(false);
+            }
+            return Err(error);
+        }
+        if let Err(error) = apply_page_zoom(&tab, self.active_viewport, self.current_zoom_scale) {
             if is_closed_target_error(&error) {
                 self.pending_page_target_ids.remove(&target_id);
                 self.known_target_ids.insert(target_id);
@@ -1607,6 +1634,57 @@ impl Method for NavigateToHistoryEntry {
 #[derive(Debug, Deserialize)]
 struct NavigateToHistoryEntryReturnObject {}
 
+#[derive(Debug, Serialize)]
+struct ClearDeviceMetricsOverride {}
+
+impl Method for ClearDeviceMetricsOverride {
+    const NAME: &'static str = "Emulation.clearDeviceMetricsOverride";
+
+    type ReturnObject = ClearDeviceMetricsOverrideReturnObject;
+}
+
+#[derive(Debug, Deserialize)]
+struct ClearDeviceMetricsOverrideReturnObject {}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SetDeviceMetricsOverride {
+    width: u32,
+    height: u32,
+    device_scale_factor: f64,
+    mobile: bool,
+}
+
+impl Method for SetDeviceMetricsOverride {
+    const NAME: &'static str = "Emulation.setDeviceMetricsOverride";
+
+    type ReturnObject = SetDeviceMetricsOverrideReturnObject;
+}
+
+#[derive(Debug, Deserialize)]
+struct SetDeviceMetricsOverrideReturnObject {}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ZoomDeviceMetricsOverride {
+    width: u32,
+    height: u32,
+    device_scale_factor: f64,
+}
+
+impl ZoomDeviceMetricsOverride {
+    fn from_viewport(viewport: Viewport, scale: f64) -> Option<Self> {
+        if (scale - 1.0).abs() < 0.005 {
+            return None;
+        }
+
+        Some(Self {
+            width: ((viewport.width as f64) / scale).round().max(1.0) as u32,
+            height: ((viewport.height as f64) / scale).round().max(1.0) as u32,
+            device_scale_factor: f64::from(viewport.device_scale_factor),
+        })
+    }
+}
+
 fn launch_browser(
     binary: &Path,
     viewport: Viewport,
@@ -1714,6 +1792,25 @@ fn resize_tab(tab: &Tab, viewport: Viewport) -> Result<(), RendererError> {
         height: Some(viewport.height.into()),
     })
     .map_err(render_error)?;
+    Ok(())
+}
+
+fn apply_page_zoom(tab: &Tab, viewport: Viewport, scale: f64) -> Result<(), RendererError> {
+    match ZoomDeviceMetricsOverride::from_viewport(viewport, scale) {
+        Some(metrics) => {
+            tab.call_method(SetDeviceMetricsOverride {
+                width: metrics.width,
+                height: metrics.height,
+                device_scale_factor: metrics.device_scale_factor,
+                mobile: false,
+            })
+            .map_err(render_error)?;
+        }
+        None => {
+            tab.call_method(ClearDeviceMetricsOverride {})
+                .map_err(render_error)?;
+        }
+    };
     Ok(())
 }
 
@@ -2268,6 +2365,31 @@ mod tests {
         assert_eq!(clip.width, 640.0);
         assert_eq!(clip.height, 480.0);
         assert_eq!(clip.scale, 1.0);
+    }
+
+    #[test]
+    fn zoom_device_metrics_override_shrinks_css_viewport_and_preserves_device_scale() {
+        let mut viewport = Viewport::new(480, 320);
+        viewport.device_scale_factor = 2.0;
+
+        let metrics = ZoomDeviceMetricsOverride::from_viewport(viewport, 1.25)
+            .expect("zoomed scale should produce device metrics override");
+
+        assert_eq!(metrics.width, 384);
+        assert_eq!(metrics.height, 256);
+        assert_eq!(metrics.device_scale_factor, 2.0);
+    }
+
+    #[test]
+    fn zoom_device_metrics_override_clears_near_default_scale() {
+        assert_eq!(
+            ZoomDeviceMetricsOverride::from_viewport(Viewport::new(480, 320), 1.0),
+            None
+        );
+        assert_eq!(
+            ZoomDeviceMetricsOverride::from_viewport(Viewport::new(480, 320), 1.004),
+            None
+        );
     }
 
     #[test]

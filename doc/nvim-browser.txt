@@ -173,6 +173,18 @@ COMMANDS                                           *nvim-browser-commands*
 	Scroll the active browser page up by 50% of the current browser
 	viewport and capture a fresh frame.
 
+							*:NBrowserZoomIn*
+:NBrowserZoomIn
+	Increase the active browser page zoom and capture a fresh frame.
+
+							*:NBrowserZoomOut*
+:NBrowserZoomOut
+	Decrease the active browser page zoom and capture a fresh frame.
+
+							*:NBrowserZoomReset*
+:NBrowserZoomReset
+	Reset the active browser page zoom and capture a fresh frame.
+
 							*:NBrowserFind*
 :NBrowserFind {text}
 	Find text in the active browser page, scroll to the match through the
@@ -447,6 +459,9 @@ gg  scroll to top
 G   scroll to bottom
 <C-d>  half page down
 <C-u>  half page up
++  zoom in
+-  zoom out
+=  reset zoom
 a  address prompt
 /  find prompt
 n  repeat find forward
@@ -493,6 +508,9 @@ require("nvim-browser").setup({
       scroll_bottom = "G",
       half_page_down = "<C-d>",
       half_page_up = "<C-u>",
+      zoom_in = "+",
+      zoom_out = "-",
+      zoom_reset = "=",
       page_down = "<PageDown>",
       page_up = "<PageUp>",
       find_next = "n",

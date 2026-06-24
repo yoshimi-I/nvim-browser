@@ -216,6 +216,18 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.half_page_up()
   end, "nvim-browser: half page up", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "zoom_in", "+"), function()
+    browser.zoom_in()
+  end, "nvim-browser: zoom in", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "zoom_out", "-"), function()
+    browser.zoom_out()
+  end, "nvim-browser: zoom out", buffer_opts)
+
+  set_mapping(nil, mapping_lhs(mappings, "zoom_reset", "="), function()
+    browser.zoom_reset()
+  end, "nvim-browser: zoom reset", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "address", "a"), function()
     browser.address()
   end, "nvim-browser: address", buffer_opts)

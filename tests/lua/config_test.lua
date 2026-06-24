@@ -80,6 +80,9 @@ assert(configured.preview_keymaps.mappings.scroll_top == "gg", "preview-local ke
 assert(configured.preview_keymaps.mappings.scroll_bottom == "G", "preview-local keymaps should include scroll-to-bottom")
 assert(configured.preview_keymaps.mappings.half_page_down == "<C-d>", "preview-local keymaps should include half-page down")
 assert(configured.preview_keymaps.mappings.half_page_up == "<C-u>", "preview-local keymaps should include half-page up")
+assert(configured.preview_keymaps.mappings.zoom_in == "+", "preview-local keymaps should include zoom in")
+assert(configured.preview_keymaps.mappings.zoom_out == "-", "preview-local keymaps should include zoom out")
+assert(configured.preview_keymaps.mappings.zoom_reset == "=", "preview-local keymaps should include zoom reset")
 assert(configured.preview_keymaps.mappings.click_here == "gc", "preview-local keymaps should include cursor click")
 assert(configured.preview_keymaps.mappings.hover_here == "gh", "preview-local keymaps should include cursor hover")
 assert(configured.preview_keymaps.mappings.find_next == "n", "preview-local keymaps should include find-next")
@@ -191,6 +194,10 @@ assert(
 assert(
   remapped.preview_keymaps.mappings.scroll_top == "gg",
   "preview-local partial remaps should retain browser-like scroll mappings"
+)
+assert(
+  remapped.preview_keymaps.mappings.zoom_in == "+",
+  "preview-local partial remaps should retain browser zoom mappings"
 )
 
 local resized_viewport = config.setup({

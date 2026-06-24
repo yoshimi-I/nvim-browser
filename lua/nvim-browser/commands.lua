@@ -263,6 +263,18 @@ function M.register(browser, opts)
     browser.half_page_up()
   end, {})
 
+  vim.api.nvim_create_user_command("NBrowserZoomIn", function()
+    browser.zoom_in()
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserZoomOut", function()
+    browser.zoom_out()
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserZoomReset", function()
+    browser.zoom_reset()
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserInput", function(opts)
     if not browser.input_text(opts.args) then
       warn_focused_input_unavailable()

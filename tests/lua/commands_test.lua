@@ -37,6 +37,7 @@ local scrolled_top_count = 0
 local scrolled_bottom_count = 0
 local half_page_down_count = 0
 local half_page_up_count = 0
+local zoomed = {}
 local picked_action = nil
 local browser = {
   hints = function()
@@ -251,6 +252,18 @@ local browser = {
     half_page_up_count = half_page_up_count + 1
     return true
   end,
+  zoom_in = function()
+    table.insert(zoomed, "in")
+    return true
+  end,
+  zoom_out = function()
+    table.insert(zoomed, "out")
+    return true
+  end,
+  zoom_reset = function()
+    table.insert(zoomed, "reset")
+    return true
+  end,
 }
 
 local echoed = nil
@@ -354,6 +367,11 @@ assert(half_page_down_count == 1, "NBrowserHalfPageDown should request a forward
 
 vim.cmd("NBrowserHalfPageUp")
 assert(half_page_up_count == 1, "NBrowserHalfPageUp should request a backward half-page scroll exactly once")
+
+vim.cmd("NBrowserZoomIn")
+vim.cmd("NBrowserZoomOut")
+vim.cmd("NBrowserZoomReset")
+assert(table.concat(zoomed, ",") == "in,out,reset", "browser zoom commands should delegate exactly once")
 assert(#warnings == navigation_warning_count, "page navigation commands should not warn on success")
 
 local arg_error_count = 0
@@ -362,13 +380,16 @@ for _, command in ipairs({
   "NBrowserScrollBottom",
   "NBrowserHalfPageDown",
   "NBrowserHalfPageUp",
+  "NBrowserZoomIn",
+  "NBrowserZoomOut",
+  "NBrowserZoomReset",
 }) do
   local ok, err = pcall(vim.cmd, command .. " unexpected")
   assert(ok == false, command .. " should reject arguments")
   assert(tostring(err):match("E488: Trailing characters"), command .. " should fail with trailing characters for arguments")
   arg_error_count = arg_error_count + 1
 end
-assert(arg_error_count == 4, "all argument-free page navigation commands should reject arguments")
+assert(arg_error_count == 7, "all argument-free page navigation commands should reject arguments")
 
 vim.cmd("NBrowserAddress")
 assert(addressed == "s", "NBrowserAddress should pass the injected input function to browser.address")

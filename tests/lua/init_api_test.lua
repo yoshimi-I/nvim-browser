@@ -45,6 +45,9 @@ assert(type(browser.scroll_top) == "function", "scroll_top API should exist")
 assert(type(browser.scroll_bottom) == "function", "scroll_bottom API should exist")
 assert(type(browser.half_page_down) == "function", "half_page_down API should exist")
 assert(type(browser.half_page_up) == "function", "half_page_up API should exist")
+assert(type(browser.zoom_in) == "function", "zoom_in API should exist")
+assert(type(browser.zoom_out) == "function", "zoom_out API should exist")
+assert(type(browser.zoom_reset) == "function", "zoom_reset API should exist")
 assert(type(browser.hint_error) == "function", "hint_error API should exist")
 assert(type(browser.reader) == "function", "reader API should exist")
 assert(type(browser.reader_follow) == "function", "reader_follow API should exist")
@@ -90,6 +93,9 @@ local original_terminal_yank_selection = terminal.yank_selection
 local original_terminal_find_text = terminal.find_text
 local original_terminal_find_next = terminal.find_next
 local original_terminal_find_previous = terminal.find_previous
+local original_terminal_zoom_in = terminal.zoom_in
+local original_terminal_zoom_out = terminal.zoom_out
+local original_terminal_zoom_reset = terminal.zoom_reset
 
 browser.hints = function()
   return {}
@@ -552,6 +558,27 @@ terminal.scroll_bottom = function()
 end
 assert(browser.scroll_bottom() == "bottom", "scroll_bottom should delegate to terminal")
 assert(scroll_bottom_called == true, "scroll_bottom should call terminal.scroll_bottom")
+
+local zoom_calls = {}
+terminal.zoom_in = function()
+  table.insert(zoom_calls, "in")
+  return "zoom-in"
+end
+terminal.zoom_out = function()
+  table.insert(zoom_calls, "out")
+  return "zoom-out"
+end
+terminal.zoom_reset = function()
+  table.insert(zoom_calls, "reset")
+  return "zoom-reset"
+end
+assert(browser.zoom_in() == "zoom-in", "zoom_in should delegate to terminal")
+assert(browser.zoom_out() == "zoom-out", "zoom_out should delegate to terminal")
+assert(browser.zoom_reset() == "zoom-reset", "zoom_reset should delegate to terminal")
+assert(table.concat(zoom_calls, ",") == "in,out,reset", "zoom APIs should call terminal zoom methods")
+terminal.zoom_in = original_terminal_zoom_in
+terminal.zoom_out = original_terminal_zoom_out
+terminal.zoom_reset = original_terminal_zoom_reset
 
 local stop_called = false
 terminal.stop = function()

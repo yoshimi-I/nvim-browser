@@ -18,7 +18,7 @@ use nvbrowser_core::{
     PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest,
     RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind, ScrollRequest,
     SelectHintRequest, SelectionTextRequest, SessionId, TextInputRequest, ToggleHintRequest,
-    Viewport, WheelPointRequest,
+    Viewport, WheelPointRequest, ZoomRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -282,6 +282,10 @@ enum ServeRequest {
         id: u64,
         delta_x: i32,
         delta_y: i32,
+    },
+    Zoom {
+        id: u64,
+        scale: f64,
     },
     Reload {
         id: u64,
@@ -735,6 +739,14 @@ impl<R: Renderer> ServeRuntime<R> {
                 ))?;
                 self.capture_payload(true).map(Some)
             }
+            ServeRequest::Zoom { scale, .. } => {
+                self.renderer.zoom(ZoomRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    scale,
+                ))?;
+                self.capture_payload(true).map(Some)
+            }
             ServeRequest::Reload { .. } => {
                 let reload = self.renderer.reload(ReloadRequest::new(
                     self.session.id(),
@@ -1130,6 +1142,7 @@ impl ServeRequest {
             ServeRequest::Navigate { id, .. }
             | ServeRequest::Capture { id }
             | ServeRequest::Scroll { id, .. }
+            | ServeRequest::Zoom { id, .. }
             | ServeRequest::Reload { id }
             | ServeRequest::Back { id }
             | ServeRequest::Forward { id }
@@ -1597,13 +1610,14 @@ mod tests {
         HistoryNavigationResult, InputResult, InteractionSettleResult, NavigationResult, PageId,
         PageMetricsRequest, PageTextRequest, ReloadResult, RendererError, RendererErrorKind,
         ScrollResult, SelectHintRequest, SelectionTextRequest, SelectionTextResult, ShutdownResult,
-        ToggleHintRequest, WheelPointRequest,
+        ToggleHintRequest, WheelPointRequest, ZoomResult,
     };
 
     struct FakeRenderer {
         url: Option<String>,
         captures: u64,
         scrolls: Vec<(i32, i32)>,
+        zooms: Vec<f64>,
         text_inputs: Vec<String>,
         key_presses: Vec<String>,
         focused_selectors: Vec<String>,
@@ -1644,6 +1658,7 @@ mod tests {
                 url: None,
                 captures: 0,
                 scrolls: Vec::new(),
+                zooms: Vec::new(),
                 text_inputs: Vec::new(),
                 key_presses: Vec::new(),
                 focused_selectors: Vec::new(),
@@ -1735,6 +1750,15 @@ mod tests {
                 page_id: request.page_id,
                 delta_x: request.delta_x,
                 delta_y: request.delta_y,
+            })
+        }
+
+        fn zoom(&mut self, request: ZoomRequest) -> Result<ZoomResult, RendererError> {
+            self.zooms.push(request.scale);
+            Ok(ZoomResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                scale: request.scale,
             })
         }
 
@@ -2239,6 +2263,15 @@ mod tests {
             parse_serve_request(r#"{"type":"forward","id":10}"#)
                 .expect("forward request should parse"),
             ServeRequest::Forward { id: 10 }
+        );
+
+        assert_eq!(
+            parse_serve_request(r#"{"type":"zoom","id":11,"scale":1.25}"#)
+                .expect("zoom request should parse"),
+            ServeRequest::Zoom {
+                id: 11,
+                scale: 1.25
+            }
         );
     }
 
@@ -3333,6 +3366,44 @@ mod tests {
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_some());
         assert_eq!(runtime.renderer.scrolls, vec![(0, 100)]);
+    }
+
+    #[test]
+    fn serve_runtime_applies_zoom_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::Zoom { id: 2, scale: 1.25 });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(response.url.as_deref(), Some("https://example.com"));
+        assert_eq!(response.title.as_deref(), Some("https://example.com"));
+        assert_eq!(
+            response.page,
+            runtime
+                .renderer
+                .page_metrics(PageMetricsRequest::new(SessionId::new(1), PageId::new(1)))
+                .expect("page metrics")
+                .clone()
+        );
+        assert_eq!(runtime.renderer.zooms, vec![1.25]);
+        assert!(runtime.renderer.operations.contains(&"capture"));
     }
 
     #[test]

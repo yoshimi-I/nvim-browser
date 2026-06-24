@@ -1139,6 +1139,42 @@ assert(page_down_request.delta_y == 540, "page_scroll should use 90 percent of p
 assert(page_down_request.delta_x == 0, "page_scroll should not scroll horizontally by default")
 
 sent_requests = {}
+assert(terminal.zoom_in() == true, "zoom_in should send a zoom request")
+zoom_in_request = last_request_of_type("zoom")
+assert(zoom_in_request ~= nil, "zoom_in should use the zoom JSONL request type")
+assert(zoom_in_request.scale == 1.1, "zoom_in should increase the page scale by the default step")
+
+terminal._test.dispatch_serve_response_handler({ id = zoom_in_request.id, status = "error", error = "zoom failed" })
+terminal._test.clear_pending_operation(zoom_in_request.id)
+sent_requests = {}
+assert(terminal.zoom_in() == true, "zoom_in should retry from the last applied zoom after backend failure")
+retry_zoom_in_request = last_request_of_type("zoom")
+assert(retry_zoom_in_request.scale == 1.1, "failed zoom responses should not advance client-side zoom state")
+terminal._test.dispatch_serve_response_handler({ id = retry_zoom_in_request.id, status = "ok" })
+terminal._test.clear_pending_operation(retry_zoom_in_request.id)
+
+sent_requests = {}
+assert(terminal.zoom_in() == true, "zoom_in should compound after an applied zoom response")
+compounded_zoom_in_request = last_request_of_type("zoom")
+assert(compounded_zoom_in_request.scale == 1.21, "successful zoom responses should advance client-side zoom state")
+terminal._test.dispatch_serve_response_handler({ id = compounded_zoom_in_request.id, status = "ok" })
+terminal._test.clear_pending_operation(compounded_zoom_in_request.id)
+
+sent_requests = {}
+assert(terminal.zoom_out() == true, "zoom_out should send a zoom request")
+zoom_out_request = last_request_of_type("zoom")
+assert(zoom_out_request.scale == 1.1, "zoom_out should decrease the page scale by the default step")
+terminal._test.dispatch_serve_response_handler({ id = zoom_out_request.id, status = "ok" })
+terminal._test.clear_pending_operation(zoom_out_request.id)
+
+sent_requests = {}
+assert(terminal.zoom_reset() == true, "zoom_reset should send a zoom request")
+zoom_reset_request = last_request_of_type("zoom")
+assert(zoom_reset_request.scale == 1.0, "zoom_reset should restore default page scale")
+terminal._test.dispatch_serve_response_handler({ id = zoom_reset_request.id, status = "ok" })
+terminal._test.clear_pending_operation(zoom_reset_request.id)
+
+sent_requests = {}
 assert(terminal.page_scroll(1, { fraction = 0.5 }) == true, "page_scroll should support custom viewport fractions")
 local half_page_down_request = last_request_of_type("scroll")
 assert(half_page_down_request.delta_y == 300, "half-page down should use 50 percent of page viewport height")

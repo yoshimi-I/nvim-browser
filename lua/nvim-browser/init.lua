@@ -210,6 +210,18 @@ function M.half_page_up()
   return terminal.page_scroll(-1, { fraction = 0.5 })
 end
 
+function M.zoom_in()
+  return terminal.zoom_in()
+end
+
+function M.zoom_out()
+  return terminal.zoom_out()
+end
+
+function M.zoom_reset()
+  return terminal.zoom_reset()
+end
+
 function M.input_text(text)
   return terminal.input_text(text)
 end

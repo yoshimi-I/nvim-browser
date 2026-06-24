@@ -12,6 +12,13 @@ pub trait Renderer {
 
     fn scroll(&mut self, request: ScrollRequest) -> Result<ScrollResult, RendererError>;
 
+    fn zoom(&mut self, _request: ZoomRequest) -> Result<ZoomResult, RendererError> {
+        Err(RendererError::new(
+            RendererErrorKind::InvalidState,
+            "page zoom is not supported by this renderer",
+        ))
+    }
+
     fn reload(&mut self, request: ReloadRequest) -> Result<ReloadResult, RendererError>;
 
     fn go_back(
@@ -226,6 +233,30 @@ pub struct ScrollResult {
     pub page_id: PageId,
     pub delta_x: i32,
     pub delta_y: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct ZoomRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub scale: f64,
+}
+
+impl ZoomRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId, scale: f64) -> Self {
+        Self {
+            session_id,
+            page_id,
+            scale,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct ZoomResult {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub scale: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -742,6 +773,14 @@ mod tests {
             })
         }
 
+        fn zoom(&mut self, request: ZoomRequest) -> Result<ZoomResult, RendererError> {
+            Ok(ZoomResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                scale: request.scale,
+            })
+        }
+
         fn reload(&mut self, request: ReloadRequest) -> Result<ReloadResult, RendererError> {
             Ok(ReloadResult {
                 session_id: request.session_id,
@@ -950,7 +989,7 @@ mod tests {
     }
 
     #[test]
-    fn renderer_contract_supports_scroll_reload_and_shutdown() {
+    fn renderer_contract_supports_scroll_zoom_reload_and_shutdown() {
         let mut renderer = FakeRenderer::new();
         let session_id = SessionId::new(4);
         let page_id = PageId::new(3);
@@ -958,6 +997,9 @@ mod tests {
         let scroll = renderer
             .scroll(ScrollRequest::new(session_id, page_id, 0, 240))
             .expect("scroll should succeed");
+        let zoom = renderer
+            .zoom(ZoomRequest::new(session_id, page_id, 1.25))
+            .expect("zoom should succeed");
         let reload = renderer
             .reload(ReloadRequest::new(session_id, page_id))
             .expect("reload should succeed");
@@ -971,6 +1013,9 @@ mod tests {
 
         assert_eq!(scroll.session_id, session_id);
         assert_eq!(scroll.delta_y, 240);
+        assert_eq!(zoom.session_id, session_id);
+        assert_eq!(zoom.page_id, page_id);
+        assert_eq!(zoom.scale, 1.25);
         assert_eq!(reload.session_id, session_id);
         assert_eq!(reload.page_id, page_id);
         assert_eq!(reload.url, "https://example.com");

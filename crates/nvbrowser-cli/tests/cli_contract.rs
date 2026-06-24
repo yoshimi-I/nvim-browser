@@ -1035,6 +1035,150 @@ fn opt_in_e2e_serve_loop_reports_metrics_for_top_bottom_scroll() {
 }
 
 #[test]
+fn opt_in_e2e_serve_loop_applies_page_zoom() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    fn observed_inner_width(response: &Value) -> u32 {
+        let text = response["text"]["text"]
+            .as_str()
+            .expect("page_text response should include text");
+        text.split("innerWidth: ")
+            .nth(1)
+            .and_then(|width| width.split_whitespace().next())
+            .and_then(|width| width.parse::<u32>().ok())
+            .unwrap_or_else(|| panic!("page_text should include innerWidth; response={response:?}"))
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let fixture_path = directory.path().join("zoom.html");
+    std::fs::write(
+        &fixture_path,
+        r##"<!doctype html>
+<html>
+  <head>
+    <title>NBrowser Zoom E2E Fixture</title>
+    <style>
+      body { background: white; color: black; font-family: sans-serif; margin: 24px; }
+      #zoom-state::before { content: 'wide'; }
+      @media (max-width: 420px) {
+        body { background: black; color: white; }
+        #zoom-state::before { content: 'narrow'; }
+      }
+    </style>
+    <script>
+      function updateWidth() {
+        document.getElementById('width').textContent = 'innerWidth: ' + window.innerWidth;
+      }
+      window.addEventListener('resize', updateWidth);
+      window.addEventListener('DOMContentLoaded', updateWidth);
+      setInterval(updateWidth, 50);
+    </script>
+  </head>
+  <body><main><h1>Zoom target</h1><p id="zoom-state"></p><p id="width">innerWidth: pending</p></main></body>
+</html>"##,
+    )
+    .expect("zoom fixture should be written");
+    let fixture_url = format!("file://{}", fixture_path.display());
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--url",
+            &fixture_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok", "initial navigation should succeed");
+    let initial_payload = initial["payload"]
+        .as_str()
+        .expect("initial response should include a frame payload")
+        .to_string();
+    let initial_text = serve.request(serde_json::json!({ "id": 1, "type": "page_text" }));
+    let initial_width = observed_inner_width(&initial_text);
+    assert!(
+        initial_width > 420,
+        "initial fixture should start in wide mode; response={initial_text:?}"
+    );
+
+    let zoomed = serve.request(serde_json::json!({
+        "id": 2,
+        "type": "zoom",
+        "scale": 1.25
+    }));
+    assert_eq!(
+        zoomed["status"], "ok",
+        "zoom request should succeed through real CDP; response={zoomed:?}"
+    );
+    assert!(
+        zoomed["payload"]
+            .as_str()
+            .is_some_and(|payload| !payload.is_empty()),
+        "zoom response should include a fresh frame payload"
+    );
+    assert_eq!(
+        zoomed["title"].as_str(),
+        Some("NBrowser Zoom E2E Fixture"),
+        "zoom response should preserve page title metadata"
+    );
+    let zoomed_payload = zoomed["payload"]
+        .as_str()
+        .expect("zoom response should include a frame payload");
+    assert!(
+        zoomed_payload != initial_payload,
+        "zoom should visibly change the captured frame payload"
+    );
+    let zoomed_text = serve.request(serde_json::json!({ "id": 3, "type": "page_text" }));
+    let zoomed_width = observed_inner_width(&zoomed_text);
+    assert!(
+        zoomed_width < initial_width && zoomed_width <= 420,
+        "zoom should shrink the effective CSS viewport enough to enter narrow mode; initial={initial_width}, zoomed={zoomed_width}, response={zoomed_text:?}"
+    );
+
+    let reset = serve.request(serde_json::json!({
+        "id": 4,
+        "type": "zoom",
+        "scale": 1.0
+    }));
+    assert_eq!(
+        reset["status"], "ok",
+        "zoom reset should succeed through real CDP; response={reset:?}"
+    );
+
+    let reset_text = serve.request(serde_json::json!({ "id": 5, "type": "page_text" }));
+    let reset_width = observed_inner_width(&reset_text);
+    assert_eq!(
+        reset_width, initial_width,
+        "zoom reset should restore the effective CSS viewport; response={reset_text:?}"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 6, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
+#[test]
 fn opt_in_e2e_serve_loop_adopts_delayed_about_blank_window_open() {
     if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
         return;

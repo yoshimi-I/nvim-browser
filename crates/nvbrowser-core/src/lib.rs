@@ -15,7 +15,7 @@ pub use renderer::{
     PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer,
     RendererError, RendererErrorKind, ScrollRequest, ScrollResult, SelectHintRequest,
     SelectionTextRequest, SelectionTextResult, ShutdownResult, TextInputRequest, ToggleHintRequest,
-    WheelPointRequest,
+    WheelPointRequest, ZoomRequest, ZoomResult,
 };
 pub use session::{
     BrowserSession, FrameId, FrameMetadata, LoadingState, PageId, PageState, SessionId, Viewport,
