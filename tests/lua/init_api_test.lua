@@ -40,6 +40,7 @@ assert(type(browser.yank_selection) == "function", "browser selection yank API s
 assert(type(browser.yank_region) == "function", "browser region yank API should exist")
 assert(type(browser.yank_current_url) == "function", "current URL yank API should exist")
 assert(type(browser.yank_hint_url) == "function", "hint URL yank API should exist")
+assert(type(browser.yank_page_text) == "function", "page text yank API should exist")
 assert(type(browser.screenshot) == "function", "active browser screenshot API should exist")
 assert(type(browser.downloads) == "function", "download history API should exist")
 assert(type(browser.open_download) == "function", "open download API should exist")
@@ -160,6 +161,19 @@ assert(
 browser.open = _G.nvim_browser_original_open_under_cursor_open
 browser.navigate = _G.nvim_browser_original_open_under_cursor_navigate
 terminal.state = _G.nvim_browser_original_terminal_state_for_cursor
+
+_G.nvim_browser_original_terminal_yank_page_text = terminal.yank_page_text
+_G.nvim_browser_yanked_page_text_register = nil
+terminal.yank_page_text = function(register)
+  _G.nvim_browser_yanked_page_text_register = register
+  return register ~= "!"
+end
+assert(browser.yank_page_text() == true, "page text yank API should delegate with the unnamed register by default")
+assert(_G.nvim_browser_yanked_page_text_register == '"', "page text yank API should default to the unnamed register")
+assert(browser.yank_page_text("+") == true, "page text yank API should pass explicit registers")
+assert(_G.nvim_browser_yanked_page_text_register == "+", "page text yank API should preserve explicit registers")
+assert(browser.yank_page_text("!") == false, "page text yank API should propagate terminal failures")
+terminal.yank_page_text = _G.nvim_browser_original_terminal_yank_page_text
 
 assert(type(browser.record_history) == "function", "history recorder API should exist")
 assert(type(browser.history) == "function", "history API should exist")

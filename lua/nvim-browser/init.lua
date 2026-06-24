@@ -1114,6 +1114,10 @@ function M.yank_selection(register)
   return terminal.yank_selection(register or '"')
 end
 
+function M.yank_page_text(register)
+  return terminal.yank_page_text(register or '"')
+end
+
 function M.yank_region(register, start_row, start_col, end_row, end_col)
   if start_row == nil and start_col == nil and end_row == nil and end_col == nil then
     local start_pos = vim.fn.getpos("'<")

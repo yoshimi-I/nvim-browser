@@ -295,6 +295,7 @@ Then run:
 :NBrowserSelectRegion 12 8 12 40
 :NBrowserYankRegion 12 8 12 40 +
 :NBrowserYankSelection +
+:NBrowserYankPageText +
 :NBrowserYankUrl +
 :NBrowserYankHintUrl a +
 :NBrowserScreenshot /tmp/page.png
@@ -481,6 +482,11 @@ element by sending Enter only when the backend reports the active element as
 submittable.
 `:NBrowserYankSelection [register]` reads the browser's current selected text
 and writes it into a Neovim register, defaulting to the unnamed register.
+`:NBrowserYankPageText [register]` asks the active Chromium session for the
+current page text snapshot and writes that Markdown-like body to a Neovim
+register without opening or mutating the reader buffer. It yanks the live DOM
+snapshot, not the rendered terminal preview, and preserves the register when the
+snapshot is empty or the browser session is inactive.
 `:NBrowserSelectRegion [start-row start-col end-row end-col]` drags across the
 cursor-addressable preview to create a native browser text selection. With four
 arguments it uses those preview-cell coordinates; without arguments it uses the

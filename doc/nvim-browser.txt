@@ -272,6 +272,14 @@ COMMANDS                                           *nvim-browser-commands*
 	Read the browser's current selected text and write it into a Neovim
 	register. Defaults to the unnamed register.
 
+							*:NBrowserYankPageText*
+:NBrowserYankPageText [register]
+	Read the active browser page as a Markdown-like text snapshot and write
+	that body into a Neovim register. Defaults to the unnamed register. This
+	uses Chromium/CDP page text, not the rendered terminal preview, and does
+	not open or mutate the reader buffer. Empty snapshots, inactive browser
+	sessions, and invalid registers preserve the previous register contents.
+
 							*:NBrowserSelectRegion*
 :NBrowserSelectRegion [start-row start-col end-row end-col]
 	Drag across the cursor-addressable browser preview to create a native

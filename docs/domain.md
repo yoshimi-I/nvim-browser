@@ -87,8 +87,12 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   `<select>` option selection with Neovim pickers when option metadata is
   available, hinted `<input type="file">` uploads through CDP
   `DOM.setFileInputFiles`, hinted checkbox/radio toggles, direct href following,
-  current URL and hinted link URL yanking, focused-element metadata, and
-  submit-current-focus form UX.
+  current URL, hinted link URL, and whole-page text snapshot yanking,
+  focused-element metadata, and submit-current-focus form UX.
+- Page text is a Chromium/CDP snapshot surface, not a scrape of the terminal
+  preview or reader buffer. Whole-page text yank should keep using the
+  `page_text` request, validate writable one-character Neovim registers, and
+  preserve existing register contents on empty, failed, or stale responses.
 - Auto-handles JavaScript dialogs with a safe non-interactive policy: alerts are
   accepted, confirm/prompt/beforeunload dialogs are dismissed, and handled
   dialog metadata is surfaced to Neovim.

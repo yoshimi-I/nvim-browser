@@ -29,6 +29,7 @@ local pasted_register = nil
 local yanked_register = nil
 local yanked_current_url_register = nil
 local yanked_hint_url = nil
+local yanked_page_text_register = nil
 local screenshot_path = nil
 local screenshot_on_response = nil
 local pressed_key = nil
@@ -184,6 +185,13 @@ local browser = {
       return false
     end
     yanked_hint_url = { identifier = identifier, register = register or '"' }
+    return true
+  end,
+  yank_page_text = function(register)
+    if register == "ab" or register == "%" then
+      return false
+    end
+    yanked_page_text_register = register or '"'
     return true
   end,
   screenshot = function(path, opts)
@@ -981,6 +989,24 @@ assert(warnings[#warnings] == "nvim-browser: hint URL not found, stale, non-link
 
 vim.cmd("NBrowserYankHintUrl a ab")
 assert(warnings[#warnings] == "nvim-browser: hint URL not found, stale, non-link, or register is invalid", "NBrowserYankHintUrl should warn on invalid register names")
+
+yanked_page_text_register = nil
+vim.cmd("NBrowserYankPageText")
+assert(yanked_page_text_register == '"', "NBrowserYankPageText should default to the unnamed register")
+
+yanked_page_text_register = nil
+vim.cmd("NBrowserYankPageText +")
+assert(yanked_page_text_register == "+", "NBrowserYankPageText should pass an explicit register")
+
+yanked_page_text_register = nil
+vim.cmd("NBrowserYankPageText ab")
+assert(warnings[#warnings] == "nvim-browser: page text yank failed, snapshot is empty, or register is invalid", "NBrowserYankPageText should warn on invalid register names")
+assert(yanked_page_text_register == nil, "NBrowserYankPageText should not yank invalid register names")
+
+yanked_page_text_register = nil
+vim.cmd("NBrowserYankPageText %")
+assert(warnings[#warnings] == "nvim-browser: page text yank failed, snapshot is empty, or register is invalid", "NBrowserYankPageText should warn on unwritable one-character registers")
+assert(yanked_page_text_register == nil, "NBrowserYankPageText should not yank unwritable registers")
 
 screenshot_path = nil
 echoed = nil

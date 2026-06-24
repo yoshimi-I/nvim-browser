@@ -185,6 +185,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: browser selection yank failed or no browser selection is active", "WarningMsg" } }, false, {})
   end
 
+  local function warn_page_text_yank_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: page text yank failed, snapshot is empty, or register is invalid", "WarningMsg" } }, false, {})
+  end
+
   local function valid_register(register)
     if type(register) ~= "string" or #register ~= 1 then
       return false
@@ -466,6 +470,15 @@ function M.register(browser, opts)
     local register = opts.args ~= "" and opts.args or nil
     if not browser.yank_selection(register) then
       warn_selection_yank_unavailable()
+    end
+  end, {
+    nargs = "?",
+  })
+
+  vim.api.nvim_create_user_command("NBrowserYankPageText", function(opts)
+    local register = opts.args ~= "" and opts.args or nil
+    if not browser.yank_page_text or not browser.yank_page_text(register) then
+      warn_page_text_yank_unavailable()
     end
   end, {
     nargs = "?",

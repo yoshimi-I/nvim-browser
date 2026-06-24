@@ -1803,6 +1803,88 @@ sent_requests = {}
 assert(terminal.yank_selection("ab") == false, "selection yank should reject invalid register names")
 assert(#sent_requests == 0, "invalid selection yank registers should not send a serve request")
 
+_G.nvim_browser_old_page_text_register = vim.fn.getreg("b")
+vim.fn.setreg("b", "old page text")
+sent_requests = {}
+assert(terminal.yank_page_text("b") == true, "page text yank should send a page_text request")
+_G.nvim_browser_page_text_request = last_request_of_type("page_text")
+assert(_G.nvim_browser_page_text_request ~= nil, "page text yank should use the page_text serve request")
+_G.nvim_browser_reader_bufnr_before_yank = terminal.state().reader_bufnr
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_page_text_request.id,
+  status = "ok",
+  text = {
+    title = "Example",
+    url = "https://example.com",
+    text = "# Example\n\nReadable body",
+    truncated = false,
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return vim.fn.getreg("b") == "# Example\n\nReadable body"
+end), "page text yank responses should write snapshot text to the requested register")
+assert(terminal.state().reader_bufnr == _G.nvim_browser_reader_bufnr_before_yank, "page text yank should not create or replace reader buffers")
+
+warnings = {}
+sent_requests = {}
+vim.fn.setreg("b", "preserve page text")
+assert(terminal.yank_page_text("b") == true, "empty page text yank should still send a page_text request")
+_G.nvim_browser_empty_page_text_request = last_request_of_type("page_text")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_empty_page_text_request.id,
+  status = "ok",
+  text = {
+    title = "Empty",
+    url = "https://example.com/empty",
+    text = "",
+    truncated = false,
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return #warnings > 0
+end), "empty page text yank responses should warn")
+assert(warnings[#warnings] == "nvim-browser: page text yank failed or snapshot was empty", "empty page text yank should use the expected warning")
+assert(vim.fn.getreg("b") == "preserve page text", "empty page text yank should not overwrite the register")
+
+warnings = {}
+sent_requests = {}
+assert(terminal.yank_page_text("b") == true, "failed page text yank should still send a page_text request")
+_G.nvim_browser_failed_page_text_request = last_request_of_type("page_text")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_failed_page_text_request.id,
+  status = "error",
+  error = "snapshot failed",
+}), "" })
+assert(vim.wait(1000, function()
+  return #warnings > 0
+end), "failed page text yank responses should warn")
+_G.nvim_browser_failed_page_text_warning_seen = false
+for _, warning in ipairs(warnings) do
+  if warning == "nvim-browser: page text yank failed or snapshot was empty" then
+    _G.nvim_browser_failed_page_text_warning_seen = true
+  end
+end
+assert(
+  _G.nvim_browser_failed_page_text_warning_seen,
+  "failed page text yank should use the expected warning"
+)
+assert(vim.fn.getreg("b") == "preserve page text", "failed page text yank should not overwrite the register")
+
+sent_requests = {}
+assert(terminal.yank_page_text("ab") == false, "page text yank should reject invalid register names")
+assert(last_request_of_type("page_text") == nil, "invalid page text yank registers should not send a page_text request")
+
+sent_requests = {}
+assert(terminal.yank_page_text("%") == false, "page text yank should reject unwritable one-character registers")
+assert(last_request_of_type("page_text") == nil, "unwritable one-character page text registers should not send a page_text request")
+
+_G.nvim_browser_original_job_id_for_page_text_yank = terminal.state().job_id
+terminal._test.set_job_id(nil)
+assert(terminal.yank_page_text("b") == false, "page text yank should fail without an active serve job")
+terminal._test.set_job_id(_G.nvim_browser_original_job_id_for_page_text_yank)
+
+vim.fn.setreg("b", _G.nvim_browser_old_page_text_register)
+
 local old_a_register = vim.fn.getreg("a")
 vim.fn.setreg("a", "old register")
 assert(terminal.yank_selection("a") == true, "selection yank should send a selection_text request")
@@ -4178,6 +4260,36 @@ terminal._test.apply_serve_response({
   },
 })
 assert(#terminal.downloads() > 0, "test setup should have download history before close")
+
+_G.nvim_browser_old_page_text_reset_register = vim.fn.getreg("b")
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/before-reset-page-text-yank" })
+sent_requests = {}
+assert(terminal.yank_page_text("b") == true, "test setup should send a first page text yank before session replacement")
+assert(terminal.yank_page_text("b") == true, "test setup should send a newer page text yank before session replacement")
+_G.nvim_browser_pre_reset_page_text_request = last_request_of_type("page_text")
+assert(_G.nvim_browser_pre_reset_page_text_request.id > 1, "test setup should create a page text request id greater than one")
+terminal.close()
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/reset-page-text-yank" })
+sent_requests = {}
+vim.fn.setreg("b", "before reset page text")
+assert(terminal.yank_page_text("b") == true, "page text yank should work after replacing the serve session")
+_G.nvim_browser_reset_page_text_request = last_request_of_type("page_text")
+assert(_G.nvim_browser_reset_page_text_request ~= nil, "page text yank after session replacement should send page_text")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_reset_page_text_request.id,
+  status = "ok",
+  text = {
+    title = "Reset",
+    url = "https://example.com/reset-page-text-yank",
+    text = "fresh session page text",
+    truncated = false,
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return vim.fn.getreg("b") == "fresh session page text"
+end), "page text yank request ids should reset with new serve sessions")
+vim.fn.setreg("b", _G.nvim_browser_old_page_text_reset_register)
+
 terminal._test.set_timer_factory(nil)
 vim.fn.jobstart = original_jobstart
 vim.fn.chansend = original_chansend

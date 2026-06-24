@@ -62,6 +62,7 @@ local state = {
   reader_bufnr = nil,
   reader_base_url = nil,
   latest_reader_request_id = nil,
+  latest_page_text_yank_request_id = nil,
 }
 
 local options = {
@@ -838,6 +839,37 @@ end
 
 local function warn_selection_yank_failed()
   vim.api.nvim_echo({ { "nvim-browser: browser selection yank failed or no browser selection is active", "WarningMsg" } }, false, {})
+end
+
+local function warn_page_text_yank_failed()
+  vim.api.nvim_echo({ { "nvim-browser: page text yank failed or snapshot was empty", "WarningMsg" } }, false, {})
+end
+
+local function handle_yank_page_text_response(register)
+  return function(response)
+    if
+      response.id ~= nil
+      and state.latest_page_text_yank_request_id ~= nil
+      and tonumber(response.id) ~= nil
+      and tonumber(response.id) < state.latest_page_text_yank_request_id
+    then
+      return
+    end
+    if
+      response.status ~= "ok"
+      or type(response.text) ~= "table"
+      or response.text.text == nil
+      or response.text.text == vim.NIL
+      or response.text.text == ""
+    then
+      warn_page_text_yank_failed()
+      return
+    end
+    local ok = pcall(vim.fn.setreg, register, response.text.text, "v")
+    if not ok then
+      warn_page_text_yank_failed()
+    end
+  end
 end
 
 local function handle_yank_selection_response(register)
@@ -2161,6 +2193,7 @@ function M.open(command)
   state.navigation_suppressed_request_ids = {}
   state.latest_applied_response_id = 0
   state.latest_reader_request_id = nil
+  state.latest_page_text_yank_request_id = nil
   state.latest_find_request_id = nil
   state.last_find_found = nil
   state.last_find_match_count = nil
@@ -2536,6 +2569,7 @@ function M.close()
   state.navigation_suppressed_request_ids = {}
   state.latest_applied_response_id = 0
   state.latest_reader_request_id = nil
+  state.latest_page_text_yank_request_id = nil
   state.last_find_found = nil
   state.last_find_match_count = nil
   state.last_find_query = nil
@@ -3158,6 +3192,18 @@ function M.yank_selection(register)
     return false
   end
   return send_serve_request({ type = "selection_text" }, handle_yank_selection_response(register))
+end
+
+function M.yank_page_text(register)
+  register = register or '"'
+  if not valid_register(register) then
+    return false
+  end
+  local ok, id = send_serve_request({ type = "page_text" }, handle_yank_page_text_response(register))
+  if ok then
+    state.latest_page_text_yank_request_id = id
+  end
+  return ok
 end
 
 function M.yank_current_url(register)
