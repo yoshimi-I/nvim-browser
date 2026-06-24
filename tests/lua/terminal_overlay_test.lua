@@ -16,6 +16,23 @@ assert(cleanup_escape:find("\27_Ga=d,d=i,i=1\27\\", 1, true), "cleanup should de
 assert(cleanup_escape:find("\27_Ga=d,d=i,i=2\27\\", 1, true), "cleanup should delete first tile image id")
 assert(cleanup_escape:find("\27_Ga=d,d=i,i=257\27\\", 1, true), "cleanup should delete the max stable tile image id")
 
+_G.nvim_browser_original_tmux_env_for_escape = vim.env.TMUX
+vim.env.TMUX = nil
+_G.nvim_browser_raw_kitty_payload = "\27_Ga=T,f=100,m=0;abc\27\\"
+assert(terminal._test.terminal_escape(_G.nvim_browser_raw_kitty_payload) == _G.nvim_browser_raw_kitty_payload, "terminal escape should leave payloads raw outside tmux")
+assert(terminal._test.terminal_escape(nil) == nil, "terminal escape should preserve nil payloads")
+assert(terminal._test.terminal_escape("") == "", "terminal escape should preserve empty payloads")
+vim.env.TMUX = ""
+assert(terminal._test.terminal_escape(_G.nvim_browser_raw_kitty_payload) == _G.nvim_browser_raw_kitty_payload, "terminal escape should treat empty TMUX as outside tmux")
+vim.env.TMUX = "/tmp/tmux-501/default,123,0"
+_G.nvim_browser_tmux_wrapped_payload = terminal._test.terminal_escape(_G.nvim_browser_raw_kitty_payload)
+assert(
+  _G.nvim_browser_tmux_wrapped_payload == "\27Ptmux;\27\27_Ga=T,f=100,m=0;abc\27\27\\\27\\",
+  "terminal escape should wrap raw Kitty payloads once for tmux passthrough"
+)
+assert(_G.nvim_browser_tmux_wrapped_payload:find("\27Ptmux;\27Ptmux;", 1, true) == nil, "tmux wrapping should not contain nested tmux wrappers")
+vim.env.TMUX = _G.nvim_browser_original_tmux_env_for_escape
+
 local bufnr = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { string.rep(" ", 12), string.rep(" ", 12), string.rep(" ", 12) })
 

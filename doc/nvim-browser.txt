@@ -537,6 +537,9 @@ COMMANDS                                           *nvim-browser-commands*
 >
 	set -g allow-passthrough on
 <
+	Standalone image CLI Kitty output is tmux-wrapped by the Rust binary.
+	Browser serve sessions keep JSONL payloads raw and apply tmux passthrough
+	at the Neovim terminal egress boundary.
 
 							*:NBrowserCalibrate*
 :NBrowserCalibrate [cell_width_px cell_height_px]

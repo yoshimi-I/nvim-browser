@@ -24,6 +24,6 @@ pub use session::{
 };
 pub use target::{inspect_target, supports_direct_terminal_image, InspectResult, TargetKind};
 pub use terminal::kitty::{
-    kitty_image_escape, kitty_tiled_image_delete_escape, KittyImageDelete, KittyImagePlacement,
-    KittyImageTransfer, KittyPlacementDelete,
+    kitty_image_escape, kitty_tiled_image_delete_escape, tmux_passthrough_escape, KittyImageDelete,
+    KittyImagePlacement, KittyImageTransfer, KittyPlacementDelete,
 };

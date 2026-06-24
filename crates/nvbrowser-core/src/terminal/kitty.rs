@@ -166,6 +166,13 @@ pub fn kitty_image_escape(base64_png: &str) -> String {
     format!("\x1b_Ga=T,f=100,m=0;{base64_png}\x1b\\")
 }
 
+pub fn tmux_passthrough_escape(payload: &str) -> String {
+    if payload.is_empty() {
+        return String::new();
+    }
+    format!("\x1bPtmux;{}\x1b\\", payload.replace('\x1b', "\x1b\x1b"))
+}
+
 pub fn kitty_tiled_image_delete_escape(first_image_id: u32, tile_count: u32) -> String {
     (0..tile_count)
         .map(|offset| KittyImageDelete::new(first_image_id + offset).escape())
@@ -185,6 +192,33 @@ mod tests {
         assert!(escape.contains("f=100"));
         assert!(escape.contains(";iVBORw0KGgo="));
         assert!(escape.ends_with("\x1b\\"));
+    }
+
+    #[test]
+    fn tmux_passthrough_wraps_kitty_escapes() {
+        let payload = "\x1b_Ga=T,f=100,m=0;abc\x1b\\";
+        let wrapped = tmux_passthrough_escape(payload);
+
+        assert_eq!(
+            wrapped,
+            "\x1bPtmux;\x1b\x1b_Ga=T,f=100,m=0;abc\x1b\x1b\\\x1b\\"
+        );
+    }
+
+    #[test]
+    fn tmux_passthrough_wraps_chunked_kitty_payloads() {
+        let payload = "\x1b_Ga=T,m=1;abc\x1b\\\x1b_Gm=0;def\x1b\\";
+        let wrapped = tmux_passthrough_escape(payload);
+
+        assert!(wrapped.starts_with("\x1bPtmux;"));
+        assert!(wrapped.ends_with("\x1b\\"));
+        assert_eq!(wrapped.matches("\x1b\x1b_G").count(), 2);
+        assert_eq!(wrapped.matches("\x1bPtmux;").count(), 1);
+    }
+
+    #[test]
+    fn tmux_passthrough_preserves_empty_payloads() {
+        assert_eq!(tmux_passthrough_escape(""), "");
     }
 
     #[test]

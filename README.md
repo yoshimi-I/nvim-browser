@@ -107,6 +107,12 @@ set -g allow-passthrough on
 `:NBrowserDoctor` reports `ok: tmux allow-passthrough=on` or warns when the
 setting is disabled or cannot be probed.
 
+When `TMUX` is present, standalone image output such as
+`nvbrowser show-image --output kitty` wraps Kitty escapes in tmux passthrough
+from Rust. Neovim browser sessions keep browser payloads as raw Kitty graphics
+and apply tmux passthrough only at the Lua terminal egress boundary, so the
+preview is wrapped exactly once.
+
 If your terminal font cell size makes browser previews look stretched or click
 targets feel offset, tune the viewport cell pixels:
 

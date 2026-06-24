@@ -360,7 +360,7 @@ local function kitty_cleanup_escape()
 end
 
 local function terminal_escape(payload)
-  if vim.env.TMUX == nil or payload == nil or payload == "" then
+  if vim.env.TMUX == nil or vim.env.TMUX == "" or payload == nil or payload == "" then
     return payload
   end
 
@@ -3549,6 +3549,7 @@ M._test = {
     clear_in_flight_capture()
   end,
   kitty_cleanup_escape = kitty_cleanup_escape,
+  terminal_escape = terminal_escape,
   set_last_find_found = function(value)
     state.last_find_found = value
   end,

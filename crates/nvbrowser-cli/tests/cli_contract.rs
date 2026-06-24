@@ -65,6 +65,7 @@ fn show_image_outputs_kitty_escape() {
     let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
 
     command
+        .env_remove("TMUX")
         .arg("show-image")
         .arg(image_path)
         .assert()
@@ -76,6 +77,45 @@ fn show_image_outputs_kitty_escape() {
 }
 
 #[test]
+fn show_image_wraps_kitty_escape_for_tmux_passthrough() {
+    let directory = tempdir().expect("tempdir should be created");
+    let image_path = directory.path().join("pixel.png");
+    std::fs::write(&image_path, tiny_png()).expect("image fixture should be written");
+
+    let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+    command
+        .env("TMUX", "/tmp/tmux-501/default,123,0")
+        .arg("show-image")
+        .arg(image_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("\x1bPtmux;\x1b\x1b_G"))
+        .stdout(predicate::str::contains("\x1b\x1b\\"))
+        .stdout(predicate::str::ends_with("\x1b\\"));
+}
+
+#[test]
+fn show_image_does_not_wrap_ansi_for_tmux() {
+    let directory = tempdir().expect("tempdir should be created");
+    let image_path = directory.path().join("pixel.png");
+    std::fs::write(&image_path, tiny_png()).expect("image fixture should be written");
+
+    let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+    command
+        .env("TMUX", "/tmp/tmux-501/default,123,0")
+        .arg("show-image")
+        .arg(image_path)
+        .args(["--output", "ansi", "--columns", "1"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\x1b[38;2;"))
+        .stdout(predicate::str::contains("▀"))
+        .stdout(predicate::str::contains("\x1bPtmux;").not());
+}
+
+#[test]
 fn show_image_can_fit_to_kitty_placement() {
     let directory = tempdir().expect("tempdir should be created");
     let image_path = directory.path().join("pixel.png");
@@ -84,6 +124,7 @@ fn show_image_can_fit_to_kitty_placement() {
     let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
 
     command
+        .env_remove("TMUX")
         .arg("show-image")
         .arg(image_path)
         .args([

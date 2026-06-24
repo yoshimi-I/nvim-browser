@@ -37,6 +37,9 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   need passthrough-capable tmux configuration for high-fidelity graphics.
   Doctor probes `tmux show -gqv allow-passthrough` and reports `ok` for `on`
   or `all`; other values warn with the required `set -g allow-passthrough on`.
+  Standalone image CLI output is wrapped in Rust, while browser `browse` and
+  `serve` payloads stay raw and are wrapped exactly once by Lua at terminal
+  egress when they run through the plugin.
 - Unknown terminals should use ANSI in auto mode rather than assuming Kitty
   support.
 - ANSI output is a compatibility fallback, not the end-state browser quality.

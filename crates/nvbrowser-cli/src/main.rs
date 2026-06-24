@@ -12,10 +12,10 @@ use nvbrowser_core::{
     inspect_target, kitty_image_escape, kitty_tiled_image_delete_escape,
     render_markdown_document_with_base_url,
     renderer::chromium::{render_url_png, ChromiumOptions},
-    BrowserSession, ChromiumRenderer, ClickHintRequest, ClickPointRequest, DownloadInfo,
-    DownloadStatus, DragPointRequest, ElementHint, ElementHintsRequest, FindTextRequest,
-    FocusHintRequest, FocusSelectorRequest, FocusedElement, FocusedElementRequest, FrameArtifact,
-    HistoryNavigationRequest, HoverHintRequest, HoverPointRequest, KeyPressRequest,
+    tmux_passthrough_escape, BrowserSession, ChromiumRenderer, ClickHintRequest, ClickPointRequest,
+    DownloadInfo, DownloadStatus, DragPointRequest, ElementHint, ElementHintsRequest,
+    FindTextRequest, FocusHintRequest, FocusSelectorRequest, FocusedElement, FocusedElementRequest,
+    FrameArtifact, HistoryNavigationRequest, HoverHintRequest, HoverPointRequest, KeyPressRequest,
     KittyImageDelete, KittyImageTransfer, NavigateRequest, PageMetadataRequest, PageMetrics,
     PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest, RenderFrameRequest,
     RenderedFrame, Renderer, RendererError, RendererErrorKind, RightClickHintRequest,
@@ -178,15 +178,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let mut png = Cursor::new(Vec::new());
                     image.write_to(&mut png, ImageFormat::Png)?;
                     let encoded = general_purpose::STANDARD.encode(png.into_inner());
-                    if let Some(rows) = rows {
+                    let payload = if let Some(rows) = rows {
                         let (width_px, height_px) = image.dimensions();
-                        print!(
-                            "{}",
-                            kitty_placed_image_escape(encoded, width_px, height_px, columns, rows)
-                        );
+                        kitty_placed_image_escape(encoded, width_px, height_px, columns, rows)
                     } else {
-                        print!("{}", kitty_image_escape(&encoded));
-                    }
+                        kitty_image_escape(&encoded)
+                    };
+                    print!("{}", direct_terminal_payload(output, payload));
                 }
                 ImageOutput::KittyUnicode => {
                     return Err("kitty-unicode output is only supported by browse".into());
@@ -224,17 +222,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?;
             match output {
                 ImageOutput::Kitty => {
-                    print!("{}", frame_to_payload(frame, output, columns, rows)?);
+                    let payload = frame_to_payload(frame, output, columns, rows)?;
+                    print!("{payload}");
                 }
                 ImageOutput::KittyUnicode => {
                     let FrameArtifact::Png(png) = frame.artifact else {
                         return Err("Chromium renderer returned a non-PNG artifact".into());
                     };
                     let encoded = general_purpose::STANDARD.encode(png);
-                    print!(
-                        "{}",
-                        kitty_unicode_browse_escape(encoded, viewport, columns, rows)
-                    );
+                    let payload = kitty_unicode_browse_escape(encoded, viewport, columns, rows);
+                    print!("{payload}");
                 }
                 ImageOutput::Ansi => {
                     let FrameArtifact::Png(png) = frame.artifact else {
@@ -1652,6 +1649,28 @@ fn non_empty_cli_path(value: PathBuf) -> Option<PathBuf> {
     }
 }
 
+fn direct_terminal_payload(output: ImageOutput, payload: String) -> String {
+    direct_terminal_payload_for_tmux(output, payload, tmux_env_present())
+}
+
+fn tmux_env_present() -> bool {
+    std::env::var_os("TMUX").is_some_and(|value| !value.is_empty())
+}
+
+fn direct_terminal_payload_for_tmux(
+    output: ImageOutput,
+    payload: String,
+    tmux_present: bool,
+) -> String {
+    if !matches!(output, ImageOutput::Kitty | ImageOutput::KittyUnicode) {
+        return payload;
+    }
+    if !tmux_present {
+        return payload;
+    }
+    tmux_passthrough_escape(&payload)
+}
+
 fn key_with_modifiers(key: String, modifiers: Vec<String>) -> String {
     let mut prefixes = Vec::new();
     for modifier in modifiers {
@@ -2524,6 +2543,39 @@ mod tests {
             Some(PathBuf::from("/tmp/nvbrowser-downloads"))
         );
         assert_eq!(options.navigation_timeout_ms, 1234);
+    }
+
+    #[test]
+    fn direct_terminal_payload_wraps_kitty_output_under_tmux() {
+        let payload = direct_terminal_payload_for_tmux(
+            ImageOutput::KittyUnicode,
+            "\x1b_Ga=T,m=0;abc\x1b\\".to_string(),
+            true,
+        );
+
+        assert_eq!(payload, "\x1bPtmux;\x1b\x1b_Ga=T,m=0;abc\x1b\x1b\\\x1b\\");
+    }
+
+    #[test]
+    fn direct_terminal_payload_keeps_ansi_raw_under_tmux() {
+        let payload = direct_terminal_payload_for_tmux(
+            ImageOutput::Ansi,
+            "\x1b[38;2;1;2;3m▀".to_string(),
+            true,
+        );
+
+        assert_eq!(payload, "\x1b[38;2;1;2;3m▀");
+    }
+
+    #[test]
+    fn direct_terminal_payload_keeps_kitty_raw_outside_tmux() {
+        let payload = direct_terminal_payload_for_tmux(
+            ImageOutput::Kitty,
+            "\x1b_Ga=T,m=0;abc\x1b\\".to_string(),
+            false,
+        );
+
+        assert_eq!(payload, "\x1b_Ga=T,m=0;abc\x1b\\");
     }
 
     #[test]
