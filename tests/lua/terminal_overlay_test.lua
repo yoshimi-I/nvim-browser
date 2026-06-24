@@ -3392,6 +3392,64 @@ assert(vim.wait(1000, function()
 end), "serve hint response should restore current URL after missing URL checks")
 vim.fn.setreg("b", saved_register_b)
 
+_G.nvim_browser_target_blank_hints_response = vim.json.decode(hints_response)
+_G.nvim_browser_target_blank_hints_response.id = 9000
+_G.nvim_browser_target_blank_hints_response.hints[1].target = "_blank"
+terminal._test.set_latest_applied_response_id(_G.nvim_browser_target_blank_hints_response.id - 1)
+serve_stdout(nil, { vim.json.encode(_G.nvim_browser_target_blank_hints_response), "" })
+assert(vim.wait(1000, function()
+  local state = terminal.state()
+  return #state.element_hints == 2
+    and state.current_url == "https://example.com"
+    and state.element_hints[1].target == "_blank"
+end), "serve hint response should repopulate target blank link hints")
+assert(
+  terminal.state().element_hints[1].target == "_blank",
+  "target blank hint metadata should be preserved in Neovim state"
+)
+sent_requests = {}
+assert(terminal.click_hint("a") == true, "target blank link hint clicks should navigate by href")
+_G.nvim_browser_target_blank_navigate = last_request_of_type("navigate")
+assert(
+  _G.nvim_browser_target_blank_navigate ~= nil
+    and _G.nvim_browser_target_blank_navigate.url == "https://example.com/docs",
+  "target blank link hint clicks should send direct href navigation"
+)
+assert(last_request_of_type("click_hint") == nil, "target blank link hint clicks should not send backend hint ids")
+terminal._test.set_pending_operation(nil)
+
+terminal._test.set_element_hints({
+  vim.tbl_extend("force", {}, terminal.state().element_hints[1], { target = "_self" }),
+  terminal.state().element_hints[2],
+}, terminal.state().current_preview_geometry)
+sent_requests = {}
+assert(terminal.click_hint("a") == true, "non-blank link hint clicks should use backend hint clicks")
+assert(last_request_of_type("click_hint") ~= nil, "non-blank link hint clicks should send backend hint ids")
+assert(last_request_of_type("navigate") == nil, "non-blank link hint clicks should not directly navigate")
+terminal._test.set_pending_operation(nil)
+
+_G.nvim_browser_no_target_hint = vim.tbl_extend("force", {}, terminal.state().element_hints[1])
+_G.nvim_browser_no_target_hint.target = nil
+terminal._test.set_element_hints({
+  _G.nvim_browser_no_target_hint,
+  terminal.state().element_hints[2],
+}, terminal.state().current_preview_geometry)
+sent_requests = {}
+assert(terminal.click_hint("a") == true, "link hint clicks without target should use backend hint clicks")
+assert(last_request_of_type("click_hint") ~= nil, "link hint clicks without target should send backend hint ids")
+assert(last_request_of_type("navigate") == nil, "link hint clicks without target should not directly navigate")
+terminal._test.set_pending_operation(nil)
+
+terminal._test.set_element_hints({
+  vim.tbl_extend("force", {}, terminal.state().element_hints[1], { target = "_blank" }),
+  terminal.state().element_hints[2],
+}, terminal.state().current_preview_geometry)
+sent_requests = {}
+assert(terminal.right_click_hint("a") == true, "target blank right-click hints should still use backend right clicks")
+assert(last_request_of_type("right_click_hint") ~= nil, "target blank right-click hints should send backend hint ids")
+assert(last_request_of_type("navigate") == nil, "target blank right-click hints should not directly navigate")
+terminal._test.set_pending_operation(nil)
+
 sent_requests = {}
 assert(terminal.follow_hint("a") == true, "follow_hint should navigate link hints by href")
 local link_navigate_seen = false

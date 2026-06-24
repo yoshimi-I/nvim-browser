@@ -164,9 +164,10 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Hint clicks on `a[target=_blank][href]` should follow the direct `href` in the
   current preview. Native popup-opening pointer events can close the old CDP
   target before adoption, so direct href navigation is the stable single-preview
-  behavior. This intentionally skips page pointer/click handlers for that link
-  class; keep separate `window.open` and delayed `about:blank` E2E coverage for
-  real child target adoption.
+  behavior. Lua uses Chromium-provided hint `target` metadata for this path.
+  This intentionally skips page pointer/click handlers for that link class; keep
+  separate `window.open` and delayed `about:blank` E2E coverage for real child
+  target adoption.
 - File uploads must validate local paths before invoking CDP. Real Chromium E2E
   should cover file inputs because DOM-only JS cannot set true local upload
   files.

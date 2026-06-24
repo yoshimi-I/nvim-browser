@@ -421,9 +421,11 @@ Hint discovery covers the top document, open shadow roots, and same-origin
 iframes. Closed shadow roots and cross-origin iframe DOMs are intentionally not
 inspected.
 `:NBrowserClickHint {id-or-label}` clicks the backend hint id without relying
-on viewport coordinates. `:NBrowserRightClickHint {id-or-label}` dispatches a
-native right-click at the hinted element. `:NBrowserHoverHint {id-or-label}`
-moves to the matching element coordinates.
+on viewport coordinates. For link hints with `target="_blank"` and an `href`,
+it follows the `href` in the current preview instead of opening a popup target.
+`:NBrowserRightClickHint {id-or-label}` dispatches a native right-click at the
+hinted element. `:NBrowserHoverHint {id-or-label}` moves to the matching
+element coordinates.
 `:NBrowserFollowHint {label}` uses a link hint's `href` directly when
 available, which avoids coordinate-click drift and keeps the active browser
 session on the navigated URL; non-link hints fall back to backend hint clicks.

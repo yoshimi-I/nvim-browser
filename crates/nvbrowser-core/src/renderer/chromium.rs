@@ -1556,6 +1556,12 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
       return raw.trim();
     }
   };
+  const targetFor = (element) => {
+    if (element.tagName.toLowerCase() !== 'a') return null;
+    const target = element.getAttribute('target');
+    if (typeof target !== 'string' || target.trim().length === 0) return null;
+    return target.trim();
+  };
   const isFocusable = (element) => {
     const tag = element.tagName.toLowerCase();
     return ['input', 'textarea', 'select', 'button', 'a'].includes(tag)
@@ -1699,6 +1705,7 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
         kind: kindFor(element),
         label: labelFor(element),
         href: hrefFor(element),
+        target: targetFor(element),
         checked: checkedFor(element),
         options: optionsFor(element),
         x,
@@ -3853,6 +3860,9 @@ mod tests {
         assert!(ELEMENT_HINTS_SCRIPT.contains("translateRectToViewport"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("clientLeft"));
         assert!(ELEMENT_HINTS_SCRIPT.contains("labelScope.getElementById(id)"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("const targetFor = (element)"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("element.tagName.toLowerCase() !== 'a'"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("target: targetFor(element)"));
         assert!(
             ELEMENT_HINTS_SCRIPT.contains("registry.elements.set(id, { element, frameElements })")
         );

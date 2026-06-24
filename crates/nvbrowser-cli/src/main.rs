@@ -3182,6 +3182,7 @@ mod tests {
                 kind: ElementHintKind::Link,
                 label: "Docs".to_string(),
                 href: Some("https://example.com/docs".to_string()),
+                target: Some("_blank".to_string()),
                 checked: None,
                 options: Vec::new(),
                 x: 120.5,
@@ -3203,7 +3204,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":8,"status":"ok","payload":"frame","url":"https://example.com","title":"Example Domain","hints":[{"id":1,"kind":"link","label":"Docs","href":"https://example.com/docs","x":120.5,"y":240.0,"width":80.0,"height":24.0,"clickable":true,"focusable":false}]}"#
+            r#"{"id":8,"status":"ok","payload":"frame","url":"https://example.com","title":"Example Domain","hints":[{"id":1,"kind":"link","label":"Docs","href":"https://example.com/docs","target":"_blank","x":120.5,"y":240.0,"width":80.0,"height":24.0,"clickable":true,"focusable":false}]}"#
         );
     }
 
@@ -3866,6 +3867,7 @@ mod tests {
                 kind: ElementHintKind::Button,
                 label: "Search".to_string(),
                 href: None,
+                target: None,
                 checked: None,
                 options: Vec::new(),
                 x: 50.0,
@@ -3880,6 +3882,7 @@ mod tests {
                 kind: ElementHintKind::Select,
                 label: "Country".to_string(),
                 href: None,
+                target: None,
                 checked: None,
                 options: vec![
                     SelectOptionHint {

@@ -3788,6 +3788,14 @@ local function send_right_click_hint_request(hint)
   }, state.current_url or state.last_target or "right-click", "right-click")
 end
 
+local function hint_opens_new_target(hint)
+  return hint ~= nil and hint.target ~= nil and tostring(hint.target):lower() == "_blank"
+end
+
+local function hint_has_href(hint)
+  return hint ~= nil and hint.href ~= nil and hint.href ~= vim.NIL and hint.href ~= ""
+end
+
 local function rendered_frame_dom_epoch_is_current()
   if state.dom_epoch == nil or state.rendered_frame_dom_epoch == nil then
     return true
@@ -3809,6 +3817,9 @@ function M.click_hint(id)
   end
   local hint = find_hint(state.element_hints, id)
   if hint ~= nil then
+    if hint.kind == "link" and hint_has_href(hint) and hint_opens_new_target(hint) then
+      return M.navigate(hint.href)
+    end
     return send_click_hint_request(hint)
   end
   return false

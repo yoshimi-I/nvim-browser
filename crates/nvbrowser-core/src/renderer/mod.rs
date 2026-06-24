@@ -825,6 +825,8 @@ pub struct ElementHint {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub href: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checked: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<SelectOptionHint>,
@@ -1486,6 +1488,7 @@ mod tests {
             kind: ElementHintKind::Link,
             label: "Docs".to_string(),
             href: Some("https://example.com/docs".to_string()),
+            target: Some("_blank".to_string()),
             checked: None,
             options: Vec::new(),
             x: 120.5,
@@ -1503,6 +1506,7 @@ mod tests {
             kind: ElementHintKind::Checkbox,
             label: "Subscribe".to_string(),
             href: None,
+            target: None,
             checked: Some(true),
             options: Vec::new(),
             x: 10.0,
@@ -1518,12 +1522,14 @@ mod tests {
         assert!(checkbox_json.contains(r#""checked":true"#));
         assert!(json.contains(r#""label":"Docs""#));
         assert!(json.contains(r#""href":"https://example.com/docs""#));
+        assert!(json.contains(r#""target":"_blank""#));
 
         let select = ElementHint {
             id: 3,
             kind: ElementHintKind::Select,
             label: "Country".to_string(),
             href: None,
+            target: None,
             checked: None,
             options: vec![
                 SelectOptionHint {
@@ -1562,6 +1568,7 @@ mod tests {
             kind: ElementHintKind::File,
             label: "Avatar".to_string(),
             href: None,
+            target: None,
             checked: None,
             options: Vec::new(),
             x: 40.0,
@@ -1584,6 +1591,7 @@ mod tests {
 
         assert_eq!(hint.label, "Docs");
         assert_eq!(hint.href, None);
+        assert_eq!(hint.target, None);
     }
 
     #[test]
