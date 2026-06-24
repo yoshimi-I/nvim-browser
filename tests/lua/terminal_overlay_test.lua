@@ -1234,6 +1234,20 @@ assert(
   terminal.state().pending_operation == nil,
   "screenshot should not replace the active preview or mark a pending browser load"
 )
+screenshot_response_seen = false
+assert(terminal.screenshot("/tmp/page-2.png", {
+  on_response = function(response)
+    screenshot_response_seen = response.status == "ok"
+  end,
+}) == true, "screenshot should allow callers to observe the backend response")
+screenshot_request = last_request_of_type("screenshot")
+serve_stdout(nil, { vim.json.encode({
+  id = screenshot_request.id,
+  status = "ok",
+}), "" })
+assert(vim.wait(1000, function()
+  return screenshot_response_seen
+end), "screenshot response handlers should run after backend success")
 
 local original_job_id_for_screenshot = terminal.state().job_id
 terminal._test.set_job_id(nil)

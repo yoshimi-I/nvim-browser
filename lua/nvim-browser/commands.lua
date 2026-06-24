@@ -338,9 +338,20 @@ function M.register(browser, opts)
   })
 
   vim.api.nvim_create_user_command("NBrowserScreenshot", function(opts)
-    if opts.args == nil or opts.args == "" or not browser.screenshot(opts.args) then
+    local path = opts.args ~= nil and opts.args ~= "" and opts.args or nil
+    local saved_path = nil
+    local ok, result_path = browser.screenshot(path, {
+      on_response = function(response)
+        if type(response) == "table" and response.status == "ok" then
+          vim.api.nvim_echo({ { "nvim-browser: screenshot saved: " .. tostring(saved_path) } }, false, {})
+        end
+      end,
+    })
+    if ok ~= true then
       warn_screenshot_unavailable()
+      return
     end
+    saved_path = result_path
   end, {
     nargs = "?",
     complete = "file",

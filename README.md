@@ -398,8 +398,9 @@ and writes it into a Neovim register, defaulting to the unnamed register.
 `:NBrowserYankUrl [register]` writes the active browser page URL into a Neovim
 register without recapturing the page. `:NBrowserYankHintUrl {id-or-label}
 [register]` writes a hinted link destination from the latest frame.
-`:NBrowserScreenshot {path}` captures the active browser session viewport to a
-PNG file without replacing the Neovim preview frame.
+`:NBrowserScreenshot [path]` captures the active browser session viewport to a
+PNG file without replacing the Neovim preview frame. Without a path, it writes a
+timestamped PNG under Neovim's cache directory.
 `:NBrowserTextMode` enters an interactive browser text mode for the focused
 preview: printable keys are sent as text, `<CR>`, `<Tab>`, `<S-Tab>`, `<BS>`,
 Delete, and arrow keys are forwarded as browser keys, and `<Esc>` exits the text

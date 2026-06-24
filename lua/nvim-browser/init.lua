@@ -250,11 +250,58 @@ function M.yank_hint_url(id, register)
   return terminal.yank_hint_url(id, register or '"')
 end
 
-function M.screenshot(path)
-  if path == nil or path == "" then
-    return false
+local function screenshot_slug(value)
+  value = value ~= nil and tostring(value) or ""
+  value = value:gsub("^%s+", ""):gsub("%s+$", "")
+  value = value:gsub("[^%w%-_%.]+", "-")
+  value = value:gsub("%-+", "-")
+  value = value:gsub("^%-+", ""):gsub("%-+$", "")
+  if value == "" then
+    return "browser"
   end
-  return terminal.screenshot(path)
+  return value:sub(1, 80)
+end
+
+local screenshot_name_sequences = {}
+
+local function screenshot_default_path(opts)
+  opts = opts or {}
+  local stdpath = opts.stdpath or vim.fn.stdpath
+  local timestamp = opts.timestamp or function()
+    return os.date("%Y%m%d-%H%M%S")
+  end
+  local base = stdpath("cache") .. "/nvim-browser/screenshots"
+  local title = M.current_title()
+  local url = M.current_url()
+  local name_source = title ~= nil and title ~= "" and title or url ~= nil and url ~= "" and url or "browser"
+  local name_key = screenshot_slug(name_source) .. "-" .. timestamp()
+  local screenshot_name_sequence = (screenshot_name_sequences[name_key] or 0) + 1
+  screenshot_name_sequences[name_key] = screenshot_name_sequence
+  local suffix = screenshot_name_sequence > 1 and "-" .. tostring(screenshot_name_sequence) or ""
+  return base .. "/" .. name_key .. suffix .. ".png"
+end
+
+local function screenshot_prepare_directory(path, opts)
+  opts = opts or {}
+  local mkdir = opts.mkdir or vim.fn.mkdir
+  local directory = vim.fn.fnamemodify(path, ":h")
+  if directory == nil or directory == "" or directory == "." then
+    return true
+  end
+  local ok, result = pcall(mkdir, directory, "p")
+  return ok and result ~= 0
+end
+
+function M.screenshot(path, opts)
+  opts = opts or {}
+  if path == "" then
+    return false, nil
+  end
+  path = path or screenshot_default_path(opts)
+  if not screenshot_prepare_directory(path, opts) then
+    return false, path
+  end
+  return terminal.screenshot(path, opts) == true, path
 end
 
 function M.input_text_mode(input)

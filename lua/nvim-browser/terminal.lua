@@ -2202,14 +2202,15 @@ function M.yank_current_url(register)
   return set_register(register, state.current_url)
 end
 
-function M.screenshot(path)
+function M.screenshot(path, opts)
+  opts = opts or {}
   if path == nil or path == "" then
     return false
   end
   return send_serve_request({
     type = "screenshot",
     path = vim.fn.fnamemodify(tostring(path), ":p"),
-  })
+  }, opts.on_response)
 end
 
 function M.reader_follow()

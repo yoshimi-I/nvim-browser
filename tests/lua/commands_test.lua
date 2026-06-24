@@ -27,6 +27,7 @@ local yanked_register = nil
 local yanked_current_url_register = nil
 local yanked_hint_url = nil
 local screenshot_path = nil
+local screenshot_on_response = nil
 local pressed_key = nil
 local text_mode_called = false
 local doctor_called = false
@@ -139,12 +140,13 @@ local browser = {
     yanked_hint_url = { identifier = identifier, register = register or '"' }
     return true
   end,
-  screenshot = function(path)
-    if path == "" or path == "/tmp/fail.png" then
-      return false
+  screenshot = function(path, opts)
+    if path == "/tmp/fail.png" then
+      return false, path
     end
-    screenshot_path = path
-    return true
+    screenshot_path = path or "/tmp/generated.png"
+    screenshot_on_response = opts and opts.on_response or nil
+    return true, screenshot_path
   end,
   press_key = function(key, opts)
     pressed_key = { key = key, modifiers = opts and opts.modifiers or {} }
@@ -761,16 +763,24 @@ vim.cmd("NBrowserYankHintUrl a ab")
 assert(warnings[#warnings] == "nvim-browser: hint URL not found, stale, non-link, or register is invalid", "NBrowserYankHintUrl should warn on invalid register names")
 
 screenshot_path = nil
+echoed = nil
 vim.cmd("NBrowserScreenshot /tmp/page.png")
 assert(screenshot_path == "/tmp/page.png", "NBrowserScreenshot should pass the target path")
+assert(echoed == nil, "NBrowserScreenshot should wait for the backend response before echoing success")
+screenshot_on_response({ status = "ok" })
+assert(echoed == "nvim-browser: screenshot saved: /tmp/page.png", "NBrowserScreenshot should echo the saved path")
 
 screenshot_path = nil
+echoed = nil
 vim.cmd("NBrowserScreenshot")
-assert(warnings[#warnings] == "nvim-browser: browser screenshot failed, missing path, or browser session is inactive", "NBrowserScreenshot should warn without a path")
-assert(screenshot_path == nil, "NBrowserScreenshot should not save without a path")
+assert(screenshot_path == "/tmp/generated.png", "NBrowserScreenshot without args should use a generated path")
+screenshot_on_response({ status = "ok" })
+assert(echoed == "nvim-browser: screenshot saved: /tmp/generated.png", "NBrowserScreenshot without args should echo the generated path")
 
+echoed = nil
 vim.cmd("NBrowserScreenshot /tmp/fail.png")
 assert(warnings[#warnings] == "nvim-browser: browser screenshot failed, missing path, or browser session is inactive", "NBrowserScreenshot should warn on save failure")
+assert(not echoed:match("^nvim%-browser: screenshot saved:"), "failed NBrowserScreenshot should not echo success")
 
 vim.cmd("NBrowserKey Enter")
 assert(pressed_key.key == "Enter", "NBrowserKey should pass a key to browser.press_key")

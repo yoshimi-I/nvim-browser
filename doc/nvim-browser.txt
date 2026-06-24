@@ -230,9 +230,10 @@ COMMANDS                                           *nvim-browser-commands*
 	register. Defaults to the unnamed register.
 
 							*:NBrowserScreenshot*
-:NBrowserScreenshot {path}
+:NBrowserScreenshot [path]
 	Capture the active browser session viewport to a PNG file without replacing
-	the current Neovim preview frame.
+	the current Neovim preview frame. Without a path, write a timestamped PNG
+	under Neovim's cache directory.
 
 							*:NBrowserKey*
 :NBrowserKey {key} [modifier ...]

@@ -838,9 +838,140 @@ terminal.screenshot = function(path)
   screenshot_path = path
   return true
 end
-assert(browser.screenshot("/tmp/page.png") == true, "screenshot should delegate to terminal")
+local explicit_screenshot_ok, explicit_screenshot_path = browser.screenshot("/tmp/page.png")
+assert(explicit_screenshot_ok == true, "screenshot should delegate to terminal")
+assert(explicit_screenshot_path == "/tmp/page.png", "screenshot should return the explicit target path")
 assert(screenshot_path == "/tmp/page.png", "screenshot should pass the target path")
-assert(browser.screenshot("") == false, "screenshot should reject an empty path")
+local empty_screenshot_ok = browser.screenshot("")
+assert(empty_screenshot_ok == false, "screenshot should reject an empty path")
+
+local original_current_title = browser.current_title
+local original_current_url = browser.current_url
+browser.current_title = function()
+  return "Example: Docs/Guide"
+end
+browser.current_url = function()
+  return "https://example.com/docs"
+end
+screenshot_path = nil
+local mkdir_calls = {}
+local generated_screenshot_ok, generated_screenshot_path = browser.screenshot(nil, {
+  stdpath = function(kind)
+    assert(kind == "cache", "screenshot should use stdpath('cache')")
+    return "/tmp/nvim-cache"
+  end,
+  mkdir = function(path, mode)
+    table.insert(mkdir_calls, { path = path, mode = mode })
+    return 1
+  end,
+  timestamp = function()
+    return "20260624-120000"
+  end,
+})
+assert(generated_screenshot_ok == true, "screenshot should save to a generated path when no path is provided")
+assert(
+  generated_screenshot_path == "/tmp/nvim-cache/nvim-browser/screenshots/Example-Docs-Guide-20260624-120000.png",
+  "generated screenshot path should include sanitized page title and timestamp"
+)
+assert(screenshot_path == generated_screenshot_path, "generated screenshot path should be sent to terminal")
+assert(mkdir_calls[1].path == "/tmp/nvim-cache/nvim-browser/screenshots", "screenshot should create the screenshot directory")
+assert(mkdir_calls[1].mode == "p", "screenshot should create parent directories")
+
+local _, second_generated_screenshot_path = browser.screenshot(nil, {
+  stdpath = function()
+    return "/tmp/nvim-cache"
+  end,
+  mkdir = function()
+    return 1
+  end,
+  timestamp = function()
+    return "20260624-120000"
+  end,
+})
+assert(
+  second_generated_screenshot_path == "/tmp/nvim-cache/nvim-browser/screenshots/Example-Docs-Guide-20260624-120000-2.png",
+  "generated screenshot paths should avoid overwriting another screenshot from the same page and second"
+)
+
+browser.current_title = function()
+  return "Other Page"
+end
+local _, other_generated_screenshot_path = browser.screenshot(nil, {
+  stdpath = function()
+    return "/tmp/nvim-cache"
+  end,
+  mkdir = function()
+    return 1
+  end,
+  timestamp = function()
+    return "20260624-120000"
+  end,
+})
+assert(
+  other_generated_screenshot_path == "/tmp/nvim-cache/nvim-browser/screenshots/Other-Page-20260624-120000.png",
+  "generated screenshot paths should not share sequence counters across pages"
+)
+browser.current_title = function()
+  return "Example: Docs/Guide"
+end
+local _, third_generated_screenshot_path = browser.screenshot(nil, {
+  stdpath = function()
+    return "/tmp/nvim-cache"
+  end,
+  mkdir = function()
+    return 1
+  end,
+  timestamp = function()
+    return "20260624-120000"
+  end,
+})
+assert(
+  third_generated_screenshot_path == "/tmp/nvim-cache/nvim-browser/screenshots/Example-Docs-Guide-20260624-120000-3.png",
+  "generated screenshot paths should avoid overwriting non-consecutive captures from the same page and second"
+)
+
+browser.current_title = function()
+  return ""
+end
+browser.current_url = function()
+  return "https://example.com/docs/intro?q=1"
+end
+screenshot_path = nil
+local url_named_screenshot_ok, url_named_screenshot_path = browser.screenshot(nil, {
+  stdpath = function()
+    return "/tmp/nvim-cache"
+  end,
+  mkdir = function()
+    return 1
+  end,
+  timestamp = function()
+    return "20260624-120002"
+  end,
+})
+assert(url_named_screenshot_ok == true, "screenshot should fall back to the URL when the title is empty")
+assert(
+  url_named_screenshot_path == "/tmp/nvim-cache/nvim-browser/screenshots/https-example.com-docs-intro-q-1-20260624-120002.png",
+  "generated screenshot path should include sanitized URL when title is empty"
+)
+
+terminal.screenshot = function()
+  return false
+end
+local failed_generated_screenshot_ok, failed_generated_screenshot_path = browser.screenshot(nil, {
+  stdpath = function()
+    return "/tmp/nvim-cache"
+  end,
+  mkdir = function()
+    return 1
+  end,
+  timestamp = function()
+    return "20260624-120001"
+  end,
+})
+assert(failed_generated_screenshot_ok == false, "screenshot should report terminal failures")
+assert(failed_generated_screenshot_path:match("%.png$"), "failed generated screenshots should still return the attempted path")
+browser.current_title = original_current_title
+browser.current_url = original_current_url
 
 local text_mode_opts = nil
 terminal.start_text_mode = function(opts)

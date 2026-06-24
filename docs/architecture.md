@@ -66,9 +66,9 @@ browser frames into stable row-major image tiles. Tile payloads clear the full
 stable tile ID range before reusing IDs so frame replacement is deterministic
 when a large capture is followed by a smaller one.
 
-The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 13
-adds native browser right-click requests (`right_click_point` and
-`right_click_hint`) alongside the existing click, hover, wheel, focus, and hint
+The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 14
+adds active-session screenshot export (`screenshot`) alongside click,
+right-click, hover, wheel, focus, form, text, key, reader, selection, and hint
 actions. Most browser actions default to returning a fresh frame payload after
 applying the action. Text input and key press requests also accept
 `capture = false`; that quiet path applies the CDP input and settles browser
