@@ -57,6 +57,50 @@ fn render_md_outputs_html_document() {
 }
 
 #[test]
+fn render_md_outputs_mermaid_diagrams_when_needed() {
+    let directory = tempdir().expect("tempdir should be created");
+    let markdown_path = directory.path().join("README.md");
+    std::fs::write(
+        &markdown_path,
+        r#"# Diagram
+
+```mermaid
+graph TD
+  A["<start> & go"] --> B{"done?"}
+```
+
+```text
+not a diagram
+```
+"#,
+    )
+    .expect("markdown fixture should be written");
+
+    let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+    command
+        .arg("render-md")
+        .arg(markdown_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#"<pre class="mermaid">"#))
+        .stdout(predicate::str::contains(
+            r#"A[&quot;&lt;start&gt; &amp; go&quot;] --&gt; B{&quot;done?&quot;}"#,
+        ))
+        .stdout(predicate::str::contains(
+            "https://cdn.jsdelivr.net/npm/mermaid@10.9.3/",
+        ))
+        .stdout(predicate::str::contains(
+            r#"data-nvbrowser-mermaid="pending""#,
+        ))
+        .stdout(predicate::str::contains("mermaid.initialize"))
+        .stdout(predicate::str::contains("mermaid.run"))
+        .stdout(predicate::str::contains(
+            r#"<code class="language-text">not a diagram"#,
+        ));
+}
+
+#[test]
 fn show_image_outputs_kitty_escape() {
     let directory = tempdir().expect("tempdir should be created");
     let image_path = directory.path().join("pixel.png");
@@ -2263,6 +2307,82 @@ fn opt_in_e2e_serve_loop_renders_local_pdf() {
     assert_ne!(
         initial_payload, blank_payload,
         "PDF fixture text should visibly affect the captured frame payload"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 2, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
+#[test]
+fn opt_in_e2e_serve_markdown_renders_mermaid_before_capture() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let markdown_path = directory.path().join("diagram.md");
+    std::fs::write(
+        &markdown_path,
+        r#"# Mermaid Fixture
+
+```mermaid
+graph TD
+  A[Start] --> B[Done]
+```
+"#,
+    )
+    .expect("markdown fixture should be written");
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--markdown",
+        ])
+        .arg(&markdown_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(
+        initial["status"], "ok",
+        "Mermaid Markdown should render through the real Chromium serve pipeline; response={initial:?}"
+    );
+    assert!(
+        initial["payload"]
+            .as_str()
+            .is_some_and(|payload| payload.contains("\u{1b}[")),
+        "Mermaid Markdown response should include an ANSI frame payload"
+    );
+    let page_text = serve.request(serde_json::json!({ "id": 1, "type": "page_text" }));
+    let text = page_text["text"]["text"]
+        .as_str()
+        .expect("page_text should include visible Markdown text after Mermaid rendering");
+    assert!(
+        text.contains("Mermaid Fixture") && text.contains("Start") && text.contains("Done"),
+        "rendered Mermaid SVG should expose diagram labels as visible text; response={page_text:?}"
+    );
+    assert!(
+        !text.contains("graph TD") && !text.contains("-->"),
+        "rendered Mermaid SVG should replace the raw fence source before capture; response={page_text:?}"
     );
 
     let quit = serve.request(serde_json::json!({ "id": 2, "type": "quit" }));

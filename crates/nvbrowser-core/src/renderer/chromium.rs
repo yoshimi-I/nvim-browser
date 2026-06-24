@@ -222,6 +222,7 @@ pub fn render_url_png(
     tab.navigate_to(url)
         .map_err(|error| navigation_start_error(url, error))?;
     wait_until_navigated(&tab, url, options.navigation_timeout_ms)?;
+    wait_for_markdown_scripts_settle(&tab)?;
     let png = tab
         .capture_screenshot(
             CaptureScreenshotFormatOption::Png,
@@ -351,6 +352,7 @@ impl Renderer for ChromiumRenderer {
             .navigate_to(&request.url)
             .map_err(|error| navigation_start_error(&request.url, error))?;
         wait_until_navigated(&self.tab, &request.url, self.navigation_timeout_ms)?;
+        wait_for_markdown_scripts_settle(&self.tab)?;
         let url = self.tab.get_url();
         let title = self.read_current_title().unwrap_or(None);
         self.current_url = Some(url.clone());
@@ -371,6 +373,7 @@ impl Renderer for ChromiumRenderer {
         self.active_viewport = request.viewport;
         resize_tab(&self.tab, request.viewport)?;
         apply_page_zoom(&self.tab, request.viewport, self.current_zoom_scale)?;
+        wait_for_markdown_scripts_settle(&self.tab)?;
         let png = self
             .tab
             .capture_screenshot(
@@ -435,6 +438,7 @@ impl Renderer for ChromiumRenderer {
             .unwrap_or_else(|| self.tab.get_url());
         self.tab.reload(false, None).map_err(render_error)?;
         wait_until_navigated(&self.tab, &requested_url, self.navigation_timeout_ms)?;
+        wait_for_markdown_scripts_settle(&self.tab)?;
         let url = self.tab.get_url();
         let title = self.read_current_title().unwrap_or(None);
         self.current_url = Some(url.clone());
@@ -1362,6 +1366,7 @@ impl ChromiumRenderer {
             .map_err(render_error)?;
         let url = self.wait_for_current_url(&target_url)?;
         wait_until_navigated(&self.tab, &target_url, self.navigation_timeout_ms)?;
+        wait_for_markdown_scripts_settle(&self.tab)?;
         let title = self.read_current_title().unwrap_or(None);
         self.current_url = Some(url.clone());
         self.current_title = title.clone();
@@ -2216,6 +2221,42 @@ const DOM_QUIET_SCRIPT: &str = r#"
 }))()
 "#;
 
+const MARKDOWN_SCRIPT_SETTLE_SCRIPT: &str = r#"
+(() => new Promise((resolve) => {
+  const maxMs = 2500;
+  const root = document.documentElement;
+  const state = () => root && root.dataset ? root.dataset.nvbrowserMermaid : undefined;
+  if (state() !== 'pending') {
+    resolve(state() || 'none');
+    return;
+  }
+  let observer = null;
+  let timer = null;
+  const finish = (value) => {
+    if (observer !== null) {
+      observer.disconnect();
+    }
+    if (timer !== null) {
+      clearTimeout(timer);
+    }
+    resolve(value);
+  };
+  observer = new MutationObserver(() => {
+    const value = state();
+    if (value === 'ready' || value === 'error') {
+      finish(value);
+    }
+  });
+  observer.observe(root, { attributes: true, attributeFilter: ['data-nvbrowser-mermaid'] });
+  timer = setTimeout(() => {
+    if (state() === 'pending') {
+      root.dataset.nvbrowserMermaid = 'error';
+    }
+    finish(state() || 'timeout');
+  }, maxMs);
+}))()
+"#;
+
 const PAGE_TEXT_SCRIPT: &str = r#"
 (() => {
   const maxLength = 120000;
@@ -2958,6 +2999,12 @@ fn wait_until_navigated(tab: &Tab, url: &str, timeout_ms: u64) -> Result<(), Ren
     tab.wait_until_navigated()
         .map(|_| ())
         .map_err(|error| navigation_timeout_error(url, timeout_ms, error))
+}
+
+fn wait_for_markdown_scripts_settle(tab: &Tab) -> Result<(), RendererError> {
+    tab.evaluate(MARKDOWN_SCRIPT_SETTLE_SCRIPT, true)
+        .map(|_| ())
+        .map_err(render_error)
 }
 
 fn configure_tab_timeout(tab: &Tab, options: &ChromiumOptions) {
@@ -4387,5 +4434,15 @@ mod tests {
         assert!(DOM_QUIET_SCRIPT.contains("quietMs = 120"));
         assert!(DOM_QUIET_SCRIPT.contains("maxMs = 650"));
         assert!(DOM_QUIET_SCRIPT.contains("observer.disconnect()"));
+    }
+
+    #[test]
+    fn markdown_script_settle_waits_for_mermaid_completion_marker() {
+        assert!(MARKDOWN_SCRIPT_SETTLE_SCRIPT.contains("nvbrowserMermaid"));
+        assert!(MARKDOWN_SCRIPT_SETTLE_SCRIPT.contains("pending"));
+        assert!(MARKDOWN_SCRIPT_SETTLE_SCRIPT.contains("ready"));
+        assert!(MARKDOWN_SCRIPT_SETTLE_SCRIPT.contains("error"));
+        assert!(MARKDOWN_SCRIPT_SETTLE_SCRIPT.contains("maxMs = 2500"));
+        assert!(MARKDOWN_SCRIPT_SETTLE_SCRIPT.contains("root.dataset.nvbrowserMermaid = 'error'"));
     }
 }

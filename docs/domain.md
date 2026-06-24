@@ -11,8 +11,9 @@ Headless Chrome renders real pages, CDP drives browser actions, and terminal
 graphics display full-page frames without leaving the editor.
 
 Markdown, HTML/SVG, raster image preview, reader mode, and browser sessions are
-supporting features. They should reinforce the primary goal: a browser that can
-be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
+supporting features. Markdown preview includes Mermaid fenced diagrams. These
+features should reinforce the primary goal: a browser that can be opened,
+viewed, navigated, clicked, searched, and typed into from Neovim.
 
 ## Architecture Principles
 
@@ -85,6 +86,9 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   raster image files use Chrome's built-in file viewers through the
   Chromium/CDP browser session path; nvim-browser does not rasterize PDFs
   itself.
+- Mermaid Markdown diagrams use a pinned `cdn.jsdelivr.net` Mermaid ESM import
+  and therefore require network access only when a Markdown file contains a
+  Mermaid fence.
 - Runs persistent Chromium/CDP browser sessions over a JSONL `serve` protocol.
 - Supports navigation, reload, stop, back/forward, browser-like preview scroll
   motions, repeatable find next/previous, focused input, key presses, selector
