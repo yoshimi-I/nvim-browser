@@ -37,6 +37,7 @@ assert(type(browser.input_text_mode) == "function", "focused input text mode API
 assert(type(browser.paste_register) == "function", "register paste API should exist")
 assert(type(browser.select_region) == "function", "browser region selection API should exist")
 assert(type(browser.yank_selection) == "function", "browser selection yank API should exist")
+assert(type(browser.yank_region) == "function", "browser region yank API should exist")
 assert(type(browser.yank_current_url) == "function", "current URL yank API should exist")
 assert(type(browser.yank_hint_url) == "function", "hint URL yank API should exist")
 assert(type(browser.screenshot) == "function", "active browser screenshot API should exist")
@@ -926,6 +927,7 @@ local original_terminal_start_text_mode = terminal.start_text_mode
 local original_terminal_page_scroll = terminal.page_scroll
 local original_terminal_select_region = terminal.select_region
 local original_terminal_yank_selection = terminal.yank_selection
+local original_terminal_yank_region = terminal.yank_region
 local original_terminal_yank_current_url = terminal.yank_current_url
 local original_terminal_yank_hint_url = terminal.yank_hint_url
 local original_terminal_find_text = terminal.find_text
@@ -1683,6 +1685,23 @@ assert(
   "select_region should pass preview-cell coordinates to terminal"
 )
 
+local yanked_region = nil
+terminal.yank_region = function(register, start_row, start_col, end_row, end_col)
+  yanked_region = { register, start_row, start_col, end_row, end_col }
+  return true
+end
+assert(browser.yank_region(nil, 2, 3, 4, 25) == true, "yank_region should yank into the unnamed register by default")
+assert(
+  table.concat(yanked_region, ",") == '",2,3,4,25',
+  "yank_region should pass unnamed register and preview-cell coordinates to terminal"
+)
+yanked_region = nil
+assert(browser.yank_region("+", 5, 6, 7, 8) == true, "yank_region should yank into an explicit register")
+assert(
+  table.concat(yanked_region, ",") == "+,5,6,7,8",
+  "yank_region should pass explicit register and preview-cell coordinates to terminal"
+)
+
 local screenshot_path = nil
 terminal.screenshot = function(path)
   screenshot_path = path
@@ -2199,6 +2218,7 @@ terminal.start_text_mode = original_terminal_start_text_mode
 terminal.page_scroll = original_terminal_page_scroll
 terminal.select_region = original_terminal_select_region
 terminal.yank_selection = original_terminal_yank_selection
+terminal.yank_region = original_terminal_yank_region
 terminal.screenshot = original_terminal_screenshot
 terminal.yank_current_url = original_terminal_yank_current_url
 terminal.yank_hint_url = original_terminal_yank_hint_url

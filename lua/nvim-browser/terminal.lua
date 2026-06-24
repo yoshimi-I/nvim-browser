@@ -704,7 +704,19 @@ local function handle_yank_selection_response(register)
 end
 
 local function valid_register(register)
-  return type(register) == "string" and #register == 1
+  if type(register) ~= "string" or #register ~= 1 then
+    return false
+  end
+  local value_ok, previous_value = pcall(vim.fn.getreg, register)
+  local type_ok, previous_type = pcall(vim.fn.getregtype, register)
+  if not value_ok or not type_ok then
+    return false
+  end
+  local ok = pcall(vim.fn.setreg, register, previous_value, previous_type)
+  if ok then
+    pcall(vim.fn.setreg, register, previous_value, previous_type)
+  end
+  return ok
 end
 
 local function set_register(register, value, regtype)
@@ -1469,7 +1481,7 @@ function send_pending_request(request, target, label, on_response)
     end
     mark_pending_operation(id, label or "loading", target)
   end
-  return ok
+  return ok, id
 end
 
 stop_scroll_coalesce_timer = function()
@@ -2484,6 +2496,24 @@ function M.drag_point(start_x, start_y, end_x, end_y)
   }, state.current_url or state.last_target or "select", "select")
 end
 
+local function send_drag_point(start_x, start_y, end_x, end_y, on_response)
+  start_x = tonumber(start_x)
+  start_y = tonumber(start_y)
+  end_x = tonumber(end_x)
+  end_y = tonumber(end_y)
+  if start_x == nil or start_y == nil or end_x == nil or end_y == nil then
+    return false
+  end
+  request_resize()
+  return send_pending_request({
+    type = "drag_point",
+    start_x = start_x,
+    start_y = start_y,
+    end_x = end_x,
+    end_y = end_y,
+  }, state.current_url or state.last_target or "select", "select", on_response)
+end
+
 function M.right_click_point(x, y)
   x = tonumber(x)
   y = tonumber(y)
@@ -2670,9 +2700,9 @@ function M.click_here()
   return M.click_point(point.x, point.y)
 end
 
-function M.select_region(start_row, start_col, end_row, end_col)
+local function region_drag_points(start_row, start_col, end_row, end_col)
   if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
-    return false
+    return nil
   end
 
   start_row = tonumber(start_row)
@@ -2680,25 +2710,67 @@ function M.select_region(start_row, start_col, end_row, end_col)
   end_row = tonumber(end_row)
   end_col = tonumber(end_col)
   if start_row == nil or start_col == nil or end_row == nil or end_col == nil then
-    return false
+    return nil
   end
 
   local preview_geometry = current_preview_geometry()
   if not cell_within_geometry(start_row, start_col, preview_geometry) then
-    return false
+    return nil
   end
   if not cell_within_geometry(end_row, end_col, preview_geometry) then
-    return false
+    return nil
   end
 
   local rendered_geometry = current_rendered_frame_geometry()
   if rendered_geometry == nil then
-    return false
+    return nil
   end
 
   local start_point = M.viewport_drag_point_for_cell(start_row, start_col, rendered_geometry, "start")
   local end_point = M.viewport_drag_point_for_cell(end_row, end_col, rendered_geometry, "end")
+  return start_point, end_point
+end
+
+function M.select_region(start_row, start_col, end_row, end_col)
+  local start_point, end_point = region_drag_points(start_row, start_col, end_row, end_col)
+  if start_point == nil or end_point == nil then
+    return false
+  end
   return M.drag_point(start_point.x, start_point.y, end_point.x, end_point.y)
+end
+
+function M.yank_region(register, start_row, start_col, end_row, end_col)
+  register = register or '"'
+  if not valid_register(register) then
+    return false
+  end
+
+  local start_point, end_point = region_drag_points(start_row, start_col, end_row, end_col)
+  if start_point == nil or end_point == nil then
+    return false
+  end
+
+  local drag_request_id
+  local ok, id = send_drag_point(start_point.x, start_point.y, end_point.x, end_point.y, function(response)
+    if drag_request_id ~= nil and response.id < state.latest_applied_response_id then
+      return
+    end
+    if
+      drag_request_id ~= nil
+      and state.pending_operation ~= nil
+      and state.pending_operation.id ~= drag_request_id
+      and response.id < state.pending_operation.id
+    then
+      return
+    end
+    if response.status ~= "ok" then
+      warn_selection_yank_failed()
+      return
+    end
+    send_serve_request({ type = "selection_text" }, handle_yank_selection_response(register))
+  end)
+  drag_request_id = id
+  return ok
 end
 
 function M.right_click_here()
@@ -3195,6 +3267,9 @@ M._test = {
   append_preview_footer = append_preview_footer,
   set_pending_operation = function(value)
     state.pending_operation = value
+  end,
+  set_latest_applied_response_id = function(value)
+    state.latest_applied_response_id = value
   end,
   response_handler_count = function()
     local count = 0

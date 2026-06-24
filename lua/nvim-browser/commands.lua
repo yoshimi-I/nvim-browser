@@ -164,6 +164,22 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: browser selection yank failed or no browser selection is active", "WarningMsg" } }, false, {})
   end
 
+  local function valid_register(register)
+    if type(register) ~= "string" or #register ~= 1 then
+      return false
+    end
+    local value_ok, value = pcall(vim.fn.getreg, register)
+    local type_ok, regtype = pcall(vim.fn.getregtype, register)
+    if not value_ok or not type_ok then
+      return false
+    end
+    local ok = pcall(vim.fn.setreg, register, value, regtype)
+    if ok then
+      pcall(vim.fn.setreg, register, value, regtype)
+    end
+    return ok
+  end
+
   local function warn_current_url_yank_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: no current browser URL to yank or register is invalid", "WarningMsg" } }, false, {})
   end
@@ -584,6 +600,51 @@ function M.register(browser, opts)
     end
     if not browser.select_region(start_row, start_col, end_row, end_col) then
       vim.api.nvim_echo({ { "nvim-browser: region selection requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+    end
+  end, {
+    nargs = "*",
+    range = true,
+  })
+
+  vim.api.nvim_create_user_command("NBrowserYankRegion", function(opts)
+    local parts = vim.split(opts.args or "", "%s+", { trimempty = true })
+    local register = '"'
+    local start_row
+    local start_col
+    local end_row
+    local end_col
+    if #parts == 5 then
+      start_row = parts[1]
+      start_col = parts[2]
+      end_row = parts[3]
+      end_col = parts[4]
+      register = parts[5]
+    elseif #parts == 4 then
+      start_row = parts[1]
+      start_col = parts[2]
+      end_row = parts[3]
+      end_col = parts[4]
+    elseif #parts == 1 then
+      register = parts[1]
+      local visual_start = vim.fn.getpos("'<")
+      local visual_end = vim.fn.getpos("'>")
+      start_row = visual_start[2]
+      start_col = vim.fn.virtcol("'<")
+      end_row = visual_end[2]
+      end_col = vim.fn.virtcol("'>")
+    elseif #parts == 0 then
+      local visual_start = vim.fn.getpos("'<")
+      local visual_end = vim.fn.getpos("'>")
+      start_row = visual_start[2]
+      start_col = vim.fn.virtcol("'<")
+      end_row = visual_end[2]
+      end_col = vim.fn.virtcol("'>")
+    else
+      vim.api.nvim_echo({ { "nvim-browser: NBrowserYankRegion expects zero args, one register, four preview-cell coordinates, or four coordinates plus one register", "WarningMsg" } }, false, {})
+      return
+    end
+    if not valid_register(register) or not browser.yank_region(register, start_row, start_col, end_row, end_col) then
+      warn_selection_yank_unavailable()
     end
   end, {
     nargs = "*",

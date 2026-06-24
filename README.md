@@ -266,6 +266,7 @@ Then run:
 :NBrowserTextMode
 :NBrowserPaste +
 :NBrowserSelectRegion 12 8 12 40
+:NBrowserYankRegion 12 8 12 40 +
 :NBrowserYankSelection +
 :NBrowserYankUrl +
 :NBrowserYankHintUrl a +
@@ -443,6 +444,11 @@ and writes it into a Neovim register, defaulting to the unnamed register.
 cursor-addressable preview to create a native browser text selection. With four
 arguments it uses those preview-cell coordinates; without arguments it uses the
 current Visual selection marks. Follow it with `:NBrowserYankSelection`.
+`:NBrowserYankRegion [register]` selects the current Visual preview region in
+Chromium and writes the resulting browser selection into a Neovim register. It
+also accepts `start-row start-col end-row end-col [register]` for explicit
+preview-cell coordinates. In focused preview buffers, normal `y` yanks the
+current browser selection and Visual `y` yanks the Visual preview region.
 `:NBrowserYankUrl [register]` writes the active browser page URL into a Neovim
 register without recapturing the page. `:NBrowserYankHintUrl {id-or-label}
 [register]` writes a hinted link destination from the latest frame.

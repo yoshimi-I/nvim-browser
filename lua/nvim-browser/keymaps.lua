@@ -12,9 +12,9 @@ end
 
 local function delete_installed()
   for _, item in ipairs(installed) do
-    local current = vim.fn.maparg(item.lhs, "n", false, true)
+    local current = vim.fn.maparg(item.lhs, item.mode or "n", false, true)
     if current.callback == item.callback then
-      pcall(vim.keymap.del, "n", item.lhs)
+      pcall(vim.keymap.del, item.mode or "n", item.lhs)
     end
   end
   installed = {}
@@ -31,18 +31,18 @@ local function delete_installed_buffer(bufnr)
   local items = installed_buffers[bufnr] or {}
   for _, item in ipairs(items) do
     local current = vim.api.nvim_buf_call(bufnr, function()
-      return vim.fn.maparg(item.lhs, "n", false, true)
+      return vim.fn.maparg(item.lhs, item.mode or "n", false, true)
     end)
     if current.callback == item.callback then
-      pcall(vim.keymap.del, "n", item.lhs, { buffer = bufnr })
+      pcall(vim.keymap.del, item.mode or "n", item.lhs, { buffer = bufnr })
     end
   end
   installed_buffers[bufnr] = nil
 end
 
-local function has_buffer_mapping(bufnr, lhs)
+local function has_buffer_mapping(bufnr, lhs, mode)
   local current = vim.api.nvim_buf_call(bufnr, function()
-    return vim.fn.maparg(lhs, "n", false, true)
+    return vim.fn.maparg(lhs, mode or "n", false, true)
   end)
   return current.lhs ~= nil and current.buffer == 1
 end
@@ -52,12 +52,13 @@ local function set_mapping(prefix, lhs, callback, desc, opts)
   if lhs == nil or lhs == false or lhs == "" then
     return
   end
+  local mode = opts.mode or "n"
   local full_lhs = normalize_prefix(prefix) .. lhs
   if opts.buffer ~= nil then
-    if has_buffer_mapping(opts.buffer, full_lhs) then
+    if has_buffer_mapping(opts.buffer, full_lhs, mode) then
       return
     end
-  elseif vim.fn.maparg(full_lhs, "n") ~= "" then
+  elseif vim.fn.maparg(full_lhs, mode) ~= "" then
     return
   end
   local keymap_opts = {
@@ -67,10 +68,11 @@ local function set_mapping(prefix, lhs, callback, desc, opts)
   if opts.buffer ~= nil then
     keymap_opts.buffer = opts.buffer
   end
-  vim.keymap.set("n", full_lhs, callback, keymap_opts)
+  vim.keymap.set(mode, full_lhs, callback, keymap_opts)
   local item = {
     lhs = full_lhs,
     callback = callback,
+    mode = mode,
   }
   if opts.buffer ~= nil then
     installed_buffers[opts.buffer] = installed_buffers[opts.buffer] or {}
@@ -85,6 +87,15 @@ local function mapping_lhs(mappings, name, default)
     return default
   end
   return mappings[name]
+end
+
+local function current_visual_region()
+  local visual_start = vim.fn.getpos("v")
+  if visual_start[2] == 0 then
+    return nil
+  end
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  return visual_start[2], vim.fn.virtcol("v"), cursor[1], vim.fn.virtcol(".")
 end
 
 function M.setup(browser, opts)
@@ -309,6 +320,16 @@ function M.setup_buffer(browser, bufnr, opts)
   set_mapping(nil, mapping_lhs(mappings, "yank_selection", "y"), function()
     browser.yank_selection(vim.v.register)
   end, "nvim-browser: yank browser selection", buffer_opts)
+
+  local visual_yank_opts = vim.tbl_extend("force", buffer_opts, { mode = "x" })
+  set_mapping(nil, mapping_lhs(mappings, "yank_selection", "y"), function()
+    local start_row, start_col, end_row, end_col = current_visual_region()
+    if start_row == nil then
+      browser.yank_region(vim.v.register)
+      return
+    end
+    browser.yank_region(vim.v.register, start_row, start_col, end_row, end_col)
+  end, "nvim-browser: yank visual browser region", visual_yank_opts)
 
   set_mapping(nil, mapping_lhs(mappings, "yank_current_url", "Y"), function()
     browser.yank_current_url(vim.v.register)

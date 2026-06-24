@@ -64,8 +64,8 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   motions, repeatable find next/previous, focused input, key presses, selector
   focus, point clicks, native CDP right-clicks for page `contextmenu` handlers,
   CDP mouse-move hovers, native CDP mouse-wheel input at preview coordinates,
-  native CDP drag selection from preview-cell regions, hints, hinted focus for
-  search/input workflows, hinted right-clicks, hinted
+  native CDP drag selection and region yanking from preview-cell regions, hints,
+  hinted focus for search/input workflows, hinted right-clicks, hinted
   `<select>` option selection with Neovim pickers when option metadata is
   available, hinted `<input type="file">` uploads through CDP
   `DOM.setFileInputFiles`, hinted checkbox/radio toggles, direct href following,

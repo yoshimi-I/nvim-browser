@@ -93,6 +93,24 @@ local browser = {
     table.insert(calls, "yank:" .. tostring(register))
     return true
   end,
+  yank_region = function(register, start_row, start_col, end_row, end_col)
+    if start_row ~= nil then
+      table.insert(
+        calls,
+        table.concat({
+          "yank_region",
+          tostring(register),
+          tostring(start_row),
+          tostring(start_col),
+          tostring(end_row),
+          tostring(end_col),
+        }, ":")
+      )
+      return true
+    end
+    table.insert(calls, "yank_region:" .. tostring(register))
+    return true
+  end,
   yank_current_url = function(register)
     table.insert(calls, "yank_url:" .. tostring(register))
     return true
@@ -140,9 +158,9 @@ local function mapping(lhs)
   return vim.fn.maparg(lhs, "n", false, true)
 end
 
-local function buffer_mapping(bufnr, lhs)
+local function buffer_mapping(bufnr, lhs, mode)
   return vim.api.nvim_buf_call(bufnr, function()
-    return vim.fn.maparg(lhs, "n", false, true)
+    return vim.fn.maparg(lhs, mode or "n", false, true)
   end)
 end
 
@@ -160,6 +178,11 @@ end
 
 local function assert_buffer_mapping(bufnr, lhs, message)
   local item = buffer_mapping(bufnr, lhs)
+  assert(item.lhs ~= nil and item.buffer == 1, message)
+end
+
+local function assert_buffer_visual_mapping(bufnr, lhs, message)
+  local item = buffer_mapping(bufnr, lhs, "x")
   assert(item.lhs ~= nil and item.buffer == 1, message)
 end
 
@@ -314,6 +337,7 @@ assert_buffer_mapping(first_bufnr, "s", "buffer-local controls should install hi
 assert_buffer_mapping(first_bufnr, "i", "buffer-local controls should install focused input mode")
 assert_buffer_mapping(first_bufnr, "p", "buffer-local controls should install register paste")
 assert_buffer_mapping(first_bufnr, "y", "buffer-local controls should install browser selection yank")
+assert_buffer_visual_mapping(first_bufnr, "y", "buffer-local controls should install visual browser region yank")
 assert_buffer_mapping(first_bufnr, "Y", "buffer-local controls should install current URL yank")
 assert_buffer_mapping(first_bufnr, "<CR>", "buffer-local controls should install Enter forwarding")
 assert_buffer_mapping(first_bufnr, "<Tab>", "buffer-local controls should install Tab forwarding")
@@ -398,6 +422,19 @@ assert(
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
 
+local visual_yank_start = #calls
+vim.api.nvim_set_current_buf(first_bufnr)
+vim.api.nvim_buf_set_lines(first_bufnr, 0, -1, false, { "abcdef", "ghijkl" })
+vim.cmd([[normal! gg0]])
+vim.api.nvim_feedkeys("vly", "xt", false)
+assert(
+  vim.wait(1000, function()
+    return #calls > visual_yank_start
+  end),
+  "visual yank mapping should call browser.yank_region"
+)
+assert(calls[#calls] == 'yank_region:":1:1:1:2', "visual yank mapping should pass live Visual virtual columns")
+
 local original_wheel_mouse = browser.wheel_mouse
 browser.wheel_mouse = function(delta_y, delta_x)
   table.insert(calls, "wheel:false:" .. tostring(delta_y) .. ":" .. tostring(delta_x))
@@ -459,6 +496,7 @@ assert_buffer_mapping(first_bufnr, "I", "custom buffer-local focused input mappi
 assert_buffer_mapping(first_bufnr, "??", "custom buffer-local actions mapping should be installed")
 assert_buffer_mapping(first_bufnr, "P", "custom buffer-local paste mapping should be installed")
 assert_buffer_mapping(first_bufnr, "yy", "custom buffer-local browser selection yank mapping should be installed")
+assert_buffer_visual_mapping(first_bufnr, "yy", "custom buffer-local visual browser region yank mapping should be installed")
 assert_buffer_mapping(first_bufnr, "YU", "custom buffer-local current URL yank mapping should be installed")
 assert_no_buffer_mapping(first_bufnr, "<CR>", "false buffer-local browser key mappings should disable defaults")
 assert_buffer_mapping(first_bufnr, "<LeftMouse>", "mouse mappings should remain enabled by default after reinstall")

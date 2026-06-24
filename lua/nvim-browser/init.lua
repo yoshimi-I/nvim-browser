@@ -994,6 +994,18 @@ function M.yank_selection(register)
   return terminal.yank_selection(register or '"')
 end
 
+function M.yank_region(register, start_row, start_col, end_row, end_col)
+  if start_row == nil and start_col == nil and end_row == nil and end_col == nil then
+    local start_pos = vim.fn.getpos("'<")
+    local end_pos = vim.fn.getpos("'>")
+    start_row = start_pos[2]
+    end_row = end_pos[2]
+    start_col = vim.fn.virtcol("'<")
+    end_col = vim.fn.virtcol("'>")
+  end
+  return terminal.yank_region(register or '"', start_row, start_col, end_row, end_col)
+end
+
 function M.yank_current_url(register)
   return terminal.yank_current_url(register or '"')
 end

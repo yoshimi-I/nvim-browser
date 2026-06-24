@@ -850,6 +850,104 @@ terminal._test.apply_serve_response({
 })
 assert(terminal.state().pending_operation == nil, "matching drag response should clear pending select state")
 
+function _G.nvim_browser_last_footer_request_of_type(kind)
+  for index = #footer_click_requests, 1, -1 do
+    local ok, decoded = pcall(vim.json.decode, footer_click_requests[index].payload)
+    if ok and decoded.type == kind then
+      return decoded
+    end
+  end
+  return nil
+end
+
+footer_click_requests = {}
+old_b_register = vim.fn.getreg("b")
+vim.fn.setreg("b", "old region")
+assert(terminal.yank_region("b", 6, 10, 6, 25) == true, "preview region yank should send a browser drag")
+region_drag_request = _G.nvim_browser_last_footer_request_of_type("drag_point")
+assert(region_drag_request ~= nil, "preview region yank should begin with a native drag request")
+assert(_G.nvim_browser_last_footer_request_of_type("selection_text") == nil, "preview region yank should not read selection before drag completes")
+region_drag_response = {
+  id = region_drag_request.id,
+  status = "ok",
+  payload = "selected frame",
+  runtime = interactive_runtime(450, 165),
+}
+terminal._test.apply_serve_response(region_drag_response)
+terminal._test.dispatch_serve_response_handler(region_drag_response)
+region_selection_request = _G.nvim_browser_last_footer_request_of_type("selection_text")
+assert(region_selection_request ~= nil, "preview region yank should request selected text after the drag succeeds")
+region_selection_response = {
+  id = region_selection_request.id,
+  status = "ok",
+  selection = "region selected from browser",
+}
+terminal._test.apply_serve_response(region_selection_response)
+terminal._test.dispatch_serve_response_handler(region_selection_response)
+assert(vim.wait(1000, function()
+  return vim.fn.getreg("b") == "region selected from browser"
+end), "preview region yank should write the selected text into the requested register")
+
+warnings = {}
+footer_click_requests = {}
+vim.fn.setreg("b", "old region")
+assert(terminal.yank_region("b", 6, 10, 6, 25) == true, "preview region yank should allow backend drag failures to report asynchronously")
+region_drag_request = _G.nvim_browser_last_footer_request_of_type("drag_point")
+region_drag_response = {
+  id = region_drag_request.id,
+  status = "error",
+}
+terminal._test.apply_serve_response(region_drag_response)
+terminal._test.dispatch_serve_response_handler(region_drag_response)
+assert(_G.nvim_browser_last_footer_request_of_type("selection_text") == nil, "failed region drags should not request selected text")
+assert(vim.wait(1000, function()
+  return #warnings > 0
+end), "failed region drags should warn")
+assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no browser selection is active", "failed region drags should use the expected warning")
+assert(vim.fn.getreg("b") == "old region", "failed region yanks should not overwrite the register")
+
+footer_click_requests = {}
+assert(terminal.yank_region("b", 6, 10, 6, 25) == true, "preview region yank should guard stale drag responses")
+region_drag_request = _G.nvim_browser_last_footer_request_of_type("drag_point")
+terminal._test.set_pending_operation({ id = region_drag_request.id + 1, label = "loading", target = "https://example.com/newer" })
+region_drag_response = {
+  id = region_drag_request.id,
+  status = "ok",
+  payload = "stale selected frame",
+  runtime = interactive_runtime(450, 165),
+}
+terminal._test.dispatch_serve_response_handler(region_drag_response)
+assert(_G.nvim_browser_last_footer_request_of_type("selection_text") == nil, "stale region drag responses should not request selected text")
+terminal._test.clear_pending_operation(region_drag_request.id + 1)
+
+footer_click_requests = {}
+assert(terminal.yank_region("b", 6, 10, 6, 25) == true, "preview region yank should guard responses older than the latest applied frame")
+region_drag_request = _G.nvim_browser_last_footer_request_of_type("drag_point")
+terminal._test.clear_pending_operation(region_drag_request.id)
+terminal._test.set_latest_applied_response_id(region_drag_request.id + 1)
+region_drag_response = {
+  id = region_drag_request.id,
+  status = "ok",
+  payload = "older selected frame",
+  runtime = interactive_runtime(450, 165),
+}
+terminal._test.dispatch_serve_response_handler(region_drag_response)
+assert(_G.nvim_browser_last_footer_request_of_type("selection_text") == nil, "older-than-latest region drag responses should not request selected text")
+terminal._test.set_latest_applied_response_id(region_drag_request.id)
+
+footer_click_requests = {}
+assert(terminal.yank_region("ab", 6, 10, 6, 25) == false, "preview region yank should reject invalid register names")
+assert(#footer_click_requests == 0, "invalid region yank registers should not send a browser drag")
+
+footer_click_requests = {}
+assert(terminal.yank_region("%", 6, 10, 6, 25) == false, "preview region yank should reject unwritable one-character registers")
+assert(#footer_click_requests == 0, "unwritable one-character region yank registers should not send a browser drag")
+
+footer_click_requests = {}
+assert(terminal.yank_region("b", 6, 10, 6, 51) == false, "preview region yank beyond rendered columns should be ignored")
+assert(#footer_click_requests == 0, "invalid region yank geometry should not send a browser drag")
+vim.fn.setreg("b", old_b_register)
+
 footer_click_requests = {}
 assert(terminal.right_click_mouse({ winid = image_win, line = 6, column = 25 }) == true, "mouse right click should send a browser right click")
 right_mouse_click_seen = false
@@ -1022,6 +1120,7 @@ assert(terminal.click_here() == false, "stale rendered frame geometry should blo
 assert(terminal.hover_here() == false, "stale rendered frame geometry should block cursor hover")
 assert(terminal.type_here("stale text") == false, "stale rendered frame geometry should block cursor typing")
 assert(terminal.select_region(6, 10, 6, 25) == false, "stale rendered frame geometry should block region selection")
+assert(terminal.yank_region("b", 6, 10, 6, 25) == false, "stale rendered frame geometry should block region yank")
 assert(terminal.click_mouse({ winid = image_win, line = 6, column = 25 }) == false, "stale rendered frame geometry should block mouse click")
 assert(terminal.wheel_mouse(120, 0, { winid = image_win, line = 6, column = 25 }) == false, "stale rendered frame geometry should block mouse wheel")
 local stale_resize_seen = false
@@ -1455,18 +1554,8 @@ terminal._test.set_job_id(original_job_id_for_screenshot)
 
 warnings = {}
 sent_requests = {}
-assert(terminal.yank_selection(":") == true, "one-character invalid registers should be handled by the response path")
-selection_request = last_request_of_type("selection_text")
-local invalid_register_ok, invalid_register_error = pcall(serve_stdout, nil, { vim.json.encode({
-  id = selection_request.id,
-  status = "ok",
-  selection = "cannot write here",
-}), "" })
-assert(invalid_register_ok, "invalid writable registers should not throw from the async response handler: " .. tostring(invalid_register_error))
-assert(vim.wait(1000, function()
-  return #warnings > 0
-end), "invalid writable registers should warn after the response")
-assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no browser selection is active", "invalid writable register should use the expected warning")
+assert(terminal.yank_selection("%") == false, "selection yank should reject unwritable one-character registers")
+assert(last_request_of_type("selection_text") == nil, "unwritable one-character registers should not send a selection_text request")
 
 terminal._test.handle_reader_response({
   status = "ok",

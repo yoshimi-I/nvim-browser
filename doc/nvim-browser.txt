@@ -274,6 +274,17 @@ COMMANDS                                           *nvim-browser-commands*
 	coordinates. Without arguments, use the current Visual selection marks.
 	Follow with |:NBrowserYankSelection| to copy the selected browser text.
 
+							*:NBrowserYankRegion*
+:NBrowserYankRegion [register]
+	Select the current Visual preview region in Chromium and write the
+	resulting browser selection into a Neovim register. Defaults to the
+	unnamed register. Also accepts:
+>
+	:NBrowserYankRegion {start-row} {start-col} {end-row} {end-col} [register]
+<
+	Focused preview buffers map normal y to |:NBrowserYankSelection| and
+	Visual y to |:NBrowserYankRegion|.
+
 							*:NBrowserYankUrl*
 :NBrowserYankUrl [register]
 	Write the active browser page URL into a Neovim register without
@@ -591,7 +602,7 @@ o  select hinted option
 c  toggle hinted checkbox/radio
 i  type into focused element
 p  paste register into focused element
-y  yank browser selection into register
+y  yank browser selection into register; Visual y yanks the Visual preview region
 Y  yank active browser URL into register
 <CR>     press Enter
 <Tab>    press Tab

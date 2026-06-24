@@ -52,6 +52,7 @@ local half_page_up_count = 0
 local zoomed = {}
 local picked_action = nil
 local selected_region = nil
+local yanked_region = nil
 local browser = {
   hints = function()
     return {
@@ -75,6 +76,10 @@ local browser = {
   end,
   select_region = function(start_row, start_col, end_row, end_col)
     selected_region = { start_row = start_row, start_col = start_col, end_row = end_row, end_col = end_col }
+    return true
+  end,
+  yank_region = function(register, start_row, start_col, end_row, end_col)
+    yanked_region = { register = register, start_row = start_row, start_col = start_col, end_row = end_row, end_col = end_col }
     return true
   end,
   right_click_hint = function(identifier)
@@ -858,6 +863,66 @@ vim.cmd("NBrowserYankSelection ab")
 assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no browser selection is active", "NBrowserYankSelection should warn on invalid register names")
 assert(yanked_register == nil, "NBrowserYankSelection should not yank invalid register names")
 
+yanked_region = nil
+local original_buffer_for_yank_region = vim.api.nvim_get_current_buf()
+local yank_region_buffer = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_set_current_buf(yank_region_buffer)
+vim.api.nvim_buf_set_lines(yank_region_buffer, 0, -1, false, { "あbcdef", "あghijk" })
+vim.fn.setpos("'<", { yank_region_buffer, 1, 4, 0 })
+vim.fn.setpos("'>", { yank_region_buffer, 2, 4, 0 })
+vim.cmd("NBrowserYankRegion")
+assert(
+  yanked_region.register == '"'
+    and yanked_region.start_row == 1
+    and yanked_region.start_col == vim.fn.virtcol("'<")
+    and yanked_region.end_row == 2
+    and yanked_region.end_col == vim.fn.virtcol("'>"),
+  "NBrowserYankRegion should default to the unnamed register and Visual mark virtual columns"
+)
+
+yanked_region = nil
+vim.cmd("NBrowserYankRegion +")
+assert(
+  yanked_region.register == "+"
+    and yanked_region.start_row == 1
+    and yanked_region.start_col == vim.fn.virtcol("'<")
+    and yanked_region.end_row == 2
+    and yanked_region.end_col == vim.fn.virtcol("'>"),
+  "NBrowserYankRegion should pass an explicit register with Visual mark virtual columns"
+)
+vim.api.nvim_set_current_buf(original_buffer_for_yank_region)
+vim.api.nvim_buf_delete(yank_region_buffer, { force = true })
+
+yanked_region = nil
+vim.cmd("NBrowserYankRegion 2 3 4 25 +")
+assert(
+  yanked_region.register == "+"
+    and yanked_region.start_row == "2"
+    and yanked_region.start_col == "3"
+    and yanked_region.end_row == "4"
+    and yanked_region.end_col == "25",
+  "NBrowserYankRegion should pass explicit preview-cell coordinates and register"
+)
+
+yanked_region = nil
+local warning_count_before_bad_yank_region = #warnings
+vim.cmd("NBrowserYankRegion 2 3")
+assert(yanked_region == nil, "NBrowserYankRegion should reject partial explicit coordinates")
+assert(
+  #warnings == warning_count_before_bad_yank_region + 1,
+  "NBrowserYankRegion should warn on malformed explicit coordinates"
+)
+
+yanked_region = nil
+vim.cmd("NBrowserYankRegion ab")
+assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no browser selection is active", "NBrowserYankRegion should warn on invalid register names")
+assert(yanked_region == nil, "NBrowserYankRegion should not yank invalid register names")
+
+yanked_region = nil
+vim.cmd("NBrowserYankRegion %")
+assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no browser selection is active", "NBrowserYankRegion should warn on unwritable one-character registers")
+assert(yanked_region == nil, "NBrowserYankRegion should not yank unwritable one-character registers")
+
 vim.cmd("NBrowserYankUrl")
 assert(yanked_current_url_register == '"', "NBrowserYankUrl should default to the unnamed register")
 
@@ -1215,6 +1280,9 @@ local failed_browser = {
   yank_selection = function()
     return false
   end,
+  yank_region = function()
+    return false
+  end,
   input_text_mode = function()
     return false
   end,
@@ -1287,6 +1355,9 @@ assert(warnings[#warnings] == "nvim-browser: focused text input failed or browse
 
 vim.cmd("NBrowserYankSelection")
 assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no browser selection is active", "NBrowserYankSelection should warn when selection yank fails")
+
+vim.cmd("NBrowserYankRegion")
+assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no browser selection is active", "NBrowserYankRegion should warn when region yank fails")
 
 vim.cmd("NBrowserInputMode")
 assert(warnings[#warnings] == "nvim-browser: focused text input failed or browser session is inactive", "NBrowserInputMode should warn when focused text input fails")
