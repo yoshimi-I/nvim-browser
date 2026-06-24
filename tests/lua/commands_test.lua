@@ -33,6 +33,10 @@ local stop_called = false
 local hovered_here = false
 local hovered_hint = nil
 local page_scroll_direction = nil
+local scrolled_top_count = 0
+local scrolled_bottom_count = 0
+local half_page_down_count = 0
+local half_page_up_count = 0
 local picked_action = nil
 local browser = {
   hints = function()
@@ -231,6 +235,22 @@ local browser = {
     page_scroll_direction = -1
     return true
   end,
+  scroll_top = function()
+    scrolled_top_count = scrolled_top_count + 1
+    return true
+  end,
+  scroll_bottom = function()
+    scrolled_bottom_count = scrolled_bottom_count + 1
+    return true
+  end,
+  half_page_down = function()
+    half_page_down_count = half_page_down_count + 1
+    return true
+  end,
+  half_page_up = function()
+    half_page_up_count = half_page_up_count + 1
+    return true
+  end,
 }
 
 local echoed = nil
@@ -321,6 +341,34 @@ assert(page_scroll_direction == 1, "NBrowserPageDown should request a forward pa
 
 vim.cmd("NBrowserPageUp")
 assert(page_scroll_direction == -1, "NBrowserPageUp should request a backward page scroll")
+
+local navigation_warning_count = #warnings
+vim.cmd("NBrowserScrollTop")
+assert(scrolled_top_count == 1, "NBrowserScrollTop should scroll to the page top exactly once")
+
+vim.cmd("NBrowserScrollBottom")
+assert(scrolled_bottom_count == 1, "NBrowserScrollBottom should scroll to the page bottom exactly once")
+
+vim.cmd("NBrowserHalfPageDown")
+assert(half_page_down_count == 1, "NBrowserHalfPageDown should request a forward half-page scroll exactly once")
+
+vim.cmd("NBrowserHalfPageUp")
+assert(half_page_up_count == 1, "NBrowserHalfPageUp should request a backward half-page scroll exactly once")
+assert(#warnings == navigation_warning_count, "page navigation commands should not warn on success")
+
+local arg_error_count = 0
+for _, command in ipairs({
+  "NBrowserScrollTop",
+  "NBrowserScrollBottom",
+  "NBrowserHalfPageDown",
+  "NBrowserHalfPageUp",
+}) do
+  local ok, err = pcall(vim.cmd, command .. " unexpected")
+  assert(ok == false, command .. " should reject arguments")
+  assert(tostring(err):match("E488: Trailing characters"), command .. " should fail with trailing characters for arguments")
+  arg_error_count = arg_error_count + 1
+end
+assert(arg_error_count == 4, "all argument-free page navigation commands should reject arguments")
 
 vim.cmd("NBrowserAddress")
 assert(addressed == "s", "NBrowserAddress should pass the injected input function to browser.address")

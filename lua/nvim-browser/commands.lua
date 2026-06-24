@@ -247,6 +247,22 @@ function M.register(browser, opts)
     browser.page_up()
   end, {})
 
+  vim.api.nvim_create_user_command("NBrowserScrollTop", function()
+    browser.scroll_top()
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserScrollBottom", function()
+    browser.scroll_bottom()
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserHalfPageDown", function()
+    browser.half_page_down()
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserHalfPageUp", function()
+    browser.half_page_up()
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserInput", function(opts)
     if not browser.input_text(opts.args) then
       warn_focused_input_unavailable()

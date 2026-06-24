@@ -154,6 +154,25 @@ COMMANDS                                           *nvim-browser-commands*
 	Scroll the active browser page up by 90% of the current browser
 	viewport and capture a fresh frame.
 
+							*:NBrowserScrollTop*
+:NBrowserScrollTop
+	Scroll the active browser page to the top and capture a fresh frame.
+
+							*:NBrowserScrollBottom*
+:NBrowserScrollBottom
+	Scroll the active browser page to the bottom and capture a fresh
+	frame.
+
+							*:NBrowserHalfPageDown*
+:NBrowserHalfPageDown
+	Scroll the active browser page down by 50% of the current browser
+	viewport and capture a fresh frame.
+
+							*:NBrowserHalfPageUp*
+:NBrowserHalfPageUp
+	Scroll the active browser page up by 50% of the current browser
+	viewport and capture a fresh frame.
+
 							*:NBrowserFind*
 :NBrowserFind {text}
 	Find text in the active browser page, scroll to the match through the

@@ -218,6 +218,10 @@ Then run:
 :NBrowserScrollDown 400
 :NBrowserPageDown
 :NBrowserPageUp
+:NBrowserScrollTop
+:NBrowserScrollBottom
+:NBrowserHalfPageDown
+:NBrowserHalfPageUp
 :NBrowserFind search text
 :NBrowserFindNext
 :NBrowserFindPrevious
