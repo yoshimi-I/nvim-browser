@@ -2190,9 +2190,19 @@ function M.reader_follow()
     warn_reader_follow("nvim-browser: no reader link under cursor")
     return false
   end
-  if not M.navigate(url) then
+  request_resize()
+  local ok = send_pending_request({
+    type = "navigate",
+    url = url,
+  }, url, "loading", function(response)
+    if response.status == "ok" then
+      M.reader()
+    end
+  end)
+  if not ok then
     return false
   end
+  state.last_target = url
   return url
 end
 

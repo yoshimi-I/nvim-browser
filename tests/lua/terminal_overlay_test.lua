@@ -422,6 +422,51 @@ assert(followed_request ~= nil, "reader follow should send a serve request")
 assert(followed_request.request.type == "navigate", "reader follow should reuse the active browser session")
 assert(followed_request.request.url == "https://example.com/docs", "reader follow should navigate to the link URL")
 assert(terminal.state().last_target == "https://example.com/docs", "reader follow mappings should update terminal last target")
+reader_requests = {}
+vim.fn.chansend = function(job_id, payload)
+  table.insert(reader_requests, { job_id = job_id, request = vim.json.decode(payload) })
+  return 1
+end
+terminal._test.dispatch_serve_response_handler({
+  id = followed_request.request.id,
+  status = "ok",
+  payload = "followed frame",
+  url = "https://example.com/docs",
+  title = "Docs",
+})
+vim.fn.chansend = original_chansend_for_reader
+assert(reader_requests[1] ~= nil, "successful reader follow navigation should request a fresh reader snapshot")
+assert(reader_requests[1].request.type == "page_text", "reader follow refresh should use a page_text request")
+terminal._test.dispatch_serve_response_handler({
+  id = reader_requests[1].request.id,
+  status = "ok",
+  text = {
+    title = "Docs",
+    url = "https://example.com/docs",
+    text = "# Docs\n\n[Docs](https://example.com/docs)\n\nFollowed body",
+    truncated = false,
+  },
+})
+reader_lines = table.concat(vim.api.nvim_buf_get_lines(terminal.state().reader_bufnr, 0, -1, false), "\n")
+assert(reader_lines:match("Followed body"), "reader follow should replace the reader buffer with the followed page text")
+
+vim.api.nvim_set_current_buf(terminal.state().reader_bufnr)
+vim.api.nvim_win_set_cursor(0, { 5, 1 })
+reader_requests = {}
+vim.fn.chansend = function(job_id, payload)
+  table.insert(reader_requests, { job_id = job_id, request = vim.json.decode(payload) })
+  return 1
+end
+assert(terminal.reader_follow() == "https://example.com/docs", "reader follow should send a navigation before a failed response")
+vim.fn.chansend = original_chansend_for_reader
+terminal._test.dispatch_serve_response_handler({
+  id = reader_requests[1].request.id,
+  status = "error",
+  error = "navigation failed",
+})
+assert(#reader_requests == 1, "failed reader follow navigation should not request page_text")
+reader_lines = table.concat(vim.api.nvim_buf_get_lines(terminal.state().reader_bufnr, 0, -1, false), "\n")
+assert(reader_lines:match("Followed body"), "failed reader follow navigation should preserve existing reader content")
 
 terminal._test.apply_serve_response({
   id = 222,
@@ -1151,6 +1196,74 @@ assert(vim.wait(1000, function()
   return #warnings > 0
 end), "invalid writable registers should warn after the response")
 assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no browser selection is active", "invalid writable register should use the expected warning")
+
+terminal._test.handle_reader_response({
+  status = "ok",
+  text = {
+    title = "Start",
+    url = "https://example.com/start",
+    text = "# Start\n\n[Docs](/docs)\n\nOriginal reader body",
+    truncated = false,
+  },
+})
+sent_requests = {}
+warnings = {}
+reader_follow_result = vim.api.nvim_buf_call(terminal.state().reader_bufnr, function()
+  vim.api.nvim_win_set_cursor(0, { 5, 1 })
+  return terminal.reader_follow()
+end)
+assert(reader_follow_result == "https://example.com/docs", "reader follow should navigate with the active serve session: " .. tostring(warnings[#warnings]))
+reader_follow_nav_request = last_request_of_type("navigate")
+assert(reader_follow_nav_request ~= nil, "reader follow should send a navigate request through serve")
+reader_follow_pending_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(reader_follow_pending_id == reader_follow_nav_request.id, "reader follow should mark its navigate request as pending")
+serve_stdout(nil, { vim.json.encode({
+  id = reader_follow_nav_request.id,
+  status = "ok",
+  payload = "reader follow frame",
+  url = "https://example.com/docs",
+  title = "Docs",
+  runtime = interactive_runtime(450, 165),
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil and last_request_of_type("page_text") ~= nil
+end), "successful reader follow stdout responses should clear pending state and request a fresh reader snapshot")
+reader_follow_text_request = last_request_of_type("page_text")
+serve_stdout(nil, { vim.json.encode({
+  id = reader_follow_text_request.id,
+  status = "ok",
+  text = {
+    title = "Docs",
+    url = "https://example.com/docs",
+    text = "# Docs\n\n[Docs](/docs)\n\nProduction path body",
+    truncated = false,
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  reader_lines = table.concat(vim.api.nvim_buf_get_lines(terminal.state().reader_bufnr, 0, -1, false), "\n")
+  return reader_lines:match("Production path body") ~= nil
+end), "reader follow stdout page_text responses should replace the reader buffer")
+
+sent_requests = {}
+warnings = {}
+reader_follow_result = vim.api.nvim_buf_call(terminal.state().reader_bufnr, function()
+  vim.api.nvim_win_set_cursor(0, { 5, 1 })
+  return terminal.reader_follow()
+end)
+assert(reader_follow_result == "https://example.com/docs", "reader follow should send a serve navigation before stdout errors: " .. tostring(warnings[#warnings]))
+reader_follow_failed_nav_request = last_request_of_type("navigate")
+assert(reader_follow_failed_nav_request ~= nil, "failed reader follow should still send a navigate request")
+serve_stdout(nil, { vim.json.encode({
+  id = reader_follow_failed_nav_request.id,
+  status = "error",
+  error = "reader follow failed",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil and terminal.state().status_error == "reader follow failed"
+end), "failed reader follow stdout responses should clear pending state and surface the error")
+assert(last_request_of_type("page_text") == nil, "failed reader follow stdout responses should not request page_text")
+reader_lines = table.concat(vim.api.nvim_buf_get_lines(terminal.state().reader_bufnr, 0, -1, false), "\n")
+assert(reader_lines:match("Production path body"), "failed reader follow stdout responses should preserve reader content")
 
 sent_requests = {}
 fake_timers[1].callback()
