@@ -51,6 +51,50 @@ local saved_calibration = vim.fn.json_decode(table.concat(vim.fn.readfile(calibr
 assert(saved_calibration.cell_width_px == 11, "calibrate should persist calibrated cell width")
 assert(saved_calibration.cell_height_px == 22, "calibrate should persist calibrated cell height")
 
+local original_guided_calibration_at_cursor = terminal.guided_calibration_at_cursor
+terminal.guided_calibration_at_cursor = function()
+  return {
+    cell_width_px = 12,
+    cell_height_px = 24,
+    row = 12,
+    column = 41,
+    target_x = 405,
+    target_y = 230,
+  }
+end
+local guided_report = browser.calibrate_here()
+assert(type(guided_report) == "table", "calibrate_here should return a report table")
+assert(browser.config.viewport.cell_width_px == 12, "calibrate_here should update configured cell width")
+assert(browser.config.viewport.cell_height_px == 24, "calibrate_here should update configured cell height")
+local guided_saved_calibration = vim.fn.json_decode(table.concat(vim.fn.readfile(calibration_path), "\n"))
+assert(guided_saved_calibration.cell_width_px == 12, "calibrate_here should persist guided cell width")
+assert(guided_saved_calibration.cell_height_px == 24, "calibrate_here should persist guided cell height")
+assert(
+  vim.tbl_contains(guided_report.lines, "guided calibration: saved 12x24 from cursor row=12 column=41 target=405,230"),
+  "calibrate_here should report the guided cursor sample"
+)
+assert(
+  vim.tbl_contains(browser.doctor().lines, "guided calibration: last saved 12x24 from row=12 column=41 target=405,230"),
+  "doctor should report a guided calibration sample that matches the active viewport"
+)
+
+terminal.guided_calibration_at_cursor = function()
+  return false, "guided calibration requires the bundled calibration fixture"
+end
+local before_failed_guided_width = browser.config.viewport.cell_width_px
+local failed_guided, failed_guided_err = browser.calibrate_here()
+assert(failed_guided == false, "calibrate_here should fail when terminal guided calibration fails")
+assert(
+  failed_guided_err == "guided calibration requires the bundled calibration fixture",
+  "calibrate_here should pass through terminal guided calibration errors"
+)
+assert(
+  browser.config.viewport.cell_width_px == before_failed_guided_width,
+  "failed calibrate_here should not mutate existing calibration"
+)
+terminal.guided_calibration_at_cursor = original_guided_calibration_at_cursor
+browser.calibrate(11, 22)
+
 browser.setup({
   session = { persist = false },
   calibration = { persist = true, path = calibration_path },
@@ -106,6 +150,28 @@ browser.setup({
 assert(browser.config.viewport.cell_width_px == 14, "partial explicit viewport should apply configured width")
 assert(browser.config.viewport.cell_height_px == 20, "partial explicit viewport should use default height rather than persisted height")
 assert(browser.config.viewport_source == "config", "partial explicit viewport should mark config calibration source")
+
+terminal.guided_calibration_at_cursor = function()
+  return {
+    cell_width_px = 12,
+    cell_height_px = 24,
+    row = 12,
+    column = 41,
+    target_x = 405,
+    target_y = 230,
+  }
+end
+browser.calibrate_here()
+browser.setup({
+  session = { persist = false },
+  calibration = { persist = true, path = calibration_path },
+  viewport = { cell_width_px = 14, cell_height_px = 20 },
+})
+assert(
+  not vim.tbl_contains(browser.doctor().lines, "guided calibration: last saved 12x24 from row=12 column=41 target=405,230"),
+  "setup should not report stale guided calibration samples after viewport changes"
+)
+terminal.guided_calibration_at_cursor = original_guided_calibration_at_cursor
 
 local unwritable_path = calibration_dir .. "/unwritable/calibration.json"
 local write_warnings = {}

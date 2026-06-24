@@ -31,6 +31,7 @@ local state = {
   calibration_state = nil,
   runtime_metadata = nil,
   rendered_frame_geometry = nil,
+  rendered_frame_url = nil,
   status = nil,
   status_error = nil,
   hint_error = nil,
@@ -1152,6 +1153,7 @@ local function apply_serve_response_metadata(response)
   end
   if response.status == "ok" and response.payload ~= nil then
     state.rendered_frame_geometry = rendered_frame_geometry_from_runtime(response.runtime)
+    state.rendered_frame_url = response.url ~= nil and response.url ~= vim.NIL and tostring(response.url) or state.current_url
     if response.found == nil then
       state.last_find_found = nil
       state.last_find_match_count = nil
@@ -2273,6 +2275,7 @@ function M.open(command)
   state.calibration_state = nil
   state.runtime_metadata = nil
   state.rendered_frame_geometry = nil
+  state.rendered_frame_url = nil
   state.status = nil
   state.status_error = nil
   state.hint_error = nil
@@ -2410,6 +2413,7 @@ function M.open(command)
 
         if response.status == "ok" and response.payload ~= nil then
           state.rendered_frame_geometry = rendered_frame_geometry_from_runtime(response.runtime)
+          state.rendered_frame_url = response.url ~= nil and response.url ~= vim.NIL and tostring(response.url) or state.current_url
           apply_payload_to_buffer(bufnr, response.payload, uses_kitty, uses_kitty_unicode, command, geometry)
           if uses_kitty then
             emit_terminal_graphics(response.payload, state.winid)
@@ -2489,6 +2493,7 @@ function M.open(command)
           state.navigation_suppressed_request_ids = {}
           state.runtime_metadata = nil
           state.rendered_frame_geometry = nil
+          state.rendered_frame_url = nil
           state.focused_element = nil
           state.latest_download = nil
           state.download_history = {}
@@ -2650,6 +2655,7 @@ function M.close()
   state.calibration_state = nil
   state.runtime_metadata = nil
   state.rendered_frame_geometry = nil
+  state.rendered_frame_url = nil
   state.status = nil
   state.status_error = nil
   state.hint_error = nil
@@ -2779,6 +2785,7 @@ hard_stop_pending_operation = function(reason)
   state.status_error = nil
   state.hint_error = nil
   state.rendered_frame_geometry = nil
+  state.rendered_frame_url = nil
   state.response_handlers[pending.id] = nil
   if state.latest_find_request_id == pending.id then
     state.latest_find_request_id = nil
@@ -2795,6 +2802,7 @@ hard_stop_pending_operation = function(reason)
   state.mode = nil
   state.serve_output = nil
   state.runtime_metadata = nil
+  state.rendered_frame_url = nil
   state.latest_download = nil
   state.download_history = {}
   state.download_recorded_response_ids = {}
@@ -2826,6 +2834,7 @@ hard_stop_capture_operation = function(reason)
   state.status_error = nil
   state.hint_error = nil
   state.rendered_frame_geometry = nil
+  state.rendered_frame_url = nil
   state.generation = state.generation + 1
   stop_text_mode_flush_timer()
   stop_live_refresh()
@@ -3444,6 +3453,72 @@ function M.click_here()
   return M.click_point(point.x, point.y)
 end
 
+local function active_target_is_calibration_fixture()
+  local target = state.current_url or state.last_target
+  return type(target) == "string" and target:match("data/html/calibrate%.html$") ~= nil
+end
+
+local function rendered_frame_is_calibration_fixture()
+  local target = state.rendered_frame_url
+  return type(target) == "string" and target:match("data/html/calibrate%.html$") ~= nil
+end
+
+function M.guided_calibration_at_cursor(opts)
+  opts = opts or {}
+  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+    return false, "guided calibration requires an active cursor-addressable calibration preview"
+  end
+  if not active_target_is_calibration_fixture() then
+    return false, "guided calibration requires the bundled calibration fixture"
+  end
+
+  local target_x = tonumber(opts.target_x) or 405
+  local target_y = tonumber(opts.target_y) or 230
+  if target_x <= 0 or target_y <= 0 then
+    return false, "guided calibration target must use positive viewport pixels"
+  end
+
+  local cursor = vim.api.nvim_win_get_cursor(state.winid)
+  local geometry = current_preview_geometry()
+  if cursor[1] > geometry.rows then
+    return false, "guided calibration cursor is outside the rendered preview"
+  end
+  local column = vim.api.nvim_win_call(state.winid, function()
+    return vim.fn.virtcol(".")
+  end)
+  if column > geometry.columns then
+    return false, "guided calibration cursor is outside the rendered preview"
+  end
+
+  geometry = current_rendered_frame_geometry()
+  if geometry == nil then
+    return false, "guided calibration requires a fresh rendered frame"
+  end
+  if not rendered_frame_is_calibration_fixture() then
+    return false, "guided calibration requires a fresh calibration fixture frame"
+  end
+
+  local width_denominator = column - 0.5
+  local height_denominator = cursor[1] - 0.5
+  if width_denominator <= 0 or height_denominator <= 0 then
+    return false, "guided calibration cursor is outside the rendered preview"
+  end
+  local cell_width_px = math.floor(target_x / width_denominator + 0.5)
+  local cell_height_px = math.floor(target_y / height_denominator + 0.5)
+  if cell_width_px <= 0 or cell_height_px <= 0 then
+    return false, "guided calibration computed invalid cell pixels"
+  end
+
+  return {
+    cell_width_px = cell_width_px,
+    cell_height_px = cell_height_px,
+    row = cursor[1],
+    column = column,
+    target_x = target_x,
+    target_y = target_y,
+  }
+end
+
 local function region_drag_points(start_row, start_col, end_row, end_col)
   if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
     return nil
@@ -3992,6 +4067,7 @@ function M.state()
     zoom_scale = state.zoom_scale,
     runtime_metadata = state.runtime_metadata,
     rendered_frame_geometry = state.rendered_frame_geometry,
+    rendered_frame_url = state.rendered_frame_url,
     status = state.status,
     status_error = state.status_error,
     hint_error = state.hint_error,

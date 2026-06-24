@@ -354,6 +354,36 @@ assert(
   "doctor should report observed and pending calibration fixture hit tests"
 )
 
+local guided_fixture_calibration = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+  viewport = {
+    cell_width_px = 12,
+    cell_height_px = 24,
+  },
+  guided_calibration = {
+    cell_width_px = 12,
+    cell_height_px = 24,
+    row = 12,
+    column = 41,
+    target_x = 405,
+    target_y = 230,
+  },
+}, {
+  mode = "serve",
+  serve_output = "ansi",
+  cursor_addressable_preview = true,
+  rendered_frame_geometry = { columns = 80, rows = 24, width = 960, height = 576 },
+  current_preview_geometry = { columns = 80, rows = 24, width = 960, height = 576 },
+  status = "ok",
+})
+assert(
+  has_line(guided_fixture_calibration, "guided calibration: last saved 12x24 from row=12 column=41 target=405,230"),
+  "doctor should report the last guided calibration sample"
+)
+
 local stale_click_calibration = doctor.run({
   binary = "nvim",
   backend_diagnostics = false,

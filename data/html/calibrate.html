@@ -56,6 +56,17 @@
       width: 120px;
       height: 60px;
     }
+    #guided-point {
+      position: fixed;
+      left: 400px;
+      top: 225px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ffcc66;
+      box-shadow: 0 0 0 2px #111318, 0 0 0 4px #ffcc66;
+      pointer-events: none;
+    }
     #input {
       position: fixed;
       left: 300px;
@@ -94,6 +105,7 @@
       <p>Click, hover, type, right-click, and wheel on the fixed targets, then run :NBrowserDoctor.</p>
     </div>
     <button id="target">Calibration target</button>
+    <div id="guided-point" aria-hidden="true"></div>
     <input id="input" aria-label="Calibration input" value="">
     <div id="wheel" role="button" tabindex="0" aria-label="Calibration wheel target">
       Wheel target

@@ -1129,6 +1129,15 @@ function M.register(browser, opts)
     nargs = "*",
   })
 
+  vim.api.nvim_create_user_command("NBrowserCalibrateHere", function()
+    local report, err = browser.calibrate_here()
+    if report == false then
+      vim.api.nvim_echo({ { "nvim-browser: " .. tostring(err or "guided calibration failed"), "WarningMsg" } }, false, {})
+      return
+    end
+    vim.api.nvim_echo({ { table.concat(report.lines or {}, "\n") } }, false, {})
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserToggle", function()
     browser.toggle()
   end, {})

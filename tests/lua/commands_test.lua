@@ -38,6 +38,7 @@ local doctor_called = false
 local refresh_doctor_called = false
 local doctor_report = { lines = { "nvim-browser doctor", "browser output: kitty-unicode" } }
 local calibrated = nil
+local calibrated_here = false
 local reader_called = false
 local reader_follow_called = false
 local stop_called = false
@@ -261,6 +262,10 @@ local browser = {
   calibrate = function(cell_width_px, cell_height_px)
     calibrated = { cell_width_px = cell_width_px, cell_height_px = cell_height_px }
     return { lines = { "nvim-browser calibration", "viewport cell px: " .. cell_width_px .. "x" .. cell_height_px } }
+  end,
+  calibrate_here = function()
+    calibrated_here = true
+    return { lines = { "nvim-browser calibration", "guided calibration: saved 12x24 from cursor row=12 column=41 target=405,230" } }
   end,
   pick_hint = function(select, opts)
     picked_action = opts and opts.action or "follow"
@@ -706,6 +711,13 @@ vim.cmd("NBrowserCalibrate 9.5 18")
 assert(calibrated == nil, "NBrowserCalibrate should not call browser.calibrate with fractional values")
 assert(warnings[#warnings] == "nvim-browser: viewport cell pixels must be positive integers", "NBrowserCalibrate should warn on fractional values")
 assert(#warnings == calibration_warning_count + 1, "fractional calibration should produce one warning")
+
+vim.cmd("NBrowserCalibrateHere")
+assert(calibrated_here == true, "NBrowserCalibrateHere should call browser.calibrate_here")
+assert(
+  echoed == "nvim-browser calibration\nguided calibration: saved 12x24 from cursor row=12 column=41 target=405,230",
+  "NBrowserCalibrateHere should echo guided calibration report lines"
+)
 
 vim.cmd("NBrowserStatus")
 assert(echoed:match("scroll 25%%"), "NBrowserStatus should include scroll progress when page metrics exist")

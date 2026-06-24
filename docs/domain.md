@@ -138,8 +138,9 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   `:NBrowserCalibrate` now opens a fixed hit-test fixture and Doctor can report
   observed click/right-click/hover/type/wheel fixture state. Calibrated cell
   pixels persist under Neovim state and Doctor reports whether active values
-  came from defaults, explicit config, or persisted calibration, but users still
-  need to tune cell pixels manually until auto-detection exists.
+  came from defaults, explicit config, persisted calibration, or the last guided
+  calibration sample. `:NBrowserCalibrateHere` reduces first-run guesswork by
+  computing cell pixels from the cursor position on the fixture guide point.
 - Quiet input and idle live refresh improve latency by skipping screenshots and
   hint recomputation, but successful lightweight responses still return
   URL/title, page-metrics, and focused-element metadata. The current frame and

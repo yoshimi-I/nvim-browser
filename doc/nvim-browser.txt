@@ -580,6 +580,18 @@ COMMANDS                                           *nvim-browser-commands*
 	after those targets are exercised, :NBrowserDoctor reports which fixture
 	hit tests have been observed.
 
+							*:NBrowserCalibrateHere*
+:NBrowserCalibrateHere
+	Compute viewport cell pixels from the cursor position on the bundled
+	calibration fixture. First run :NBrowserCalibrate, move the Neovim cursor
+	onto the small yellow guide point, then run :NBrowserCalibrateHere. The
+	command saves the computed cell pixels under Neovim state, updates the
+	active in-memory viewport calibration, and resizes an active serve preview
+	immediately. It fails without mutating calibration when the active preview
+	is not cursor-addressable, the rendered frame is stale, or the active target
+	is not the bundled calibration fixture. :NBrowserDoctor reports the last
+	guided calibration sample.
+
 							*:NBrowserPreview*
 :NBrowserPreview
 	Preview the current buffer path.

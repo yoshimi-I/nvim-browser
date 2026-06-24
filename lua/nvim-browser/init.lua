@@ -15,6 +15,7 @@ local state = {
   session_warning_messages = {},
   session_loaded_path = nil,
   viewport_explicitly_configured = false,
+  guided_calibration = nil,
 }
 
 local history_limit = 50
@@ -333,6 +334,23 @@ local function save_calibration(width, height)
   return true
 end
 
+local function apply_calibration(width, height)
+  M.config.viewport = M.config.viewport or {}
+  M.config.viewport.cell_width_px = width
+  M.config.viewport.cell_height_px = height
+  M.config.viewport_source = "config"
+  save_calibration(width, height)
+  terminal.configure({ viewport = M.config.viewport })
+end
+
+local function guided_calibration_matches_viewport(sample)
+  local viewport = M.config and M.config.viewport or nil
+  return type(sample) == "table"
+    and type(viewport) == "table"
+    and tonumber(sample.cell_width_px) == tonumber(viewport.cell_width_px)
+    and tonumber(sample.cell_height_px) == tonumber(viewport.cell_height_px)
+end
+
 function M.setup(opts)
   opts = opts or {}
   local explicit_viewport = type(opts.viewport) == "table"
@@ -370,6 +388,11 @@ function M.setup(opts)
       save_session()
     end
   end)
+  if guided_calibration_matches_viewport(state.guided_calibration) then
+    M.config.guided_calibration = vim.deepcopy(state.guided_calibration)
+  else
+    M.config.guided_calibration = nil
+  end
   keymaps.setup(M, M.config.keymaps or {})
 end
 
@@ -559,12 +582,9 @@ function M.calibrate(cell_width_px, cell_height_px)
     if err ~= nil then
       return false, err
     end
-    M.config.viewport = M.config.viewport or {}
-    M.config.viewport.cell_width_px = width
-    M.config.viewport.cell_height_px = height
-    M.config.viewport_source = "config"
-    save_calibration(width, height)
-    terminal.configure({ viewport = M.config.viewport })
+    state.guided_calibration = nil
+    M.config.guided_calibration = nil
+    apply_calibration(width, height)
   end
 
   M.open(calibration_fixture_path())
@@ -576,6 +596,40 @@ function M.calibrate(cell_width_px, cell_height_px)
       break
     end
   end
+  return report
+end
+
+local function guided_calibration_line(sample)
+  return "guided calibration: saved "
+    .. tostring(sample.cell_width_px)
+    .. "x"
+    .. tostring(sample.cell_height_px)
+    .. " from cursor row="
+    .. tostring(sample.row)
+    .. " column="
+    .. tostring(sample.column)
+    .. " target="
+    .. tostring(sample.target_x)
+    .. ","
+    .. tostring(sample.target_y)
+end
+
+function M.calibrate_here()
+  local sample, err = terminal.guided_calibration_at_cursor({ target_x = 405, target_y = 230 })
+  if sample == false then
+    return false, err
+  end
+  local width, height, parse_err = parse_cell_pixels(sample.cell_width_px, sample.cell_height_px)
+  if parse_err ~= nil then
+    return false, parse_err
+  end
+  sample.cell_width_px = width
+  sample.cell_height_px = height
+  state.guided_calibration = vim.deepcopy(sample)
+  M.config.guided_calibration = vim.deepcopy(sample)
+  apply_calibration(width, height)
+  local report = doctor.run(M.config, terminal.state())
+  table.insert(report.lines, 2, guided_calibration_line(sample))
   return report
 end
 

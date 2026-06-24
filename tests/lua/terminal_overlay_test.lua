@@ -708,6 +708,139 @@ assert(vim.tbl_contains(ansi_serve_command, "11"), "ansi serve rows should reser
 assert(command_option(ansi_serve_command, "--width") == "500", "serve width should default to 10px cells")
 assert(command_option(ansi_serve_command, "--height") == "220", "serve height should reserve footer rows before applying 20px cells")
 
+vim.cmd("vsplit")
+_G.nvim_browser_guided_calibration_win = vim.api.nvim_get_current_win()
+vim.api.nvim_win_set_width(_G.nvim_browser_guided_calibration_win, 84)
+vim.api.nvim_win_set_height(_G.nvim_browser_guided_calibration_win, 30)
+terminal._test.set_test_window(_G.nvim_browser_guided_calibration_win)
+_G.nvim_browser_guided_calibration_bufnr = vim.api.nvim_win_get_buf(_G.nvim_browser_guided_calibration_win)
+vim.bo[_G.nvim_browser_guided_calibration_bufnr].modifiable = true
+vim.api.nvim_buf_set_lines(
+  _G.nvim_browser_guided_calibration_bufnr,
+  0,
+  -1,
+  false,
+  vim.fn["repeat"]({ string.rep(" ", 82) }, 30)
+)
+terminal._test.set_mode("serve")
+terminal._test.set_cursor_addressable_preview(true)
+_G.nvim_browser_guided_calibration_command =
+  terminal._test.command_for_window({ "nvbrowser", "serve", "--output", "ansi", "--url", "file:///tmp/nvim-browser/data/html/calibrate.html" })
+terminal._test.apply_serve_response({
+  id = 705,
+  status = "ok",
+  url = "file:///tmp/nvim-browser/data/html/calibrate.html",
+  payload = "guided calibration frame",
+  runtime = {
+    protocol_version = 9,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = {
+      columns = tonumber(command_option(_G.nvim_browser_guided_calibration_command, "--columns")),
+      rows = tonumber(command_option(_G.nvim_browser_guided_calibration_command, "--rows")),
+    },
+    viewport = {
+      width = tonumber(command_option(_G.nvim_browser_guided_calibration_command, "--width")),
+      height = tonumber(command_option(_G.nvim_browser_guided_calibration_command, "--height")),
+      device_scale_factor = 1,
+    },
+  },
+})
+vim.api.nvim_win_set_cursor(_G.nvim_browser_guided_calibration_win, { 12, 40 })
+_G.nvim_browser_guided_calibration = terminal.guided_calibration_at_cursor({ target_x = 405, target_y = 230 })
+assert(type(_G.nvim_browser_guided_calibration) == "table", "guided calibration should return computed cell pixels")
+assert(_G.nvim_browser_guided_calibration.cell_width_px == 10, "guided calibration should compute cell width from cursor column")
+assert(_G.nvim_browser_guided_calibration.cell_height_px == 20, "guided calibration should compute cell height from cursor row")
+assert(_G.nvim_browser_guided_calibration.row == 12, "guided calibration should report the cursor row used")
+assert(_G.nvim_browser_guided_calibration.column == 41, "guided calibration should report the cursor column used")
+
+terminal._test.set_cursor_addressable_preview(false)
+_G.nvim_browser_unavailable_guided, _G.nvim_browser_unavailable_guided_err =
+  terminal.guided_calibration_at_cursor({ target_x = 405, target_y = 230 })
+assert(_G.nvim_browser_unavailable_guided == false, "guided calibration should fail when the preview is not cursor-addressable")
+assert(
+  _G.nvim_browser_unavailable_guided_err == "guided calibration requires an active cursor-addressable calibration preview",
+  "guided calibration should explain inactive cursor-addressable previews"
+)
+terminal._test.set_cursor_addressable_preview(true)
+
+terminal._test.apply_serve_response({
+  id = 706,
+  status = "ok",
+  url = "https://example.com/not-calibration",
+  payload = "non calibration frame",
+  runtime = {
+    protocol_version = 9,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = 82, rows = 27 },
+    viewport = { width = 820, height = 540, device_scale_factor = 1 },
+  },
+})
+_G.nvim_browser_wrong_target_guided, _G.nvim_browser_wrong_target_err =
+  terminal.guided_calibration_at_cursor({ target_x = 405, target_y = 230 })
+assert(_G.nvim_browser_wrong_target_guided == false, "guided calibration should fail outside the calibration fixture")
+assert(
+  _G.nvim_browser_wrong_target_err == "guided calibration requires the bundled calibration fixture",
+  "guided calibration should explain non-calibration targets"
+)
+
+terminal._test.apply_serve_response({
+  id = 707,
+  status = "ok",
+  url = "https://example.com/stale-frame",
+  payload = "stale non calibration frame",
+  runtime = {
+    protocol_version = 9,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = {
+      columns = tonumber(command_option(_G.nvim_browser_guided_calibration_command, "--columns")),
+      rows = tonumber(command_option(_G.nvim_browser_guided_calibration_command, "--rows")),
+    },
+    viewport = {
+      width = tonumber(command_option(_G.nvim_browser_guided_calibration_command, "--width")),
+      height = tonumber(command_option(_G.nvim_browser_guided_calibration_command, "--height")),
+      device_scale_factor = 1,
+    },
+  },
+})
+terminal._test.apply_serve_response({
+  id = 708,
+  status = "ok",
+  url = "file:///tmp/nvim-browser/data/html/calibrate.html",
+  runtime = {
+    protocol_version = 9,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = {
+      columns = tonumber(command_option(_G.nvim_browser_guided_calibration_command, "--columns")),
+      rows = tonumber(command_option(_G.nvim_browser_guided_calibration_command, "--rows")),
+    },
+    viewport = {
+      width = tonumber(command_option(_G.nvim_browser_guided_calibration_command, "--width")),
+      height = tonumber(command_option(_G.nvim_browser_guided_calibration_command, "--height")),
+      device_scale_factor = 1,
+    },
+  },
+})
+_G.nvim_browser_stale_url_guided, _G.nvim_browser_stale_url_err =
+  terminal.guided_calibration_at_cursor({ target_x = 405, target_y = 230 })
+assert(_G.nvim_browser_stale_url_guided == false, "guided calibration should reject stale non-fixture rendered frames")
+assert(
+  _G.nvim_browser_stale_url_err == "guided calibration requires a fresh calibration fixture frame",
+  "guided calibration should explain stale rendered fixture URLs"
+)
+pcall(vim.api.nvim_win_close, _G.nvim_browser_guided_calibration_win, true)
+vim.api.nvim_set_current_win(image_win)
+vim.api.nvim_win_set_width(image_win, 52)
+vim.api.nvim_win_set_height(image_win, 14)
+terminal._test.set_test_window(image_win)
+
 terminal.configure({
   viewport = {
     cell_width_px = 9,

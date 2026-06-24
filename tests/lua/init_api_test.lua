@@ -57,6 +57,7 @@ assert(browser.last_find_found() == true, "last_find_found should expose termina
 assert(browser.last_find_match_count() == 4, "last_find_match_count should expose terminal find match count")
 assert(type(browser.doctor) == "function", "doctor API should exist")
 assert(type(browser.calibrate) == "function", "calibrate API should exist")
+assert(type(browser.calibrate_here) == "function", "guided calibration API should exist")
 assert(type(browser.page_metrics) == "function", "page_metrics API should exist")
 assert(type(browser.page_scroll) == "function", "page_scroll API should exist")
 assert(type(browser.page_down) == "function", "page_down API should exist")

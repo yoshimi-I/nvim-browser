@@ -220,6 +220,30 @@ local function calibration_fixture_line(state)
   return "calibration fixture: observed " .. observed_label .. "; pending " .. pending_label
 end
 
+local function guided_calibration_line(config)
+  local guided = config and config.guided_calibration or nil
+  if type(guided) ~= "table" then
+    return nil
+  end
+  local width = tonumber(guided.cell_width_px)
+  local height = tonumber(guided.cell_height_px)
+  if width == nil or height == nil then
+    return nil
+  end
+  return "guided calibration: last saved "
+    .. number_label(width)
+    .. "x"
+    .. number_label(height)
+    .. " from row="
+    .. tostring(guided.row or "unknown")
+    .. " column="
+    .. tostring(guided.column or "unknown")
+    .. " target="
+    .. tostring(guided.target_x or "unknown")
+    .. ","
+    .. tostring(guided.target_y or "unknown")
+end
+
 local function viewport_cell_pixels(config)
   local viewport = (config and config.viewport) or {}
   return {
@@ -382,6 +406,10 @@ function M.run(config, terminal_state)
   local fixture_line = calibration_fixture_line(terminal_state)
   if fixture_line ~= nil then
     table.insert(report.lines, fixture_line)
+  end
+  local guided_line = guided_calibration_line(config)
+  if guided_line ~= nil then
+    table.insert(report.lines, guided_line)
   end
   append_backend_diagnostics(report, config)
 
