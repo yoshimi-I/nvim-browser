@@ -745,8 +745,58 @@ local function action_status_message()
   return table.concat(parts, " ")
 end
 
+local function current_buffer_target()
+  local buffer_name = vim.api.nvim_buf_get_name(0)
+  if buffer_name:match("^nvim%-browser://") then
+    return M.current_url() or M.last_target()
+  end
+  local target = vim.fn.expand("%:p")
+  if target == nil or target == "" then
+    target = vim.fn.expand("%")
+  end
+  return target
+end
+
+local function resume_available()
+  if M.last_target() ~= nil then
+    return true
+  end
+  local history = M.history()
+  return type(history) == "table" and history[1] ~= nil and history[1].url ~= nil
+end
+
 local function action_items(opts, report_error)
-  return {
+  local items = {
+    {
+      label = "Open current buffer",
+      run = function()
+        return M.open(current_buffer_target())
+      end,
+    },
+    {
+      label = "Preview current buffer",
+      run = function()
+        return M.preview()
+      end,
+    },
+    {
+      label = "Inspect current buffer",
+      run = function()
+        return M.inspect(current_buffer_target())
+      end,
+    },
+  }
+
+  if resume_available() then
+    table.insert(items, {
+      label = "Resume",
+      run = function()
+        return M.resume()
+      end,
+    })
+  end
+
+  vim.list_extend(items, {
     {
       label = "Address",
       run = function()
@@ -817,6 +867,16 @@ local function action_items(opts, report_error)
       end,
     },
     {
+      label = "Open download",
+      run = function()
+        local ok = M.open_download(nil, {
+          select = opts.select,
+          on_error = report_error,
+        })
+        return ok ~= false
+      end,
+    },
+    {
       label = "Screenshot",
       run = function()
         local saved_path = nil
@@ -859,6 +919,24 @@ local function action_items(opts, report_error)
       end,
     },
     {
+      label = "Zoom in",
+      run = function()
+        return M.zoom_in()
+      end,
+    },
+    {
+      label = "Zoom out",
+      run = function()
+        return M.zoom_out()
+      end,
+    },
+    {
+      label = "Zoom reset",
+      run = function()
+        return M.zoom_reset()
+      end,
+    },
+    {
       label = "Doctor",
       run = function()
         local report = M.doctor()
@@ -877,7 +955,9 @@ local function action_items(opts, report_error)
         return true
       end,
     },
-  }
+  })
+
+  return items
 end
 
 function M.actions(select_or_opts, maybe_opts)

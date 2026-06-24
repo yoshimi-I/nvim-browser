@@ -168,9 +168,10 @@ COMMANDS                                           *nvim-browser-commands*
 
 							*:NBrowserActions*
 :NBrowserActions
-	Open a compact picker for common browser actions such as address, reload,
-	back, forward, find, hints, text mode, screenshot, reader, status, doctor,
-	and close. Focused preview buffers map ? to this picker by default.
+	Open a compact picker for common browser actions such as opening,
+	previewing, inspecting, resuming, address, reload, back, forward, find,
+	hints, text mode, downloads, screenshot, reader, status, zoom, doctor, and
+	close. Focused preview buffers map ? to this picker by default.
 
 							*:NBrowserBack*
 :NBrowserBack

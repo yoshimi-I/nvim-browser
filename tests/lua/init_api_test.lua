@@ -475,13 +475,20 @@ browser.clear_history()
 local action_calls = {}
 local function with_action_stubs(fn)
   local originals = {
+    open = browser.open,
+    preview = browser.preview,
+    inspect = browser.inspect,
     address = browser.address,
     reload = browser.reload,
+    resume = browser.resume,
+    last_target = browser.last_target,
+    history = browser.history,
     back = browser.back,
     forward = browser.forward,
     find_text = browser.find_text,
     pick_hint = browser.pick_hint,
     start_text_mode = browser.start_text_mode,
+    open_download = browser.open_download,
     screenshot = browser.screenshot,
     reader = browser.reader,
     status = browser.status,
@@ -493,7 +500,22 @@ local function with_action_stubs(fn)
     status_error = browser.status_error,
     doctor = browser.doctor,
     close = browser.close,
+    zoom_in = browser.zoom_in,
+    zoom_out = browser.zoom_out,
+    zoom_reset = browser.zoom_reset,
   }
+  browser.open = function(target)
+    table.insert(action_calls, "open:" .. tostring(target))
+    return true
+  end
+  browser.preview = function()
+    table.insert(action_calls, "preview")
+    return true
+  end
+  browser.inspect = function(target)
+    table.insert(action_calls, "inspect:" .. tostring(target))
+    return true
+  end
   browser.address = function()
     table.insert(action_calls, "address")
     return true
@@ -501,6 +523,13 @@ local function with_action_stubs(fn)
   browser.reload = function()
     table.insert(action_calls, "reload")
     return true
+  end
+  browser.resume = function()
+    table.insert(action_calls, "resume")
+    return true
+  end
+  browser.last_target = function()
+    return "https://last.example"
   end
   browser.back = function()
     table.insert(action_calls, "back")
@@ -520,6 +549,10 @@ local function with_action_stubs(fn)
   end
   browser.start_text_mode = function()
     table.insert(action_calls, "text_mode")
+    return true
+  end
+  browser.open_download = function(index)
+    table.insert(action_calls, "open_download:" .. tostring(index))
     return true
   end
   browser.screenshot = function(path)
@@ -568,6 +601,18 @@ local function with_action_stubs(fn)
     table.insert(action_calls, "close")
     return true
   end
+  browser.zoom_in = function()
+    table.insert(action_calls, "zoom_in")
+    return true
+  end
+  browser.zoom_out = function()
+    table.insert(action_calls, "zoom_out")
+    return true
+  end
+  browser.zoom_reset = function()
+    table.insert(action_calls, "zoom_reset")
+    return true
+  end
   fn()
   for name, value in pairs(originals) do
     browser[name] = value
@@ -589,24 +634,207 @@ with_action_stubs(function()
       return "needle"
     end,
   }) == true, "actions should open the operation picker")
-  assert(#action_items >= 12, "actions should offer the core browser operations")
+	  assert(#action_items >= 19, "actions should offer the core browser operations")
   assert(action_prompt == "nvim-browser action: ", "actions should use an action picker prompt")
-  assert(first_label == "Address", "actions should format action labels")
+	  assert(first_label == "Open current buffer", "actions should format action labels")
   local labels = {}
   for _, item in ipairs(action_items) do
     labels[item.label] = true
   end
-  for _, label in ipairs({ "Address", "Reload", "Back", "Forward", "Find", "Hints", "Text mode", "Screenshot", "Reader", "Status", "Doctor", "Close" }) do
-    assert(labels[label] == true, "actions should include " .. label)
-  end
-  assert(action_calls[#action_calls] == "address", "actions should run the selected action")
+	  for _, label in ipairs({
+	    "Open current buffer",
+	    "Preview current buffer",
+	    "Inspect current buffer",
+	    "Resume",
+	    "Address",
+	    "Reload",
+	    "Back",
+	    "Forward",
+	    "Find",
+	    "Hints",
+	    "Text mode",
+	    "Open download",
+	    "Screenshot",
+	    "Reader",
+	    "Status",
+	    "Zoom in",
+	    "Zoom out",
+	    "Zoom reset",
+	    "Doctor",
+	    "Close",
+	  }) do
+	    assert(labels[label] == true, "actions should include " .. label)
+	  end
+	  assert(action_calls[#action_calls]:match("^open:"), "actions should run the selected action")
 
-  action_calls = {}
-  local address_warning = nil
-  assert(browser.actions({
-    select = function(items, _, on_choice)
-      on_choice(items[1])
-    end,
+	  action_calls = {}
+	  local action_history = browser.history
+	  browser.last_target = function()
+	    return nil
+	  end
+	  browser.history = function()
+	    return {}
+	  end
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      local labels_without_target = {}
+	      for _, item in ipairs(items) do
+	        labels_without_target[item.label] = true
+	      end
+	      assert(labels_without_target["Resume"] == nil, "actions should hide Resume without a last target")
+	      on_choice(nil)
+	    end,
+	  }) == true, "actions should still open without a last target")
+	  browser.last_target = function()
+	    return "https://last.example"
+	  end
+	  browser.history = action_history
+
+	  action_calls = {}
+	  browser.last_target = function()
+	    return nil
+	  end
+	  browser.history = function()
+	    return { { url = "https://history.example", title = "History" } }
+	  end
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      local labels_with_history = {}
+	      for _, item in ipairs(items) do
+	        labels_with_history[item.label] = true
+	      end
+	      assert(labels_with_history["Resume"] == true, "actions should show Resume when history can be resumed")
+	      on_choice(nil)
+	    end,
+	  }) == true, "actions should expose Resume when history exists")
+	  browser.last_target = function()
+	    return "https://last.example"
+	  end
+	  browser.history = action_history
+
+	  action_calls = {}
+	  local original_buf_get_name = vim.api.nvim_buf_get_name
+	  vim.api.nvim_buf_get_name = function()
+	    return "nvim-browser://Example"
+	  end
+	  local action_current_url = browser.current_url
+	  browser.current_url = function()
+	    return "https://current.example"
+	  end
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      on_choice(items[1])
+	    end,
+	  }) == true, "Open current action should run from preview buffers")
+	  vim.api.nvim_buf_get_name = original_buf_get_name
+	  assert(
+	    action_calls[#action_calls] == "open:https://current.example",
+	    "Open current action should target the current browser URL from preview buffers"
+	  )
+	  browser.current_url = action_current_url
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Preview current buffer" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Preview action should run")
+	  assert(action_calls[#action_calls] == "preview", "Preview action should call preview")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Inspect current buffer" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Inspect action should run")
+	  assert(action_calls[#action_calls]:match("^inspect:"), "Inspect action should call inspect with a target")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Resume" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Resume action should run")
+	  assert(action_calls[#action_calls] == "resume", "Resume action should call resume")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Open download" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Open download action should run")
+	  assert(action_calls[#action_calls] == "open_download:nil", "Open download action should call open_download")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Zoom in" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Zoom in action should run")
+	  assert(action_calls[#action_calls] == "zoom_in", "Zoom in action should call zoom_in")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Zoom out" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Zoom out action should run")
+	  assert(action_calls[#action_calls] == "zoom_out", "Zoom out action should call zoom_out")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Zoom reset" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Zoom reset action should run")
+	  assert(action_calls[#action_calls] == "zoom_reset", "Zoom reset action should call zoom_reset")
+
+	  action_calls = {}
+	  local address_warning = nil
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Address" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
     input = function(prompt)
       assert(prompt == "nvim-browser address: ", "Address action should prompt for an address")
       return ""
