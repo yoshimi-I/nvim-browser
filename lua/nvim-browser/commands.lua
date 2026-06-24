@@ -101,27 +101,6 @@ function M.register(browser, opts)
     return "download=" .. tostring(filename)
   end
 
-  local function download_list_label(download)
-    if type(download) ~= "table" then
-      return nil
-    end
-    local filename = download.suggested_filename
-    if filename == nil or filename == vim.NIL or filename == "" then
-      local path = download.path
-      if path ~= nil and path ~= vim.NIL and path ~= "" then
-        filename = vim.fn.fnamemodify(tostring(path), ":t")
-      end
-    end
-    if filename == nil or filename == vim.NIL or filename == "" then
-      filename = "download"
-    end
-    local path = download.path ~= nil and download.path ~= vim.NIL and tostring(download.path) or ""
-    if path == "" then
-      return tostring(filename)
-    end
-    return tostring(filename) .. " " .. path
-  end
-
   local function warn_hint_input_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: hint input failed, stale, or browser session is inactive", "WarningMsg" } }, false, {})
   end
@@ -1050,8 +1029,8 @@ function M.register(browser, opts)
     end
 
     local lines = {}
-    for _, download in ipairs(downloads) do
-      local label = download_list_label(download)
+    for index, download in ipairs(downloads) do
+      local label = status_labels.download_list_label(download, index)
       if label ~= nil and label ~= "" then
         table.insert(lines, label)
       end
@@ -1062,6 +1041,24 @@ function M.register(browser, opts)
     end
     vim.api.nvim_echo({ { table.concat(lines, "\n") } }, false, {})
   end, {})
+
+  vim.api.nvim_create_user_command("NBrowserOpenDownload", function(cmd_opts)
+    local warning_reported = false
+    local function warn_open_download_unavailable()
+      warning_reported = true
+      vim.api.nvim_echo({ { "nvim-browser: no completed download could be opened", "WarningMsg" } }, false, {})
+    end
+    local index = cmd_opts.args ~= "" and cmd_opts.args or nil
+    local ok = browser.open_download ~= nil and browser.open_download(index, {
+      select = select,
+      on_error = warn_open_download_unavailable,
+    })
+    if ok == false and not warning_reported then
+      warn_open_download_unavailable()
+    end
+  end, {
+    nargs = "?",
+  })
 
   vim.api.nvim_create_user_command("NBrowserDoctor", function()
     local report = browser.doctor()

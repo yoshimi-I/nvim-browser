@@ -42,6 +42,7 @@ assert(type(browser.yank_current_url) == "function", "current URL yank API shoul
 assert(type(browser.yank_hint_url) == "function", "hint URL yank API should exist")
 assert(type(browser.screenshot) == "function", "active browser screenshot API should exist")
 assert(type(browser.downloads) == "function", "download history API should exist")
+assert(type(browser.open_download) == "function", "open download API should exist")
 assert(type(browser.start_text_mode) == "function", "interactive browser text mode API should exist")
 assert(type(browser.address) == "function", "address API should exist")
 assert(type(browser.resolve_address_target) == "function", "address target resolver should exist")
@@ -1723,6 +1724,79 @@ assert(
   terminal_download_history[1].path == "/tmp/downloads/report.pdf",
   "downloads should return a defensive copy of terminal metadata"
 )
+
+opened_download_target = nil
+original_browser_open_for_download = browser.open
+browser.open = function(target)
+  opened_download_target = target
+  return true
+end
+assert(browser.open_download() == true, "open_download should open a single completed download")
+assert(opened_download_target == "/tmp/downloads/report.pdf", "open_download should pass the download path through browser.open")
+
+terminal_download_history = {
+  { path = "/tmp/downloads/report.pdf", suggested_filename = "report.pdf", status = "completed" },
+  { path = "/tmp/downloads/archive.zip", suggested_filename = "archive.zip", status = "completed" },
+}
+opened_download_target = nil
+download_picker_prompt = nil
+download_picker_first_label = nil
+assert(browser.open_download(nil, {
+  select = function(items, opts, on_choice)
+    download_picker_prompt = opts.prompt
+    download_picker_first_label = opts.format_item(items[1])
+    on_choice(items[2])
+  end,
+}) == true, "open_download should open a picker when multiple downloads exist")
+assert(download_picker_prompt == "nvim-browser download: ", "open_download should use a download picker prompt")
+assert(
+  download_picker_first_label == "1. report.pdf /tmp/downloads/report.pdf",
+  "open_download picker should use indexed filename/path labels"
+)
+assert(opened_download_target == "/tmp/downloads/archive.zip", "open_download picker should open the selected download path")
+
+opened_download_target = nil
+download_picker_prompt = nil
+assert(browser.open_download(nil, {
+  select = function(_, opts, _)
+    download_picker_prompt = opts.prompt
+  end,
+}) == nil, "open_download should return nil while an async picker selection is pending")
+assert(download_picker_prompt == "nvim-browser download: ", "open_download should still start the async picker")
+assert(opened_download_target == nil, "open_download should not open anything before an async picker selects a download")
+
+opened_download_target = nil
+assert(browser.open_download(1) == true, "open_download should accept a 1-based download index")
+assert(opened_download_target == "/tmp/downloads/report.pdf", "open_download should open the indexed download path")
+
+opened_download_target = nil
+assert(browser.open_download("abc") == false, "open_download should reject a nonnumeric index")
+assert(opened_download_target == nil, "open_download should not open anything for a nonnumeric index")
+
+opened_download_target = nil
+assert(browser.open_download(9) == false, "open_download should reject an invalid index")
+assert(opened_download_target == nil, "open_download should not open anything for an invalid index")
+
+terminal_download_history = {}
+assert(browser.open_download() == false, "open_download should reject empty download history")
+
+terminal_download_history = {
+  { suggested_filename = "missing-path.bin", status = "completed" },
+}
+assert(browser.open_download() == false, "open_download should reject downloads without a path")
+
+terminal_download_history = {
+  { path = "/tmp/downloads/report.pdf", suggested_filename = "report.pdf", status = "completed" },
+  { path = "/tmp/downloads/archive.zip", suggested_filename = "archive.zip", status = "completed" },
+}
+opened_download_target = nil
+assert(browser.open_download(nil, {
+  select = function(_, _, on_choice)
+    on_choice(nil)
+  end,
+}) == false, "open_download should treat picker cancellation as a failed open")
+assert(opened_download_target == nil, "open_download should not open anything when picker is canceled")
+browser.open = original_browser_open_for_download
 
 local screenshot_path = nil
 terminal.screenshot = function(path)

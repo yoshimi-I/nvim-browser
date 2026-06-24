@@ -74,8 +74,10 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Shows live browser state in a preview footer: status, title/URL, scroll
   progress, focused element kind/label, latest completed download filename,
   non-default zoom, output mode, cells, viewport, and errors.
-- Saves browser-initiated downloads into a configured `download_dir` and reports
-  the latest completed file path in the JSONL response plus footer/status.
+- Saves browser-initiated downloads into a configured `download_dir`, reports
+  the latest completed file path in the JSONL response plus footer/status,
+  keeps an indexed session list for `:NBrowserDownloads`, and can reopen
+  completed downloads through the normal browser open path.
 - Performs live recapture while idle and suppresses background recapture while a
   navigation-like operation is pending.
 - Extracts a reader buffer from the current browser page and resolves reader

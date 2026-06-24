@@ -157,8 +157,8 @@ The same setting is available to the backend as `NVBROWSER_DOWNLOAD_DIR` or
 `--download-dir`. Completed downloads are reported in the preview footer and
 `:NBrowserStatus` as `download=filename`. The current POC reports one completed
 download per interaction response and keeps a session-local list available via
-`:NBrowserDownloads`; it does not provide progress UI, cancellation, or filename
-prompts.
+`:NBrowserDownloads` with 1-based indexes; it does not provide progress UI,
+cancellation, or filename prompts.
 
 Active browser previews recapture the page every 1500ms by default so async
 page updates and SPA state changes appear in Neovim without manual refresh.
@@ -303,6 +303,7 @@ Then run:
 :NBrowserCurrentTitle
 :NBrowserStatus
 :NBrowserDownloads
+:NBrowserOpenDownload
 :NBrowserReader
 :NBrowserReaderFollow
 :NBrowserDoctor
@@ -343,7 +344,8 @@ state in the command line. Focus metadata is reported as `focus=input Search`,
 `focus=text_area Notes`, and similar compact labels after captured browser
 interactions. Non-default zoom is reported as `zoom=125%`.
 `:NBrowserDownloads` lists completed downloads reported during the current
-browser session, including filename and full path.
+browser session, including a 1-based index, filename, and full path.
+`:NBrowserOpenDownload` opens a completed download by index or with a picker.
 
 While a browser session is idle, nvim-browser periodically sends a lightweight
 capture request to keep the preview current. It does not send background

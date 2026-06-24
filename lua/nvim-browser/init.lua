@@ -382,6 +382,7 @@ function M.open(target)
     keymaps.clear_buffer(previous_bufnr)
   end
   setup_preview_keymaps()
+  return true
 end
 
 function M.preview()
@@ -1783,6 +1784,84 @@ end
 
 function M.downloads()
   return copy_downloads(terminal.downloads())
+end
+
+local function download_path(download)
+  if type(download) ~= "table" or download.path == nil or download.path == vim.NIL or download.path == "" then
+    return nil
+  end
+  return tostring(download.path)
+end
+
+local function report_download_error(opts, reason)
+  if type(opts) == "table" and type(opts.on_error) == "function" then
+    opts.on_error(reason)
+  end
+end
+
+local function open_download_path(path)
+  return M.open(path) == true
+end
+
+function M.open_download(index, opts)
+  opts = opts or {}
+  local downloads = M.downloads()
+  if index ~= nil then
+    index = tonumber(index)
+    if index == nil or index < 1 or index % 1 ~= 0 then
+      report_download_error(opts, "invalid_index")
+      return false
+    end
+    local path = download_path(downloads[index])
+    if path == nil then
+      report_download_error(opts, "missing_path")
+      return false
+    end
+    return open_download_path(path)
+  end
+
+  local candidates = {}
+  for download_index, download in ipairs(downloads) do
+    local path = download_path(download)
+    if path ~= nil then
+      table.insert(candidates, {
+        index = download_index,
+        download = download,
+        path = path,
+      })
+    end
+  end
+  if #candidates == 0 then
+    report_download_error(opts, "no_downloads")
+    return false
+  end
+  if #candidates == 1 then
+    return open_download_path(candidates[1].path)
+  end
+
+  local callback_called = false
+  local opened = false
+  local select = opts.select or vim.ui.select
+  select(candidates, {
+    prompt = "nvim-browser download: ",
+    format_item = function(item)
+      return status_labels.download_list_label(item.download, item.index) or item.path
+    end,
+  }, function(choice)
+    callback_called = true
+    if choice == nil then
+      report_download_error(opts, "canceled")
+      return
+    end
+    opened = open_download_path(choice.path)
+    if not opened then
+      report_download_error(opts, "open_failed")
+    end
+  end)
+  if callback_called then
+    return opened
+  end
+  return nil
 end
 
 function M.status()

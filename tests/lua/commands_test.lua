@@ -53,6 +53,7 @@ local zoomed = {}
 local picked_action = nil
 local selected_region = nil
 local yanked_region = nil
+local opened_download = nil
 local browser = {
   hints = function()
     return {
@@ -366,6 +367,10 @@ local browser = {
       { path = "/tmp/downloads/report.pdf", suggested_filename = "report.pdf", status = "completed" },
       { path = "/tmp/downloads/archive.zip", suggested_filename = "archive.zip", status = "completed" },
     }
+  end,
+  open_download = function(index, opts)
+    opened_download = { index = index, has_select = type(opts) == "table" and type(opts.select) == "function" }
+    return true
   end,
   hint_error = function()
     return nil
@@ -693,8 +698,12 @@ assert(echoed:match("cells=80x24"), "NBrowserStatus should include runtime cell 
 assert(echoed:match("renderer=chromium%-cdp"), "NBrowserStatus should include runtime renderer when available")
 
 vim.cmd("NBrowserDownloads")
-assert(echoed:match("report%.pdf%s+/tmp/downloads/report%.pdf"), "NBrowserDownloads should list completed download filenames and paths")
-assert(echoed:match("archive%.zip%s+/tmp/downloads/archive%.zip"), "NBrowserDownloads should list multiple completed downloads")
+assert(echoed:match("1%.%s+report%.pdf%s+/tmp/downloads/report%.pdf"), "NBrowserDownloads should list indexed download filenames and paths")
+assert(echoed:match("2%.%s+archive%.zip%s+/tmp/downloads/archive%.zip"), "NBrowserDownloads should list multiple indexed downloads")
+
+vim.cmd("NBrowserOpenDownload 2")
+assert(opened_download.index == "2", "NBrowserOpenDownload should pass an explicit index to browser.open_download")
+assert(opened_download.has_select == true, "NBrowserOpenDownload should pass the configured picker to browser.open_download")
 
 vim.cmd("NBrowserReader")
 assert(reader_called == true, "NBrowserReader should call browser.reader")
@@ -1330,6 +1339,9 @@ local failed_browser = {
   downloads = function()
     return {}
   end,
+  open_download = function()
+    return false
+  end,
   stop = function()
     return false
   end,
@@ -1378,6 +1390,9 @@ assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no
 
 vim.cmd("NBrowserDownloads")
 assert(echoed == "nvim-browser: no completed downloads", "NBrowserDownloads should report an empty download history")
+
+vim.cmd("NBrowserOpenDownload")
+assert(warnings[#warnings] == "nvim-browser: no completed download could be opened", "NBrowserOpenDownload should warn when no download can be opened")
 
 vim.cmd("NBrowserInputMode")
 assert(warnings[#warnings] == "nvim-browser: focused text input failed or browser session is inactive", "NBrowserInputMode should warn when focused text input fails")
