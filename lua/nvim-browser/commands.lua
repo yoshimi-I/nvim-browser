@@ -471,23 +471,37 @@ function M.register(browser, opts)
       warn_invalid_picker_action(action)
       return
     end
+    local picker_error_reported = false
+    local function warn_picker_unavailable()
+      if picker_error_reported then
+        return
+      end
+      picker_error_reported = true
+      if action == "upload" then
+        warn_hint_upload_unavailable()
+      elseif action == "yank-url" then
+        warn_hint_url_yank_unavailable()
+      else
+        warn_hint_unavailable()
+      end
+    end
     if browser.pick_hint == nil or not browser.pick_hint(select, {
       action = action,
       input = input,
       on_error = function()
-        warn_hint_unavailable()
+        warn_picker_unavailable()
       end,
     }) then
       if #browser.hints() == 0 then
         warn_no_hints()
       else
-        warn_hint_unavailable()
+        warn_picker_unavailable()
       end
     end
   end, {
     nargs = "?",
     complete = function()
-      return { "follow", "click", "right-click", "focus", "hover", "toggle", "type", "submit" }
+      return { "follow", "click", "right-click", "focus", "hover", "toggle", "type", "submit", "select", "upload", "yank-url" }
     end,
   })
 

@@ -193,11 +193,28 @@ local browser = {
   pick_hint = function(select, opts)
     picked_action = opts and opts.action or "follow"
     local items = {
-      { id = 1, hint_label = "a", kind = "link", label = "Docs" },
+      { id = 1, hint_label = "a", kind = "link", label = "Docs", href = "https://example.com/docs" },
       { id = 2, hint_label = "s", kind = "input", label = "Search" },
+      {
+        id = 5,
+        hint_label = "o",
+        kind = "select",
+        label = "Country",
+        options = {
+          { value = "jp", label = "Japan", disabled = false },
+          { value = "xx", label = "Disabled", disabled = true },
+        },
+      },
+      { id = 6, hint_label = "u", kind = "file", label = "Avatar" },
     }
     if picked_action == "type" or picked_action == "submit" then
       items = { items[2] }
+    elseif picked_action == "select" then
+      items = { items[3] }
+    elseif picked_action == "upload" then
+      items = { items[4] }
+    elseif picked_action == "yank-url" then
+      items = { items[1] }
     end
     select(items, { prompt = "nvim-browser hint: " }, function(choice)
       if choice ~= nil and (picked_action == "type" or picked_action == "submit") then
@@ -207,6 +224,16 @@ local browser = {
         else
           typed_hint = value
         end
+      elseif choice ~= nil and picked_action == "select" then
+        select(choice.options, { prompt = "nvim-browser option: " }, function(option)
+          if option ~= nil then
+            selected_hint = choice.hint_label .. ":" .. option.value
+          end
+        end)
+      elseif choice ~= nil and picked_action == "upload" then
+        uploaded_hint = { label = choice.hint_label, paths = { opts.input("nvim-browser file: ") } }
+      elseif choice ~= nil and picked_action == "yank-url" then
+        yanked_hint_url = { identifier = choice.hint_label, register = '"' }
       end
     end)
     if opts ~= nil and opts.action == "hover" and opts.on_error ~= nil then
@@ -224,6 +251,9 @@ local browser = {
       or action == "type"
       or action == "submit"
       or action == "toggle"
+      or action == "select"
+      or action == "upload"
+      or action == "yank-url"
   end,
   status = function()
     return "ok"
@@ -402,6 +432,9 @@ local pick_hint_completions = vim.fn.getcompletion("NBrowserPickHint ", "cmdline
 assert(vim.tbl_contains(pick_hint_completions, "right-click"), "NBrowserPickHint completion should include right-click")
 assert(vim.tbl_contains(pick_hint_completions, "type"), "NBrowserPickHint completion should include type")
 assert(vim.tbl_contains(pick_hint_completions, "submit"), "NBrowserPickHint completion should include submit")
+assert(vim.tbl_contains(pick_hint_completions, "select"), "NBrowserPickHint completion should include select")
+assert(vim.tbl_contains(pick_hint_completions, "upload"), "NBrowserPickHint completion should include upload")
+assert(vim.tbl_contains(pick_hint_completions, "yank-url"), "NBrowserPickHint completion should include yank-url")
 
 typed_hint = nil
 local pick_type_prompts = {}
@@ -437,6 +470,57 @@ commands.register(browser, {
 vim.cmd("NBrowserPickHint submit")
 assert(submitted_hint == "s:submitted from pick", "NBrowserPickHint submit should submit into the selected input-like hint")
 
+selected_hint = nil
+local pick_select_prompts = {}
+commands.register(browser, {
+  input = function()
+    return ""
+  end,
+  select = function(items, opts, on_choice)
+    table.insert(pick_select_prompts, opts.prompt)
+    on_choice(items[1])
+  end,
+})
+vim.cmd("NBrowserPickHint select")
+assert(selected_hint == "o:jp", "NBrowserPickHint select should select the picked option")
+assert(
+  table.concat(pick_select_prompts, "|") == "nvim-browser hint: |nvim-browser option: ",
+  "NBrowserPickHint select should prompt for hint then option"
+)
+
+uploaded_hint = nil
+local pick_upload_prompts = {}
+commands.register(browser, {
+  input = function(prompt)
+    table.insert(pick_upload_prompts, prompt)
+    return "/tmp/avatar.png"
+  end,
+  select = function(items, opts, on_choice)
+    table.insert(pick_upload_prompts, opts.prompt)
+    on_choice(items[1])
+  end,
+})
+vim.cmd("NBrowserPickHint upload")
+assert(uploaded_hint.label == "u", "NBrowserPickHint upload should upload into the selected file hint")
+assert(uploaded_hint.paths[1] == "/tmp/avatar.png", "NBrowserPickHint upload should pass prompted path")
+assert(
+  table.concat(pick_upload_prompts, "|") == "nvim-browser hint: |nvim-browser file: ",
+  "NBrowserPickHint upload should prompt for hint then file path"
+)
+
+yanked_hint_url = nil
+commands.register(browser, {
+  input = function()
+    return ""
+  end,
+  select = function(items, _, on_choice)
+    on_choice(items[1])
+  end,
+})
+vim.cmd("NBrowserPickHint yank-url")
+assert(yanked_hint_url.identifier == "a", "NBrowserPickHint yank-url should yank the selected link hint URL")
+assert(yanked_hint_url.register == '"', "NBrowserPickHint yank-url should use the unnamed register")
+
 local original_pick_hint = browser.pick_hint
 browser.pick_hint = function(_, opts)
   picked_action = opts and opts.action or "follow"
@@ -450,6 +534,34 @@ assert(
   "NBrowserPickHint type should warn when no input-like hints are available"
 )
 assert(#warnings == missing_input_warning_count + 1, "missing input-like hints should produce one warning")
+
+browser.pick_hint = function(_, opts)
+  picked_action = opts and opts.action or "follow"
+  opts.on_error("action_failed")
+  return false
+end
+local missing_upload_warning_count = #warnings
+vim.cmd("NBrowserPickHint upload")
+assert(picked_action == "upload", "NBrowserPickHint upload should pass action when upload fails")
+assert(
+  warnings[#warnings] == "nvim-browser: hint file upload failed, stale, non-file, missing path, or browser session is inactive",
+  "NBrowserPickHint upload should use the upload-specific warning when upload fails"
+)
+assert(#warnings == missing_upload_warning_count + 1, "failed picker upload should produce one warning")
+
+browser.pick_hint = function(_, opts)
+  picked_action = opts and opts.action or "follow"
+  opts.on_error("action_failed")
+  return false
+end
+local missing_yank_url_warning_count = #warnings
+vim.cmd("NBrowserPickHint yank-url")
+assert(picked_action == "yank-url", "NBrowserPickHint yank-url should pass action when yank fails")
+assert(
+  warnings[#warnings] == "nvim-browser: hint URL not found, stale, non-link, or register is invalid",
+  "NBrowserPickHint yank-url should use the hint URL-specific warning when yank fails"
+)
+assert(#warnings == missing_yank_url_warning_count + 1, "failed picker yank-url should produce one warning")
 browser.pick_hint = original_pick_hint
 
 commands.register(browser, {

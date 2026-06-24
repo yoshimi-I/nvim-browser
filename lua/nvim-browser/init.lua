@@ -459,6 +459,16 @@ local function enabled_select_options(hint)
   return enabled
 end
 
+local function select_hints_with_enabled_options(hints)
+  local selectable = {}
+  for _, hint in ipairs(hints) do
+    if #enabled_select_options(hint) > 0 then
+      table.insert(selectable, hint)
+    end
+  end
+  return selectable
+end
+
 local function input_like_hints(hints)
   local inputs = {}
   for _, hint in ipairs(hints) do
@@ -467,6 +477,26 @@ local function input_like_hints(hints)
     end
   end
   return inputs
+end
+
+local function upload_like_hints(hints)
+  local uploads = {}
+  for _, hint in ipairs(hints) do
+    if type(hint) == "table" and hint.kind == "file" then
+      table.insert(uploads, hint)
+    end
+  end
+  return uploads
+end
+
+local function href_hints(hints)
+  local links = {}
+  for _, hint in ipairs(hints) do
+    if type(hint) == "table" and hint.href ~= nil and hint.href ~= "" then
+      table.insert(links, hint)
+    end
+  end
+  return links
 end
 
 local function pick_hint_action(action)
@@ -490,6 +520,15 @@ local function pick_hint_action(action)
   end
   if action == "type" or action == "submit" then
     return M.type_hint
+  end
+  if action == "select" then
+    return M.select_hint
+  end
+  if action == "upload" then
+    return M.upload_hint
+  end
+  if action == "yank-url" then
+    return M.yank_hint_url
   end
   return nil
 end
@@ -524,12 +563,34 @@ function M.pick_hint(select_or_opts, maybe_opts)
     if #hints == 0 then
       return false
     end
+  elseif action_name == "select" then
+    hints = select_hints_with_enabled_options(hints)
+    if #hints == 0 then
+      return false
+    end
+  elseif action_name == "upload" then
+    hints = upload_like_hints(hints)
+    if #hints == 0 then
+      return false
+    end
+  elseif action_name == "yank-url" then
+    hints = href_hints(hints)
+    if #hints == 0 then
+      return false
+    end
   end
 
   local selected = nil
   local completed = false
   local action_ok = true
+  local error_reported = false
   local input = opts.input or vim.fn.input
+  local function report_error(reason)
+    if not error_reported and type(opts.on_error) == "function" then
+      error_reported = true
+      opts.on_error(reason)
+    end
+  end
   select(hints, {
     prompt = opts.prompt or "nvim-browser hint: ",
     format_item = opts.format_item or hint_picker_label,
@@ -547,14 +608,47 @@ function M.pick_hint(select_or_opts, maybe_opts)
           return
         end
         action_ok = action(identifier, text, { submit = action_name == "submit" }) ~= false
+      elseif action_name == "select" then
+        local options = enabled_select_options(choice)
+        if #options == 0 then
+          action_ok = false
+          report_error("no_enabled_options")
+          return
+        end
+        select(options, {
+          prompt = "nvim-browser option: ",
+          format_item = select_option_picker_label,
+        }, function(option)
+          if option == nil then
+            return
+          end
+          local option_choice = select_option_choice(option)
+          if option_choice == nil then
+            action_ok = false
+            report_error("missing_identifier")
+            return
+          end
+          action_ok = action(identifier, option_choice) ~= false
+          if not action_ok then
+            report_error("action_failed")
+          end
+        end)
+      elseif action_name == "upload" then
+        local path = input("nvim-browser file: ")
+        if path == nil or path == "" then
+          return
+        end
+        action_ok = action(identifier, { path }) ~= false
+      elseif action_name == "yank-url" then
+        action_ok = action(identifier, opts.register or '"') ~= false
       else
         action_ok = action(identifier) ~= false
       end
-      if not action_ok and type(opts.on_error) == "function" then
-        opts.on_error("action_failed")
+      if not action_ok then
+        report_error("action_failed")
       end
-    elseif type(opts.on_error) == "function" then
-      opts.on_error("missing_identifier")
+    else
+      report_error("missing_identifier")
     end
   end)
 

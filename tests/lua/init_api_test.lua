@@ -74,6 +74,9 @@ assert(browser.resolve_address_target("") == nil, "address resolver should rejec
 local original_hints = browser.hints
 local original_click_hint = browser.click_hint
 local original_type_hint = browser.type_hint
+local original_select_hint = browser.select_hint
+local original_upload_hint = browser.upload_hint
+local original_yank_hint_url = browser.yank_hint_url
 local original_terminal_right_click_point = terminal.right_click_point
 local original_terminal_right_click_here = terminal.right_click_here
 local original_terminal_right_click_mouse = terminal.right_click_mouse
@@ -153,6 +156,17 @@ browser.hints = function()
   return {
     { id = 1, hint_label = "a", kind = "link", label = "Docs", href = "https://example.com/docs" },
     { id = 2, hint_label = "s", kind = "input", label = "Search" },
+    {
+      id = 3,
+      hint_label = "o",
+      kind = "select",
+      label = "Country",
+      options = {
+        { value = "jp", label = "Japan", selected = false, disabled = false },
+        { value = "xx", label = "Disabled", selected = false, disabled = true },
+      },
+    },
+    { id = 4, hint_label = "u", kind = "file", label = "Avatar" },
   }
 end
 browser.follow_hint = function(label)
@@ -282,6 +296,182 @@ assert(browser.pick_hint_action_available("toggle") == true, "valid picker actio
 assert(browser.pick_hint_action_available("right-click") == true, "right-click picker action should be detectable")
 assert(browser.pick_hint_action_available("type") == true, "type picker action should be detectable")
 assert(browser.pick_hint_action_available("submit") == true, "submit picker action should be detectable")
+assert(browser.pick_hint_action_available("select") == true, "select picker action should be detectable")
+assert(browser.pick_hint_action_available("upload") == true, "upload picker action should be detectable")
+assert(browser.pick_hint_action_available("yank-url") == true, "yank-url picker action should be detectable")
+
+browser.hints = function()
+  return {
+    { id = 1, hint_label = "a", kind = "link", label = "Docs", href = "https://example.com/docs" },
+    { id = 2, hint_label = "s", kind = "input", label = "Search" },
+    {
+      id = 3,
+      hint_label = "o",
+      kind = "select",
+      label = "Country",
+      options = {
+        { value = "jp", label = "Japan", selected = false, disabled = false },
+        { value = "xx", label = "Disabled", selected = false, disabled = true },
+      },
+    },
+    { id = 4, hint_label = "u", kind = "file", label = "Avatar" },
+  }
+end
+
+local selected_from_picker = nil
+browser.select_hint = function(label, choice)
+  selected_from_picker = { label = label, choice = choice }
+  return true
+end
+local select_picker_prompts = {}
+local select_hint_count = nil
+local select_option_count = nil
+assert(browser.pick_hint({
+  action = "select",
+  select = function(items, opts, on_choice)
+    table.insert(select_picker_prompts, opts.prompt)
+    if opts.prompt == "nvim-browser hint: " then
+      select_hint_count = #items
+      on_choice(items[1])
+    else
+      select_option_count = #items
+      on_choice(items[1])
+    end
+  end,
+}) == true, "pick_hint select should open hinted select and option pickers")
+assert(select_hint_count == 1, "pick_hint select should only include hints with enabled select options")
+assert(select_option_count == 1, "pick_hint select should only include enabled options")
+assert(selected_from_picker.label == "o", "pick_hint select should pass selected hint label")
+assert(selected_from_picker.choice == "jp", "pick_hint select should pass option value")
+assert(
+  table.concat(select_picker_prompts, "|") == "nvim-browser hint: |nvim-browser option: ",
+  "pick_hint select should prompt for hint then option"
+)
+
+local select_error_count = 0
+browser.select_hint = function()
+  return false
+end
+assert(browser.pick_hint({
+  action = "select",
+  select = function(items, _, on_choice)
+    on_choice(items[1])
+  end,
+  on_error = function(reason)
+    select_error_count = select_error_count + 1
+    assert(reason == "action_failed", "pick_hint select should report failed select_hint actions")
+  end,
+}) == false, "pick_hint select should return false when select_hint fails synchronously")
+assert(select_error_count == 1, "pick_hint select should report a failed action once")
+
+local uploaded_from_picker = nil
+browser.upload_hint = function(label, paths)
+  uploaded_from_picker = { label = label, paths = paths }
+  return true
+end
+local upload_hint_count = nil
+assert(browser.pick_hint({
+  action = "upload",
+  select = function(items, _, on_choice)
+    upload_hint_count = #items
+    on_choice(items[1])
+  end,
+  input = function(prompt)
+    assert(prompt == "nvim-browser file: ", "pick_hint upload should prompt for a file path")
+    return "/tmp/avatar.png"
+  end,
+}) == true, "pick_hint upload should upload into a selected file hint")
+assert(upload_hint_count == 1, "pick_hint upload should only include file hints")
+assert(uploaded_from_picker.label == "u", "pick_hint upload should pass selected hint label")
+assert(uploaded_from_picker.paths[1] == "/tmp/avatar.png", "pick_hint upload should pass prompted file path")
+
+uploaded_from_picker = nil
+assert(browser.pick_hint({
+  action = "upload",
+  select = function(items, _, on_choice)
+    on_choice(items[1])
+  end,
+  input = function()
+    return ""
+  end,
+}) == true, "pick_hint upload should no-op on empty file path")
+assert(uploaded_from_picker == nil, "pick_hint upload should not call upload_hint on empty file path")
+
+local upload_error_count = 0
+browser.upload_hint = function()
+  return false
+end
+assert(browser.pick_hint({
+  action = "upload",
+  select = function(items, _, on_choice)
+    on_choice(items[1])
+  end,
+  input = function()
+    return "/tmp/avatar.png"
+  end,
+  on_error = function(reason)
+    upload_error_count = upload_error_count + 1
+    assert(reason == "action_failed", "pick_hint upload should report failed upload actions")
+  end,
+}) == false, "pick_hint upload should return false when upload_hint fails synchronously")
+assert(upload_error_count == 1, "pick_hint upload should report a failed action once")
+
+local yanked_from_picker = nil
+browser.yank_hint_url = function(label, register)
+  yanked_from_picker = { label = label, register = register }
+  return true
+end
+local yank_hint_count = nil
+assert(browser.pick_hint({
+  action = "yank-url",
+  select = function(items, _, on_choice)
+    yank_hint_count = #items
+    on_choice(items[1])
+  end,
+}) == true, "pick_hint yank-url should yank the selected link hint URL")
+assert(yank_hint_count == 1, "pick_hint yank-url should only include hints with href")
+assert(yanked_from_picker.label == "a", "pick_hint yank-url should pass selected hint label")
+assert(yanked_from_picker.register == '"', "pick_hint yank-url should use the unnamed register by default")
+
+local yank_error_count = 0
+browser.yank_hint_url = function()
+  return false
+end
+assert(browser.pick_hint({
+  action = "yank-url",
+  select = function(items, _, on_choice)
+    on_choice(items[1])
+  end,
+  on_error = function(reason)
+    yank_error_count = yank_error_count + 1
+    assert(reason == "action_failed", "pick_hint yank-url should report failed yank actions")
+  end,
+}) == false, "pick_hint yank-url should return false when yank_hint_url fails synchronously")
+assert(yank_error_count == 1, "pick_hint yank-url should report a failed action once")
+
+browser.hints = function()
+  return {
+    { id = 2, hint_label = "s", kind = "input", label = "Search" },
+  }
+end
+assert(browser.pick_hint({
+  action = "select",
+  select = function()
+    error("select picker should not open without selectable hints")
+  end,
+}) == false, "pick_hint select should return false when no select hints are available")
+assert(browser.pick_hint({
+  action = "upload",
+  select = function()
+    error("upload picker should not open without file hints")
+  end,
+}) == false, "pick_hint upload should return false when no file hints are available")
+assert(browser.pick_hint({
+  action = "yank-url",
+  select = function()
+    error("yank-url picker should not open without link hints")
+  end,
+}) == false, "pick_hint yank-url should return false when no link hints are available")
 
 assert(browser.pick_hint(function(_, _, on_choice)
   on_choice(nil)
@@ -298,6 +488,9 @@ browser.hints = original_hints
 browser.follow_hint = original_follow_hint
 browser.focus_hint = original_focus_hint
 browser.hover_hint = original_hover_hint
+browser.select_hint = original_select_hint
+browser.upload_hint = original_upload_hint
+browser.yank_hint_url = original_yank_hint_url
 
 local transient_followed = {}
 browser.follow_hint = function(label)
