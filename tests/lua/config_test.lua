@@ -42,6 +42,11 @@ assert(
   configured.session.path == vim.fn.stdpath("state") .. "/nvim-browser/session.json",
   "session persistence path should default to the plugin state path"
 )
+assert(configured.calibration.persist == true, "viewport calibration persistence should default to enabled")
+assert(
+  configured.calibration.path == vim.fn.stdpath("state") .. "/nvim-browser/calibration.json",
+  "viewport calibration path should default to the plugin state path"
+)
 assert(configured.preview_keymaps.enabled == true, "preview-local keymaps should be enabled by default")
 assert(configured.preview_keymaps.mappings.close == "q", "preview-local keymaps should include a close mapping")
 assert(
@@ -163,6 +168,14 @@ local negative_history_limit = config.setup({
   },
 })
 assert(negative_history_limit.session.history_limit == 0, "session history limit should clamp negative values")
+local calibration_config = config.setup({
+  calibration = {
+    persist = false,
+    path = "/tmp/nvim-browser-calibration.json",
+  },
+})
+assert(calibration_config.calibration.persist == false, "calibration persistence should allow disabling")
+assert(calibration_config.calibration.path == "/tmp/nvim-browser-calibration.json", "calibration path should be configurable")
 assert(remapped.viewport.cell_width_px == 10, "partial config should retain default viewport cell width")
 assert(remapped.viewport.cell_height_px == 20, "partial config should retain default viewport cell height")
 assert(remapped.preview_keymaps.mappings.scroll_down == "<C-d>", "preview-local keymaps should allow partial remaps")

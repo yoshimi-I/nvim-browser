@@ -570,9 +570,12 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserCalibrate [cell_width_px cell_height_px]
 	Open the bundled browser calibration page. When positive integer cell
 	pixel dimensions are provided, update the current in-memory viewport
-	calibration and resize an active serve preview before opening the fixture.
+	calibration, save those values under Neovim state, and resize an active
+	serve preview before opening the fixture. Persisted calibration is reused
+	on the next setup when viewport cell pixels are not configured explicitly.
 	Run :NBrowserDoctor after the calibration frame renders to compare the
-	configured cell pixels with the latest runtime viewport metadata. The
+	configured cell pixels with the latest runtime viewport metadata and see
+	whether the active values came from defaults, config, or persistence. The
 	fixture includes fixed click, right-click, hover, type, and wheel targets;
 	after those targets are exercised, :NBrowserDoctor reports which fixture
 	hit tests have been observed.

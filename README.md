@@ -129,7 +129,9 @@ require("nvim-browser").setup({
 ```
 
 You can adjust those values at runtime and immediately resize an active browser
-session:
+session. Runtime calibration values are saved under Neovim state and reused on
+the next `setup({})` call unless `viewport.cell_width_px` / `cell_height_px` are
+configured explicitly:
 
 ```vim
 :NBrowserCalibrate 9 18
@@ -139,6 +141,8 @@ session:
 `NBrowserDoctor` reports whether Chromium/CDP is available, whether the latest
 browser runtime metadata matches the configured cell-pixel calibration, and
 whether the active preview has click geometry that matches the rendered frame.
+It also reports whether the active cell-pixel values came from defaults,
+explicit config, or persisted calibration state.
 The calibration page also exposes fixed click, right-click, hover, type, and
 wheel targets; after interacting with them, `:NBrowserDoctor` reports which
 fixture hit tests have been observed.

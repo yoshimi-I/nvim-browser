@@ -19,6 +19,10 @@ local function default_session_path()
   return vim.fn.stdpath("state") .. "/nvim-browser/session.json"
 end
 
+local function default_calibration_path()
+  return vim.fn.stdpath("state") .. "/nvim-browser/calibration.json"
+end
+
 local function normalize_history_limit(value, fallback)
   value = tonumber(value)
   if value == nil then
@@ -47,6 +51,10 @@ M.options = {
     persist = true,
     history_limit = 50,
     path = default_session_path(),
+  },
+  calibration = {
+    persist = true,
+    path = default_calibration_path(),
   },
   live_refresh = {
     enabled = true,
@@ -138,12 +146,18 @@ function M.setup(opts)
   if M.options.session.persist == nil then
     M.options.session.persist = true
   end
+  M.options.calibration = M.options.calibration or {}
+  M.options.calibration.path = M.options.calibration.path or default_calibration_path()
+  if M.options.calibration.persist == nil then
+    M.options.calibration.persist = true
+  end
   return M.options
 end
 
 M._test = {
   default_binary_for_root = default_binary_for_root,
   default_session_path = default_session_path,
+  default_calibration_path = default_calibration_path,
   normalize_history_limit = normalize_history_limit,
 }
 

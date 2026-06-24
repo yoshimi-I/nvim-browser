@@ -14,6 +14,7 @@ local state = {
   downloads = {},
   session_warning_messages = {},
   session_loaded_path = nil,
+  viewport_explicitly_configured = false,
 }
 
 local history_limit = 50
@@ -31,6 +32,10 @@ local function default_session_path()
   return vim.fn.stdpath("state") .. "/nvim-browser/session.json"
 end
 
+local function default_calibration_path()
+  return vim.fn.stdpath("state") .. "/nvim-browser/calibration.json"
+end
+
 local function session_options()
   local opts = (M.config and M.config.session) or {}
   local limit = math.floor(tonumber(opts.history_limit) or history_limit)
@@ -41,6 +46,14 @@ local function session_options()
     persist = opts.persist ~= false,
     history_limit = limit,
     path = opts.path or default_session_path(),
+  }
+end
+
+local function calibration_options()
+  local opts = (M.config and M.config.calibration) or {}
+  return {
+    persist = opts.persist ~= false,
+    path = opts.path or default_calibration_path(),
   }
 end
 
@@ -255,8 +268,98 @@ local function parse_cell_pixels(cell_width_px, cell_height_px)
   return width, height
 end
 
+local function normalize_calibration_payload(payload)
+  if type(payload) ~= "table" then
+    return nil
+  end
+  local width, height = parse_cell_pixels(payload.cell_width_px, payload.cell_height_px)
+  if width == nil or height == nil then
+    return nil
+  end
+  return {
+    cell_width_px = width,
+    cell_height_px = height,
+  }
+end
+
+local function load_persisted_calibration()
+  local opts = calibration_options()
+  if not opts.persist then
+    return nil
+  end
+  local read_ok, lines = pcall(vim.fn.readfile, opts.path)
+  if not read_ok or type(lines) ~= "table" or #lines == 0 then
+    return nil
+  end
+  local decode_ok, decoded = pcall(vim.fn.json_decode, table.concat(lines, "\n"))
+  if not decode_ok then
+    warn_session("nvim-browser: ignored malformed calibration state")
+    return nil
+  end
+  local normalized = normalize_calibration_payload(decoded)
+  if normalized == nil then
+    warn_session("nvim-browser: ignored malformed calibration state")
+  end
+  return normalized
+end
+
+local function save_calibration(width, height)
+  local opts = calibration_options()
+  if not opts.persist then
+    return true
+  end
+  local directory = vim.fn.fnamemodify(opts.path, ":h")
+  if directory ~= nil and directory ~= "" and directory ~= "." then
+    local mkdir_ok, mkdir_result = pcall(vim.fn.mkdir, directory, "p")
+    if not mkdir_ok or mkdir_result == 0 then
+      warn_session("nvim-browser: failed to create calibration state directory")
+      return false
+    end
+  end
+  local encoded_ok, encoded = pcall(vim.fn.json_encode, {
+    version = 1,
+    cell_width_px = width,
+    cell_height_px = height,
+  })
+  if not encoded_ok then
+    warn_session("nvim-browser: failed to encode calibration state")
+    return false
+  end
+  local write_ok, write_result = pcall(vim.fn.writefile, { encoded }, opts.path)
+  if not write_ok or write_result ~= 0 then
+    warn_session("nvim-browser: failed to write calibration state")
+    return false
+  end
+  return true
+end
+
 function M.setup(opts)
+  opts = opts or {}
+  local explicit_viewport = type(opts.viewport) == "table"
+    and (opts.viewport.cell_width_px ~= nil or opts.viewport.cell_height_px ~= nil)
   M.config = config.setup(opts)
+  if explicit_viewport then
+    state.viewport_explicitly_configured = true
+    M.config.viewport = {
+      cell_width_px = opts.viewport.cell_width_px or 10,
+      cell_height_px = opts.viewport.cell_height_px or 20,
+    }
+    M.config.viewport_source = "config"
+  elseif state.viewport_explicitly_configured then
+    M.config.viewport_source = "config"
+  else
+    M.config.viewport = {
+      cell_width_px = 10,
+      cell_height_px = 20,
+    }
+    M.config.viewport_source = "default"
+    local persisted = load_persisted_calibration()
+    if persisted ~= nil then
+      M.config.viewport.cell_width_px = persisted.cell_width_px
+      M.config.viewport.cell_height_px = persisted.cell_height_px
+      M.config.viewport_source = "persisted"
+    end
+  end
   load_session()
   terminal.configure(M.config)
   terminal.set_metadata_observer(function(metadata)
@@ -459,6 +562,8 @@ function M.calibrate(cell_width_px, cell_height_px)
     M.config.viewport = M.config.viewport or {}
     M.config.viewport.cell_width_px = width
     M.config.viewport.cell_height_px = height
+    M.config.viewport_source = "config"
+    save_calibration(width, height)
     terminal.configure({ viewport = M.config.viewport })
   end
 

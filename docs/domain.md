@@ -136,7 +136,9 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   validation.
 - Click accuracy depends on configured terminal cell pixel dimensions.
   `:NBrowserCalibrate` now opens a fixed hit-test fixture and Doctor can report
-  observed click/right-click/hover/type/wheel fixture state, but users still
+  observed click/right-click/hover/type/wheel fixture state. Calibrated cell
+  pixels persist under Neovim state and Doctor reports whether active values
+  came from defaults, explicit config, or persisted calibration, but users still
   need to tune cell pixels manually until auto-detection exists.
 - Quiet input and idle live refresh improve latency by skipping screenshots and
   hint recomputation, but successful lightweight responses still return

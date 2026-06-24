@@ -81,6 +81,7 @@ assert(
 assert(contains_line(outside_zellij, "terminal: ghostty"), "doctor should report Ghostty detection")
 assert(contains_line(outside_zellij, "graphics reason: Ghostty"), "doctor should explain Ghostty graphics support")
 assert(contains_line(outside_zellij, "viewport cell px: 9x15"), "doctor should report configured viewport cell pixel size")
+assert(contains_line(outside_zellij, "viewport source: config"), "doctor should report configured viewport source")
 
 vim.env.TERM_PROGRAM = nil
 vim.env.TERM = "xterm-256color"
@@ -95,7 +96,22 @@ local normalized_viewport = doctor.run({
   },
 }, {})
 assert(contains_line(normalized_viewport, "viewport cell px: 1x20"), "doctor should report effective normalized viewport cell pixel size")
+assert(contains_line(normalized_viewport, "viewport source: default"), "doctor should report default viewport source")
 assert(contains_line(normalized_viewport, "browser output: ansi"), "unknown terminals should use ANSI fallback")
+
+local persisted_viewport = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+  viewport = {
+    cell_width_px = 11,
+    cell_height_px = 22,
+  },
+  viewport_source = "persisted",
+}, {})
+assert(contains_line(persisted_viewport, "viewport cell px: 11x22"), "doctor should report persisted viewport cell size")
+assert(contains_line(persisted_viewport, "viewport source: persisted"), "doctor should report persisted viewport source")
 
 vim.env.ZELLIJ = "1"
 local explicit_kitty = doctor.run({

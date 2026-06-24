@@ -228,6 +228,19 @@ local function viewport_cell_pixels(config)
   }
 end
 
+local function viewport_source(config, cell)
+  if config ~= nil and config.viewport_source ~= nil and config.viewport_source ~= vim.NIL then
+    return tostring(config.viewport_source)
+  end
+  local viewport = (config and config.viewport) or {}
+  if tonumber(viewport.cell_width_px) == cell.width and tonumber(viewport.cell_height_px) == cell.height then
+    if cell.width ~= 10 or cell.height ~= 20 then
+      return "config"
+    end
+  end
+  return "default"
+end
+
 local function doctor_command(config)
   local command = { config.binary or "nvbrowser", "doctor", "--json" }
   if config.cdp_ws_url ~= nil and config.cdp_ws_url ~= "" then
@@ -352,6 +365,7 @@ function M.run(config, terminal_state)
       "terminal: " .. tostring(graphics_resolution.terminal or "unknown"),
       "multiplexer: " .. tostring(graphics_resolution.multiplexer or "unknown"),
       "viewport cell px: " .. tostring(cell.width) .. "x" .. tostring(cell.height),
+      "viewport source: " .. viewport_source(config, cell),
       "browser output: " .. browser_output,
       "image target output: " .. image_target_output,
       "graphics reason: " .. tostring(graphics_resolution.reason or "unknown"),
