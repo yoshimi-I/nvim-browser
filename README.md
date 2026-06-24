@@ -476,8 +476,8 @@ Enter still requests an immediate captured response because it often submits or
 navigates. Focused preview buffers map `i` to this text mode by default after
 clicking a field or focusing one with hints. Outside text mode, preview buffers
 also forward common browser keys: `<CR>`, `<Tab>`, `<S-Tab>`, `<BS>`, `x`
-Delete, `ge` Escape, `A` Ctrl-A select-all, `gl` Meta-L focus location, and
-arrow keys. `:NBrowserKey {key} [modifier ...]` accepts modifier names such as
+Delete, `ge` Escape, `A` Ctrl-A select-all, `gl` address prompt, and arrow
+keys. `:NBrowserKey {key} [modifier ...]` accepts modifier names such as
 `ctrl`, `shift`, `alt`, and `meta`.
 
 `:NBrowserReader` captures the current browser page as Markdown-like text in a
@@ -519,8 +519,8 @@ type into the focused element with browser text mode, `p` paste the selected
 register into the focused element, `y` yank the browser selection into the
 selected register, `Y` yank the active browser URL into the selected register,
 `<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
-Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` Meta-L
-focus location, arrow keys, `gc` click the browser viewport at the cursor, `gr`
+Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` address
+prompt, arrow keys, `gc` click the browser viewport at the cursor, `gr`
 right-click at the cursor, `gh` hover the browser viewport at the cursor,
 `<Esc>` stop a pending load, left click to click the browser viewport, right
 click to send a native browser right-click, scroll wheel to send a native

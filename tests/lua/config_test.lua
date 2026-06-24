@@ -82,7 +82,7 @@ assert(configured.preview_keymaps.mappings.key_backspace == "<BS>", "preview-loc
 assert(configured.preview_keymaps.mappings.key_delete == "x", "preview-local keymaps should include Delete forwarding")
 assert(configured.preview_keymaps.mappings.key_escape == "ge", "preview-local keymaps should include browser Escape forwarding")
 assert(configured.preview_keymaps.mappings.key_select_all == "A", "preview-local keymaps should include select-all forwarding")
-assert(configured.preview_keymaps.mappings.key_focus_location == "gl", "preview-local keymaps should include location focus forwarding")
+assert(configured.preview_keymaps.mappings.key_focus_location == "gl", "preview-local keymaps should include address prompt shortcut")
 assert(configured.preview_keymaps.mappings.key_up == "<Up>", "preview-local keymaps should include ArrowUp forwarding")
 assert(configured.preview_keymaps.mappings.key_down == "<Down>", "preview-local keymaps should include ArrowDown forwarding")
 assert(configured.preview_keymaps.mappings.key_left == "<Left>", "preview-local keymaps should include ArrowLeft forwarding")

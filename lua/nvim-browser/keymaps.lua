@@ -364,8 +364,8 @@ function M.setup_buffer(browser, bufnr, opts)
   end, "nvim-browser: select all", buffer_opts)
 
   set_mapping(nil, mapping_lhs(mappings, "key_focus_location", "gl"), function()
-    browser.press_key("L", { modifiers = { "meta" } })
-  end, "nvim-browser: focus location", buffer_opts)
+    browser.address()
+  end, "nvim-browser: address", buffer_opts)
 
   set_mapping(nil, mapping_lhs(mappings, "key_up", "<Up>"), function()
     browser.press_key("ArrowUp")

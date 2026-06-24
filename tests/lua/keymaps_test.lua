@@ -346,7 +346,7 @@ assert_buffer_mapping(first_bufnr, "<BS>", "buffer-local controls should install
 assert_buffer_mapping(first_bufnr, "x", "buffer-local controls should install Delete forwarding")
 assert_buffer_mapping(first_bufnr, "ge", "buffer-local controls should install browser Escape forwarding")
 assert_buffer_mapping(first_bufnr, "A", "buffer-local controls should install select-all forwarding")
-assert_buffer_mapping(first_bufnr, "gl", "buffer-local controls should install location focus forwarding")
+assert_buffer_mapping(first_bufnr, "gl", "buffer-local controls should install address prompt shortcut")
 assert_buffer_mapping(first_bufnr, "<Up>", "buffer-local controls should install ArrowUp forwarding")
 assert_buffer_mapping(first_bufnr, "<Down>", "buffer-local controls should install ArrowDown forwarding")
 assert_buffer_mapping(first_bufnr, "<Left>", "buffer-local controls should install ArrowLeft forwarding")
@@ -418,7 +418,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,actions,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,right_click_here,hover_here,close,click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,actions,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,address,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,right_click_here,hover_here,close,click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
 
@@ -477,6 +477,7 @@ keymaps.setup_buffer(browser, first_bufnr, {
     yank_selection = "yy",
     yank_current_url = "YU",
     key_enter = false,
+    key_focus_location = "ga",
   },
 })
 trigger_buffer(first_bufnr, "x")
@@ -498,9 +499,13 @@ assert_buffer_mapping(first_bufnr, "P", "custom buffer-local paste mapping shoul
 assert_buffer_mapping(first_bufnr, "yy", "custom buffer-local browser selection yank mapping should be installed")
 assert_buffer_visual_mapping(first_bufnr, "yy", "custom buffer-local visual browser region yank mapping should be installed")
 assert_buffer_mapping(first_bufnr, "YU", "custom buffer-local current URL yank mapping should be installed")
+assert_no_buffer_mapping(first_bufnr, "gl", "remapped address prompt shortcut should remove the default")
+assert_buffer_mapping(first_bufnr, "ga", "custom address prompt shortcut should be installed")
 assert_no_buffer_mapping(first_bufnr, "<CR>", "false buffer-local browser key mappings should disable defaults")
 assert_buffer_mapping(first_bufnr, "<LeftMouse>", "mouse mappings should remain enabled by default after reinstall")
 assert_buffer_mapping(first_bufnr, "<Esc>", "stop mapping should remain enabled by default after reinstall")
+trigger_buffer(first_bufnr, "ga")
+assert(calls[#calls] == "address", "custom address prompt shortcut should call browser.address")
 
 vim.keymap.set("n", "<LeftMouse>", function()
   table.insert(calls, "mouse-existing")

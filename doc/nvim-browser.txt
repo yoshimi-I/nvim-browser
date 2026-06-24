@@ -629,7 +629,7 @@ Y  yank active browser URL into register
 x        press Delete
 ge       press browser Escape
 A        press Ctrl-A to select all in the focused element
-gl       press Meta-L to focus the browser location
+gl       open the nvim-browser address/search prompt
 <Up>     press ArrowUp
 <Down>   press ArrowDown
 <Left>   press ArrowLeft
