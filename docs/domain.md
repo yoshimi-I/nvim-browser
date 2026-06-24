@@ -23,6 +23,11 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Keep terminal graphics out of renderer contracts. Renderers produce artifacts
   and metadata; presentation code turns those into Kitty, ANSI, or future output
   formats.
+- Keep Neovim-derived viewport sizing and reader-buffer link resolution in Lua;
+  Rust should receive already bounded cells/viewport pixels and concrete
+  navigation targets.
+- Keep Chromium target adoption, popup recovery, and closed-target heuristics in
+  the Rust Chromium renderer, where CDP lifecycle state is observable.
 - Prefer small, tested protocol extensions over broad rewrites when improving
   interaction latency.
 
@@ -43,6 +48,9 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Unknown terminals should use ANSI in auto mode rather than assuming Kitty
   support.
 - ANSI output is a compatibility fallback, not the end-state browser quality.
+- Kitty Unicode output is limited by the placeholder address space. Lua must cap
+  both startup command geometry and live preview geometry before passing
+  `--columns`, `--rows`, `--width`, or `--height` to Rust.
 
 ## Neovim Interaction Principles
 
@@ -93,7 +101,8 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   idle metadata changes debounce one full-frame capture so the preview image
   catches up without returning to constant screenshots.
 - Extracts a reader buffer from the current browser page and resolves reader
-  links against the page URL.
+  links against the snapshot page URL, including dot-segment normalization for
+  relative `http(s)` and `file` links while preserving meaningful path content.
 - Hover interactions are first-class browser input, not DOM-only simulation:
   `hover_point`, `hover_here`, and `hover_hint` move the Chromium mouse cursor
   so CSS `:hover` and hover menus can change the next captured frame.
@@ -118,6 +127,9 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   `window.open`, and delayed `about:blank` navigations should stay covered by
   opt-in E2E because real pages commonly create and navigate child targets
   asynchronously.
+- Point-click popup recovery belongs with hint-click recovery: a closed current
+  target after native mouse dispatch should open a short suppression window so
+  the real child target can be adopted instead of leaking a stale preview.
 - Interaction settling favors correctness over the fastest possible capture:
   Chromium responses wait for DOM quiet plus multiple stable complete
   URL/title samples before screenshotting, with a bounded latest-sample fallback
@@ -141,3 +153,6 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Changes to the CDP renderer, JSONL `serve` protocol, frame payloads, hints,
   page text, or resize behavior should run the opt-in real Chromium E2E test
   with `NVBROWSER_E2E=1` in addition to the fake-renderer unit suite.
+- Geometry and reader-link changes should have Lua overlay tests; CDP lifecycle
+  changes should have focused Rust unit coverage for the heuristic plus opt-in
+  real Chromium E2E for adoption behavior.
