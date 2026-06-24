@@ -76,7 +76,9 @@ settles browser state without returning a frame. Neovim uses quiet requests
 inside browser text mode to avoid per-key screenshot recapture, then requests
 an explicit capture when text mode exits. Quiet and page-state responses should
 not clear preview metadata, page metrics, or hint overlays unless they report
-an error.
+an error. When an idle page-state response reports meaningful visible changes,
+Neovim debounces one follow-up `capture` instead of increasing the steady-state
+screenshot cadence.
 
 Image preview should also follow this contract. Direct image handling can be a
 renderer adapter that accepts a file target, produces a `RenderedFrame` with a

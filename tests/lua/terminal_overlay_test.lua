@@ -1698,6 +1698,175 @@ assert(vim.wait(1000, function()
 end), "live refresh should recover after a protocol error is cleared")
 
 sent_requests = {}
+serve_stdout(nil, { vim.json.encode({
+  id = live_page_state_id,
+  status = "ok",
+  url = "https://example.com/live-title",
+  title = "Live Title Changed",
+  page = {
+    scroll_y = 0,
+    viewport_height = 600,
+    document_height = 1600,
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id == nil and terminal.state().current_title == "Live Title Changed"
+end), "page-state responses should update lightweight metadata")
+_G.nvim_browser_adaptive_capture_timer = nvim_browser_latest_timer()
+assert(
+  _G.nvim_browser_adaptive_capture_timer ~= fake_timers[1],
+  "changed page-state metadata should schedule a debounced full-frame capture"
+)
+assert(_G.nvim_browser_adaptive_capture_timer.starts[1].timeout == 100, "adaptive capture should use a short debounce")
+sent_requests = {}
+fake_timers[1].callback()
+vim.wait(50)
+assert(
+  last_request_of_type("page_state") == nil,
+  "live refresh should not send page-state while an adaptive capture is debounced"
+)
+_G.nvim_browser_adaptive_capture_timer.callback()
+assert(vim.wait(1000, function()
+  local capture = last_request_of_type("capture")
+  return capture ~= nil and terminal.state().live_refresh_request_id == capture.id
+end), "adaptive capture timer should send one tracked full-frame capture")
+_G.nvim_browser_adaptive_capture_id = terminal.state().live_refresh_request_id
+_G.nvim_browser_adaptive_capture_timer.callback()
+vim.wait(50)
+assert(
+  #nvim_browser_requests_of_type("capture") == 1,
+  "adaptive capture debounce should not send duplicate captures while one is in flight"
+)
+terminal._test.clear_in_flight_capture()
+
+sent_requests = {}
+fake_timers[1].callback()
+assert(vim.wait(1000, function()
+  live_page_state_id = terminal.state().live_refresh_request_id
+  return live_page_state_id ~= nil and last_request_of_type("page_state") ~= nil
+end), "live refresh should send a page-state request before disabled adaptive capture")
+serve_stdout(nil, { vim.json.encode({
+  id = live_page_state_id,
+  status = "ok",
+  url = "https://example.com/disable-change",
+  title = "Disable Change",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id == nil
+end), "disabled adaptive capture setup should clear live tracking")
+_G.nvim_browser_disabled_adaptive_capture_timer = nvim_browser_latest_timer()
+terminal.configure({ live_refresh = { enabled = false } })
+sent_requests = {}
+_G.nvim_browser_disabled_adaptive_capture_timer.callback()
+vim.wait(50)
+assert(last_request_of_type("capture") == nil, "disabling live refresh should cancel scheduled adaptive captures")
+terminal.configure({ live_refresh = { enabled = true, interval_ms = 1500 } })
+_G.nvim_browser_live_timer_after_reenable = nvim_browser_latest_timer()
+
+sent_requests = {}
+_G.nvim_browser_live_timer_after_reenable.callback()
+assert(vim.wait(1000, function()
+  live_page_state_id = terminal.state().live_refresh_request_id
+  return live_page_state_id ~= nil and last_request_of_type("page_state") ~= nil
+end), "live refresh should send a stable page-state request after adaptive capture clears")
+_G.nvim_browser_timer_count_before_stable_page_state = #fake_timers
+serve_stdout(nil, { vim.json.encode({
+  id = live_page_state_id,
+  status = "ok",
+  url = "https://example.com/disable-change",
+  title = "Disable Change",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id == nil
+end), "stable page-state responses should clear live tracking")
+vim.wait(50)
+assert(#fake_timers == _G.nvim_browser_timer_count_before_stable_page_state, "stable page-state responses should not schedule adaptive captures")
+
+sent_requests = {}
+_G.nvim_browser_live_timer_after_reenable.callback()
+assert(vim.wait(1000, function()
+  live_page_state_id = terminal.state().live_refresh_request_id
+  return live_page_state_id ~= nil and last_request_of_type("page_state") ~= nil
+end), "live refresh should send another page-state request after adaptive capture clears")
+terminal._test.set_pending_operation({ id = live_page_state_id + 100, label = "loading", target = "https://example.com/pending" })
+serve_stdout(nil, { vim.json.encode({
+  id = live_page_state_id,
+  status = "ok",
+  url = "https://example.com/pending-change",
+  title = "Pending Change",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id == nil
+end), "page-state responses should still clear live tracking while an operation is pending")
+_G.nvim_browser_timer_count_after_pending_page_state = #fake_timers
+vim.wait(50)
+assert(
+  #fake_timers == _G.nvim_browser_timer_count_after_pending_page_state,
+  "page-state changes should not schedule adaptive capture while an operation is pending"
+)
+terminal._test.clear_pending_operation(live_page_state_id + 100)
+
+sent_requests = {}
+_G.nvim_browser_live_timer_after_reenable.callback()
+assert(vim.wait(1000, function()
+  live_page_state_id = terminal.state().live_refresh_request_id
+  return live_page_state_id ~= nil and last_request_of_type("page_state") ~= nil
+end), "live refresh should send a page-state request before text-mode suppression")
+local text_mode_keys = { "\27" }
+local text_mode_index = 0
+assert(terminal.start_text_mode({
+  getcharstr = function()
+    text_mode_index = text_mode_index + 1
+    if text_mode_index == 1 then
+      serve_stdout(nil, { vim.json.encode({
+        id = live_page_state_id,
+        status = "ok",
+        url = "https://example.com/text-mode-change",
+        title = "Text Mode Change",
+      }), "" })
+      vim.wait(50)
+      _G.nvim_browser_timer_count_during_text_mode_page_state = #fake_timers
+    end
+    return text_mode_keys[text_mode_index]
+  end,
+}) == true, "browser text mode should run while page-state responses are processed")
+assert(
+  #fake_timers == _G.nvim_browser_timer_count_during_text_mode_page_state,
+  "page-state changes should not schedule adaptive capture while text mode is active"
+)
+terminal._test.clear_in_flight_capture()
+
+sent_requests = {}
+_G.nvim_browser_live_timer_after_reenable.callback()
+assert(vim.wait(1000, function()
+  live_page_state_id = terminal.state().live_refresh_request_id
+  return live_page_state_id ~= nil and last_request_of_type("page_state") ~= nil
+end), "live refresh should send a page-state request before resize suppression")
+serve_stdout(nil, { vim.json.encode({
+  id = live_page_state_id,
+  status = "ok",
+  url = "https://example.com/resize-change",
+  title = "Resize Change",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id == nil
+end), "resize suppression setup should clear live tracking")
+_G.nvim_browser_adaptive_capture_resize_timer = nvim_browser_latest_timer()
+vim.api.nvim_exec_autocmds("VimResized", {})
+sent_requests = {}
+_G.nvim_browser_adaptive_capture_resize_timer.callback()
+vim.wait(50)
+assert(last_request_of_type("capture") == nil, "adaptive capture should not fire while resize debounce is pending")
+flush_latest_timer()
+
+sent_requests = {}
+_G.nvim_browser_live_timer_after_reenable.callback()
+assert(vim.wait(1000, function()
+  live_page_state_id = terminal.state().live_refresh_request_id
+  return live_page_state_id ~= nil and last_request_of_type("page_state") ~= nil
+end), "live refresh should send a page-state request before scroll cancellation")
+
+sent_requests = {}
 assert(terminal.scroll(120, 0) == true, "scroll input should be accepted for coalescing")
 assert(terminal.scroll(120, 0) == true, "second scroll input should be accepted for coalescing")
 assert(terminal.scroll(120, 0) == true, "third scroll input should be accepted for coalescing")

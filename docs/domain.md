@@ -80,7 +80,9 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   completed downloads through the normal browser open path.
 - Performs lightweight live page-state refresh while idle and suppresses
   background refresh while a navigation-like operation is pending. Manual
-  `:NBrowserRefresh` and browser actions still capture fresh frames.
+  `:NBrowserRefresh` and browser actions still capture fresh frames. Meaningful
+  idle metadata changes debounce one full-frame capture so the preview image
+  catches up without returning to constant screenshots.
 - Extracts a reader buffer from the current browser page and resolves reader
   links against the page URL.
 - Hover interactions are first-class browser input, not DOM-only simulation:
@@ -100,8 +102,8 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Quiet input and idle live refresh improve latency by skipping screenshots and
   hint recomputation, but successful lightweight responses still return
   URL/title, page-metrics, and focused-element metadata. The current frame and
-  hints remain visible until Enter, exit, manual refresh, or a later captured
-  response refreshes them.
+  hints remain visible until Enter, exit, manual refresh, or an adaptive/live
+  captured response refreshes them.
 - Chromium target lifecycle is a core reliability area. `target=_blank`,
   `window.open`, and delayed `about:blank` navigations should stay covered by
   opt-in E2E because real pages commonly create and navigate child targets

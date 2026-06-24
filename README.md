@@ -162,7 +162,9 @@ cancellation, or filename prompts.
 
 Active browser previews refresh lightweight page state every 1500ms by default
 so URL, title, scroll, focus, and download metadata stay current without
-constant screenshots. Use `:NBrowserRefresh` when you want a fresh frame.
+constant screenshots. When that lightweight state shows the page changed while
+idle, nvim-browser debounces one full-frame capture so the visible preview does
+not stay stale. Use `:NBrowserRefresh` when you want a fresh frame immediately.
 Disable it or tune the interval with:
 
 ```lua
@@ -350,9 +352,9 @@ browser session, including a 1-based index, filename, and full path.
 
 While a browser session is idle, nvim-browser periodically sends a lightweight
 page-state request to keep metadata current without repainting the preview
-image. It does not send background requests while a navigation-like operation is
-pending, and it stops the timer when the browser preview is stopped, closed, or
-replaced.
+image. Meaningful idle changes schedule one debounced full-frame capture. It
+does not send background requests while a navigation-like operation is pending,
+and it stops the timer when the browser preview is stopped, closed, or replaced.
 
 Navigation-like operations show immediate `loading | ... | Esc stop` feedback
 in the preview footer before Chromium returns a frame. Run `:NBrowserStop`, or

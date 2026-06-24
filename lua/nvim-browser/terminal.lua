@@ -36,6 +36,8 @@ local state = {
   live_refresh_timer = nil,
   live_refresh_generation = 0,
   live_refresh_request_id = nil,
+  live_refresh_request_type = nil,
+  adaptive_capture_timer = nil,
   scroll_coalesce_timer = nil,
   scroll_coalesce_request = nil,
   stopped_operation = nil,
@@ -908,6 +910,7 @@ local function clear_stale_serve_response_bookkeeping(response)
   state.response_handlers[response.id] = nil
   if state.live_refresh_request_id == response.id then
     state.live_refresh_request_id = nil
+    state.live_refresh_request_type = nil
   end
   state.quiet_request_ids[response.id] = nil
 end
@@ -916,9 +919,11 @@ local stop_live_refresh_timer
 local stop_live_refresh
 local stop_resize_timer
 local stop_text_mode_flush_timer
+local stop_adaptive_capture_timer
 local stop_scroll_coalesce_timer
 local clear_scroll_coalesce
 local flush_scroll_coalesce
+local live_refresh_interval
 
 local function stop_existing_job(force)
   stop_text_mode_flush_timer()
@@ -1028,6 +1033,7 @@ clear_in_flight_capture = function()
     state.response_handlers[state.live_refresh_request_id] = nil
   end
   state.live_refresh_request_id = nil
+  state.live_refresh_request_type = nil
 end
 
 cancel_in_flight_capture = function()
@@ -1040,9 +1046,123 @@ end
 stop_live_refresh = function()
   stop_live_refresh_timer()
   clear_in_flight_capture()
+  stop_adaptive_capture_timer()
 end
 
-local function live_refresh_interval()
+stop_adaptive_capture_timer = function()
+  if state.adaptive_capture_timer == nil then
+    return
+  end
+  state.adaptive_capture_timer:stop()
+  state.adaptive_capture_timer:close()
+  state.adaptive_capture_timer = nil
+end
+
+local function response_field_changed(response, key, current)
+  local value = response[key]
+  return value ~= nil and value ~= vim.NIL and value ~= current
+end
+
+local function table_field_changed(response_value, current_value, key)
+  if type(response_value) ~= "table" then
+    return false
+  end
+  local value = response_value[key]
+  if value == nil or value == vim.NIL then
+    return false
+  end
+  if type(current_value) ~= "table" then
+    return true
+  end
+  return value ~= current_value[key]
+end
+
+local function completed_download_changed(response)
+  return type(response) == "table" and download_is_completed(response.download)
+end
+
+local function page_state_needs_capture(response)
+  if type(response) ~= "table" or response.status ~= "ok" then
+    return false
+  end
+  if response_field_changed(response, "url", state.current_url) then
+    return true
+  end
+  if response_field_changed(response, "title", state.current_title) then
+    return true
+  end
+  local page = response.page
+  if
+    table_field_changed(page, state.page_metrics, "scroll_x")
+    or table_field_changed(page, state.page_metrics, "scroll_y")
+    or table_field_changed(page, state.page_metrics, "viewport_width")
+    or table_field_changed(page, state.page_metrics, "viewport_height")
+    or table_field_changed(page, state.page_metrics, "document_width")
+    or table_field_changed(page, state.page_metrics, "document_height")
+  then
+    return true
+  end
+  local focused = response.focused
+  if
+    table_field_changed(focused, state.focused_element, "kind")
+    or table_field_changed(focused, state.focused_element, "label")
+    or table_field_changed(focused, state.focused_element, "value")
+    or table_field_changed(focused, state.focused_element, "focusable")
+    or table_field_changed(focused, state.focused_element, "submittable")
+  then
+    return true
+  end
+  return completed_download_changed(response)
+end
+
+local function schedule_adaptive_capture()
+  if
+    state.mode ~= "serve"
+    or state.job_id == nil
+    or state.pending_operation ~= nil
+    or state.live_refresh_request_id ~= nil
+    or state.scroll_coalesce_request ~= nil
+    or state.resize_timer ~= nil
+    or state.text_mode_active
+    or state.text_mode_flush_timer ~= nil
+  then
+    return false
+  end
+  stop_adaptive_capture_timer()
+  local timer = timer_factory()
+  if timer == nil then
+    return false
+  end
+  state.adaptive_capture_timer = timer
+  local generation = state.generation
+  timer:start(100, 0, function()
+    vim.schedule(function()
+      if state.adaptive_capture_timer ~= timer then
+        return
+      end
+      state.adaptive_capture_timer = nil
+      timer:close()
+      if
+        generation ~= state.generation
+        or state.mode ~= "serve"
+        or state.job_id == nil
+        or live_refresh_interval() == nil
+        or state.pending_operation ~= nil
+        or state.live_refresh_request_id ~= nil
+        or state.scroll_coalesce_request ~= nil
+        or state.resize_timer ~= nil
+        or state.text_mode_active
+        or state.text_mode_flush_timer ~= nil
+      then
+        return
+      end
+      send_capture_request()
+    end)
+  end)
+  return true
+end
+
+live_refresh_interval = function()
   local live_refresh = options.live_refresh or {}
   if live_refresh.enabled == false then
     return nil
@@ -1080,7 +1200,12 @@ local function start_live_refresh_timer(generation)
       if state.mode ~= "serve" or state.job_id == nil or not is_valid_buffer() then
         return
       end
-      if state.pending_operation ~= nil or state.live_refresh_request_id ~= nil or state.scroll_coalesce_request ~= nil then
+      if
+        state.pending_operation ~= nil
+        or state.live_refresh_request_id ~= nil
+        or state.adaptive_capture_timer ~= nil
+        or state.scroll_coalesce_request ~= nil
+      then
         return
       end
       send_page_state_request()
@@ -1098,9 +1223,11 @@ local function send_live_refresh_request(request, opts)
   end
   local ok, id = send_serve_request(request, function()
     state.live_refresh_request_id = nil
+    state.live_refresh_request_type = nil
   end)
   if ok then
     state.live_refresh_request_id = id
+    state.live_refresh_request_type = request.type
   end
   return ok
 end
@@ -1773,6 +1900,8 @@ function M.open(command)
   state.hint_error = nil
   state.pending_operation = nil
   state.live_refresh_request_id = nil
+  state.live_refresh_request_type = nil
+  stop_adaptive_capture_timer()
   state.scroll_coalesce_request = nil
   state.stopped_operation = nil
   state.canceled_request_ids = {}
@@ -1875,6 +2004,10 @@ function M.open(command)
           return
         end
 
+        local should_adaptively_capture = state.live_refresh_request_id == response.id
+          and state.live_refresh_request_type == "page_state"
+          and page_state_needs_capture(response)
+
         apply_serve_response_metadata(response)
         state.latest_applied_response_id = math.max(state.latest_applied_response_id, response.id)
         update_browser_buffer_name(bufnr)
@@ -1884,6 +2017,9 @@ function M.open(command)
         local has_hint_error = response.hint_error ~= nil and response.hint_error ~= vim.NIL and response.hint_error ~= ""
         if response.status == "ok" and not has_payload and not has_hints and not has_hint_error then
           refresh_preview_footer(bufnr, valid_preview_geometry())
+          if should_adaptively_capture then
+            schedule_adaptive_capture()
+          end
           return
         end
         local geometry = valid_preview_geometry()
@@ -2132,6 +2268,8 @@ function M.close()
   state.hint_error = nil
   state.pending_operation = nil
   state.live_refresh_request_id = nil
+  state.live_refresh_request_type = nil
+  stop_adaptive_capture_timer()
   state.scroll_coalesce_request = nil
   stop_resize_timer()
   clear_scroll_coalesce()
@@ -3304,6 +3442,9 @@ function M.configure(opts)
     if opts.viewport ~= nil then
       request_resize()
     end
+    if opts.live_refresh ~= nil and opts.live_refresh.enabled == false then
+      stop_adaptive_capture_timer()
+    end
     start_live_refresh_timer(state.generation)
   else
     stop_live_refresh()
@@ -3397,6 +3538,7 @@ M._test = {
     stop_text_mode_flush_timer()
     stop_live_refresh()
     stop_resize_timer()
+    stop_adaptive_capture_timer()
     clear_scroll_coalesce()
     timer_factory = factory or function()
       return vim.loop.new_timer()
