@@ -1098,8 +1098,13 @@ function M.register(browser, opts)
   })
 
   vim.api.nvim_create_user_command("NBrowserDoctor", function()
-    local report = browser.doctor()
-    vim.api.nvim_echo({ { table.concat(report.lines or {}, "\n") } }, false, {})
+    local function echo_report(report)
+      vim.api.nvim_echo({ { table.concat(report.lines or {}, "\n") } }, false, {})
+    end
+    echo_report(browser.doctor())
+    if browser.refresh_doctor_async ~= nil then
+      browser.refresh_doctor_async(echo_report)
+    end
   end, {})
 
   vim.api.nvim_create_user_command("NBrowserCalibrate", function(opts)

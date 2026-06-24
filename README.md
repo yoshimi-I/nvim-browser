@@ -139,6 +139,9 @@ session:
 `NBrowserDoctor` reports whether Chromium/CDP is available, whether the latest
 browser runtime metadata matches the configured cell-pixel calibration, and
 whether the active preview has click geometry that matches the rendered frame.
+The calibration page also exposes fixed click, right-click, hover, type, and
+wheel targets; after interacting with them, `:NBrowserDoctor` reports which
+fixture hit tests have been observed.
 Inside tmux, it also checks `allow-passthrough` when Kitty graphics are selected.
 
 To attach to an already-running Chrome DevTools Protocol browser instead of

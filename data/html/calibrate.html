@@ -31,11 +31,14 @@
     .bottom-left { left: 0; bottom: 0; border-right: 0; border-top: 0; }
     .bottom-right { right: 0; bottom: 0; border-left: 0; border-top: 0; }
     main {
-      display: grid;
-      place-items: center;
       min-height: 100vh;
       text-align: center;
-      gap: 16px;
+    }
+    .intro {
+      position: fixed;
+      left: 0;
+      right: 0;
+      top: 70px;
     }
     h1 { margin: 0; font-size: 28px; }
     p { margin: 0; color: #b7c0d8; }
@@ -46,6 +49,38 @@
       border: 1px solid #8bd5ff;
       padding: 8px 12px;
     }
+    #target {
+      position: fixed;
+      left: 340px;
+      top: 210px;
+      width: 120px;
+      height: 60px;
+    }
+    #input {
+      position: fixed;
+      left: 300px;
+      top: 294px;
+      width: 200px;
+    }
+    #wheel {
+      position: fixed;
+      left: 520px;
+      top: 210px;
+      width: 120px;
+      height: 70px;
+      overflow: auto;
+    }
+    #wheel-spacer {
+      height: 140px;
+    }
+    #status {
+      position: fixed;
+      left: 24px;
+      bottom: 24px;
+      text-align: left;
+      white-space: pre-line;
+      color: #d9e2ff;
+    }
   </style>
 </head>
 <body>
@@ -54,12 +89,59 @@
   <div class="marker bottom-left"></div>
   <div class="marker bottom-right"></div>
   <main>
-    <div>
+    <div class="intro">
       <h1>nvim-browser calibration</h1>
-      <p>Use :NBrowserDoctor to compare configured cell pixels with runtime viewport metadata.</p>
+      <p>Click, hover, type, right-click, and wheel on the fixed targets, then run :NBrowserDoctor.</p>
     </div>
     <button id="target">Calibration target</button>
-    <input aria-label="Calibration input" value="type here">
+    <input id="input" aria-label="Calibration input" value="">
+    <div id="wheel" role="button" tabindex="0" aria-label="Calibration wheel target">
+      Wheel target
+      <div id="wheel-spacer"></div>
+    </div>
+    <output id="status"></output>
   </main>
+  <script>
+    const state = {
+      click: "pending",
+      rightClick: "pending",
+      hover: "pending",
+      type: "pending",
+      wheel: "pending",
+    };
+    const status = document.getElementById("status");
+    const render = () => {
+      status.textContent = [
+        `calibration-click: ${state.click}`,
+        `calibration-right-click: ${state.rightClick}`,
+        `calibration-hover: ${state.hover}`,
+        `calibration-type: ${state.type}`,
+        `calibration-wheel: ${state.wheel}`,
+      ].join("\n");
+    };
+    const target = document.getElementById("target");
+    target.addEventListener("click", () => {
+      state.click = "observed";
+      render();
+    });
+    target.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      state.rightClick = "observed";
+      render();
+    });
+    target.addEventListener("mouseenter", () => {
+      state.hover = "observed";
+      render();
+    });
+    document.getElementById("input").addEventListener("input", (event) => {
+      state.type = event.target.value || "pending";
+      render();
+    });
+    document.getElementById("wheel").addEventListener("scroll", () => {
+      state.wheel = "observed";
+      render();
+    });
+    render();
+  </script>
 </body>
 </html>

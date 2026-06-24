@@ -194,6 +194,32 @@ local function click_calibration_line(state, cell)
     .. number_label(last.y)
 end
 
+local function calibration_fixture_line(state)
+  local calibration = state and state.calibration_state or nil
+  if type(calibration) ~= "table" then
+    return nil
+  end
+  local checks = {
+    { key = "click", label = "click" },
+    { key = "right_click", label = "right-click" },
+    { key = "hover", label = "hover" },
+    { key = "type", label = "type" },
+    { key = "wheel", label = "wheel" },
+  }
+  local observed = {}
+  local pending = {}
+  for _, check in ipairs(checks) do
+    if calibration[check.key] == true then
+      table.insert(observed, check.label)
+    else
+      table.insert(pending, check.label)
+    end
+  end
+  local observed_label = #observed > 0 and table.concat(observed, ", ") or "none"
+  local pending_label = #pending > 0 and table.concat(pending, ", ") or "none"
+  return "calibration fixture: observed " .. observed_label .. "; pending " .. pending_label
+end
+
 local function viewport_cell_pixels(config)
   local viewport = (config and config.viewport) or {}
   return {
@@ -339,6 +365,10 @@ function M.run(config, terminal_state)
   end
   table.insert(report.lines, runtime_calibration(config, terminal_state, cell))
   table.insert(report.lines, click_calibration_line(terminal_state, cell))
+  local fixture_line = calibration_fixture_line(terminal_state)
+  if fixture_line ~= nil then
+    table.insert(report.lines, fixture_line)
+  end
   append_backend_diagnostics(report, config)
 
   if vim.fn.executable(config.binary or "nvbrowser") == 1 then

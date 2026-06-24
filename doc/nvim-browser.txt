@@ -572,7 +572,10 @@ COMMANDS                                           *nvim-browser-commands*
 	pixel dimensions are provided, update the current in-memory viewport
 	calibration and resize an active serve preview before opening the fixture.
 	Run :NBrowserDoctor after the calibration frame renders to compare the
-	configured cell pixels with the latest runtime viewport metadata.
+	configured cell pixels with the latest runtime viewport metadata. The
+	fixture includes fixed click, right-click, hover, type, and wheel targets;
+	after those targets are exercised, :NBrowserDoctor reports which fixture
+	hit tests have been observed.
 
 							*:NBrowserPreview*
 :NBrowserPreview

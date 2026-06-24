@@ -928,6 +928,108 @@ fn opt_in_e2e_zellij_ansi_fallback_drives_real_chromium() {
 }
 
 #[test]
+fn opt_in_e2e_calibration_fixture_observes_point_hit_tests() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("data/html/calibrate.html");
+    let fixture_url = file_url(&fixture_path);
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "80",
+            "--rows",
+            "24",
+            "--width",
+            "800",
+            "--height",
+            "480",
+            "--url",
+            &fixture_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok", "calibration fixture should open");
+    assert_eq!(initial["title"], "nvim-browser calibration");
+
+    let clicked = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "click_point",
+        "x": 400,
+        "y": 240
+    }));
+    assert_eq!(clicked["status"], "ok", "calibration click should succeed");
+    let hovered = serve.request(serde_json::json!({
+        "id": 2,
+        "type": "hover_point",
+        "x": 400,
+        "y": 240
+    }));
+    assert_eq!(hovered["status"], "ok", "calibration hover should succeed");
+    let right_clicked = serve.request(serde_json::json!({
+        "id": 3,
+        "type": "right_click_point",
+        "x": 400,
+        "y": 240
+    }));
+    assert_eq!(
+        right_clicked["status"], "ok",
+        "calibration right click should succeed"
+    );
+    let wheeled = serve.request(serde_json::json!({
+        "id": 4,
+        "type": "wheel_point",
+        "x": 580,
+        "y": 245,
+        "delta_x": 0.0,
+        "delta_y": 160.0
+    }));
+    assert_eq!(wheeled["status"], "ok", "calibration wheel should succeed");
+    let typed = serve.request(serde_json::json!({
+        "id": 5,
+        "type": "type_point",
+        "x": 400,
+        "y": 310,
+        "text": "calibrated",
+        "submit": false
+    }));
+    assert_eq!(typed["status"], "ok", "calibration type should succeed");
+    let text = serve.request(serde_json::json!({ "id": 6, "type": "page_text" }));
+    let page_text = text["text"]["text"]
+        .as_str()
+        .expect("calibration page_text should include text");
+    assert!(
+        page_text.contains("calibration-click: observed")
+            && page_text.contains("calibration-right-click: observed")
+            && page_text.contains("calibration-hover: observed")
+            && page_text.contains("calibration-type: calibrated")
+            && page_text.contains("calibration-wheel: observed"),
+        "calibration fixture should expose hit-test state in page text; page text was {page_text:?}"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 7, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
+#[test]
 fn opt_in_e2e_serve_loop_selects_text_with_drag_point() {
     if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
         return;

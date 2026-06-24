@@ -28,6 +28,7 @@ local state = {
   download_recorded_response_ids = {},
   latest_dialog = nil,
   dialog_history = {},
+  calibration_state = nil,
   runtime_metadata = nil,
   rendered_frame_geometry = nil,
   status = nil,
@@ -918,6 +919,23 @@ end
 
 local rendered_frame_geometry_from_runtime
 
+local function parse_calibration_state(text)
+  if type(text) ~= "string" then
+    return nil
+  end
+  if not text:find("calibration%-click:", 1, false) and not text:find("calibration%-hover:", 1, false) then
+    return nil
+  end
+  local typed = text:match("calibration%-type:%s*([^\n]+)")
+  return {
+    click = text:find("calibration%-click:%s*observed") ~= nil,
+    right_click = text:find("calibration%-right%-click:%s*observed") ~= nil,
+    hover = text:find("calibration%-hover:%s*observed") ~= nil,
+    type = typed ~= nil and typed:gsub("^%s+", ""):gsub("%s+$", "") ~= "pending",
+    wheel = text:find("calibration%-wheel:%s*observed") ~= nil,
+  }
+end
+
 local function copy_download(download)
   if type(download) ~= "table" then
     return nil
@@ -1095,6 +1113,14 @@ local function apply_serve_response_metadata(response)
     state.focused_element = response.focused
   elseif response.focused == vim.NIL then
     state.focused_element = nil
+  end
+  if type(response.text) == "table" and response.text.text ~= nil and response.text.text ~= vim.NIL then
+    local calibration_state = parse_calibration_state(response.text.text)
+    if calibration_state ~= nil then
+      state.calibration_state = calibration_state
+    else
+      state.calibration_state = nil
+    end
   end
   if response.runtime ~= nil and response.runtime ~= vim.NIL then
     state.runtime_metadata = response.runtime
@@ -2244,6 +2270,7 @@ function M.open(command)
   state.download_recorded_response_ids = {}
   state.latest_dialog = nil
   state.dialog_history = {}
+  state.calibration_state = nil
   state.runtime_metadata = nil
   state.rendered_frame_geometry = nil
   state.status = nil
@@ -2468,6 +2495,7 @@ function M.open(command)
           state.download_recorded_response_ids = {}
           state.latest_dialog = nil
           state.dialog_history = {}
+          state.calibration_state = nil
           state.zoom_scale = 1.0
           state.element_hints = {}
           state.element_hints_geometry = nil
@@ -2619,6 +2647,7 @@ function M.close()
   state.download_recorded_response_ids = {}
   state.latest_dialog = nil
   state.dialog_history = {}
+  state.calibration_state = nil
   state.runtime_metadata = nil
   state.rendered_frame_geometry = nil
   state.status = nil
@@ -2771,6 +2800,7 @@ hard_stop_pending_operation = function(reason)
   state.download_recorded_response_ids = {}
   state.latest_dialog = nil
   state.dialog_history = {}
+  state.calibration_state = nil
   state.element_hints = {}
   state.element_hints_geometry = nil
   state.cursor_addressable_preview = false
@@ -3301,6 +3331,23 @@ function M.reader()
     state.latest_reader_request_id = id
   end
   return ok
+end
+
+function M.probe_calibration_state(on_response)
+  if state.mode ~= "serve" then
+    return false
+  end
+  return send_serve_request({ type = "page_text" }, function(response)
+    if response.status == "ok" and type(response.text) == "table" and response.text.text ~= nil then
+      local calibration_state = parse_calibration_state(response.text.text)
+      if calibration_state ~= nil then
+        state.calibration_state = calibration_state
+      end
+    end
+    if type(on_response) == "function" then
+      on_response(response)
+    end
+  end)
 end
 
 function M.yank_selection(register)
@@ -3941,6 +3988,7 @@ function M.state()
     download_history = copy_download_history(),
     latest_dialog = state.latest_dialog,
     dialog_history = vim.deepcopy(state.dialog_history),
+    calibration_state = vim.deepcopy(state.calibration_state),
     zoom_scale = state.zoom_scale,
     runtime_metadata = state.runtime_metadata,
     rendered_frame_geometry = state.rendered_frame_geometry,

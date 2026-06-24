@@ -2079,6 +2079,19 @@ function M.doctor()
   return doctor.run(M.config, terminal.state())
 end
 
+function M.refresh_doctor_async(callback)
+  if type(callback) ~= "function" then
+    return false
+  end
+  local ok = terminal.probe_calibration_state(function()
+    callback(M.doctor())
+  end)
+  if ok then
+    return true
+  end
+  return false
+end
+
 function M.last_find_found()
   return terminal.state().last_find_found
 end

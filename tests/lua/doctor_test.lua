@@ -309,6 +309,35 @@ assert(
   "doctor should report exact click sample mapping when rendered and current geometry match"
 )
 
+local observed_fixture_calibration = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+  viewport = {
+    cell_width_px = 10,
+    cell_height_px = 20,
+  },
+}, {
+  mode = "serve",
+  serve_output = "ansi",
+  cursor_addressable_preview = true,
+  rendered_frame_geometry = { columns = 80, rows = 24, width = 800, height = 480 },
+  current_preview_geometry = { columns = 80, rows = 24, width = 800, height = 480 },
+  status = "ok",
+  calibration_state = {
+    click = true,
+    right_click = false,
+    hover = true,
+    type = true,
+    wheel = false,
+  },
+})
+assert(
+  has_line(observed_fixture_calibration, "calibration fixture: observed click, hover, type; pending right-click, wheel"),
+  "doctor should report observed and pending calibration fixture hit tests"
+)
+
 local stale_click_calibration = doctor.run({
   binary = "nvim",
   backend_diagnostics = false,

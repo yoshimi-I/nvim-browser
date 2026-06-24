@@ -35,6 +35,8 @@ local screenshot_on_response = nil
 local pressed_key = nil
 local text_mode_called = false
 local doctor_called = false
+local refresh_doctor_called = false
+local doctor_report = { lines = { "nvim-browser doctor", "browser output: kitty-unicode" } }
 local calibrated = nil
 local reader_called = false
 local reader_follow_called = false
@@ -248,7 +250,13 @@ local browser = {
   end,
   doctor = function()
     doctor_called = true
-    return { lines = { "nvim-browser doctor", "browser output: kitty-unicode" } }
+    return doctor_report
+  end,
+  refresh_doctor_async = function(callback)
+    refresh_doctor_called = true
+    doctor_report = { lines = { "nvim-browser doctor", "calibration fixture: observed click" } }
+    callback(doctor_report)
+    return true
   end,
   calibrate = function(cell_width_px, cell_height_px)
     calibrated = { cell_width_px = cell_width_px, cell_height_px = cell_height_px }
@@ -677,7 +685,8 @@ assert(warnings[#warnings] == "nvim-browser: hint not found, stale, or browser s
 
 vim.cmd("NBrowserDoctor")
 assert(doctor_called == true, "NBrowserDoctor should call browser.doctor")
-assert(echoed == "nvim-browser doctor\nbrowser output: kitty-unicode", "NBrowserDoctor should echo doctor lines")
+assert(refresh_doctor_called == true, "NBrowserDoctor should ask for an async calibration refresh when available")
+assert(echoed == "nvim-browser doctor\ncalibration fixture: observed click", "NBrowserDoctor should echo refreshed doctor lines")
 
 vim.cmd("NBrowserCalibrate 9 18")
 assert(calibrated.cell_width_px == 9, "NBrowserCalibrate should pass numeric cell width")

@@ -134,8 +134,10 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Multiplexer support is the largest portability risk. Zellij degrades to ANSI;
   tmux passthrough can now be diagnosed, but still needs real terminal/session
   validation.
-- Click accuracy depends on configured terminal cell pixel dimensions. Doctor
-  output and future auto-detection should reduce this burden.
+- Click accuracy depends on configured terminal cell pixel dimensions.
+  `:NBrowserCalibrate` now opens a fixed hit-test fixture and Doctor can report
+  observed click/right-click/hover/type/wheel fixture state, but users still
+  need to tune cell pixels manually until auto-detection exists.
 - Quiet input and idle live refresh improve latency by skipping screenshots and
   hint recomputation, but successful lightweight responses still return
   URL/title, page-metrics, and focused-element metadata. The current frame and

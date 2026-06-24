@@ -1596,6 +1596,38 @@ assert(
   _G.nvim_browser_tmux_lines[#_G.nvim_browser_tmux_lines] == terminal._test.preview_footer_line(_G.nvim_browser_tmx_preview_geometry.columns),
   "kitty-unicode serve buffers should preserve a cursor-addressable footer"
 )
+
+terminal._test.apply_serve_response({
+  id = 901,
+  status = "ok",
+  text = {
+    text = table.concat({
+      "calibration-click: observed",
+      "calibration-right-click: pending",
+      "calibration-hover: observed",
+      "calibration-type: calibrated",
+      "calibration-wheel: pending",
+    }, "\n"),
+    truncated = false,
+    url = "file:///tmp/calibrate.html",
+  },
+})
+assert(terminal.state().calibration_state ~= nil, "page_text responses should record calibration fixture state")
+assert(terminal.state().calibration_state.click == true, "calibration page_text should record observed clicks")
+assert(terminal.state().calibration_state.right_click == false, "calibration page_text should record pending right clicks")
+assert(terminal.state().calibration_state.hover == true, "calibration page_text should record observed hovers")
+assert(terminal.state().calibration_state.type == true, "calibration page_text should record typed input")
+assert(terminal.state().calibration_state.wheel == false, "calibration page_text should record pending wheels")
+terminal._test.apply_serve_response({
+  id = 902,
+  status = "ok",
+  text = {
+    text = "ordinary page text",
+    truncated = false,
+    url = "https://example.com",
+  },
+})
+assert(terminal.state().calibration_state == nil, "non-calibration page_text should clear stale calibration state")
 assert(#_G.nvim_browser_serve_egress_payloads == 1, "kitty-unicode serve frames should emit exactly one terminal payload")
 _G.nvim_browser_wrapped_unicode_payload = _G.nvim_browser_serve_egress_payloads[1]
 assert(nvim_browser_count_substrings(_G.nvim_browser_wrapped_unicode_payload, "\27Ptmux;") == 1, "serve payload should be wrapped in tmux passthrough exactly once")
