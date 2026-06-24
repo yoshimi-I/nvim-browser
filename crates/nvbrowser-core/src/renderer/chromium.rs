@@ -536,11 +536,11 @@ impl Renderer for ChromiumRenderer {
         if let Err(error) = dispatch_mouse_click(&self.tab, point.x, point.y)
             .map_err(|error| render_context_error("hint click failed", error))
         {
-            if !is_closed_target_error(&error) {
+            let now = std::time::Instant::now();
+            let Some(deadline) = popup_opening_click_recovery_deadline(&error, now) else {
                 return Err(error);
-            }
-            self.suppress_target_registration_until =
-                Some(std::time::Instant::now() + Duration::from_millis(750));
+            };
+            self.suppress_target_registration_until = Some(deadline);
         }
         Ok(InputResult {
             session_id: request.session_id,
@@ -708,12 +708,15 @@ impl Renderer for ChromiumRenderer {
 
     fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError> {
         self.mark_interaction_start();
-        self.tab
-            .click_point(Point {
-                x: request.x,
-                y: request.y,
-            })
-            .map_err(render_error)?;
+        if let Err(error) = dispatch_mouse_click(&self.tab, request.x, request.y)
+            .map_err(|error| render_context_error("point click failed", error))
+        {
+            let now = std::time::Instant::now();
+            let Some(deadline) = popup_opening_click_recovery_deadline(&error, now) else {
+                return Err(error);
+            };
+            self.suppress_target_registration_until = Some(deadline);
+        }
         Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
@@ -2804,6 +2807,17 @@ fn is_closed_target_error(error: &RendererError) -> bool {
         && error.message().contains("underlying connection is closed")
 }
 
+fn popup_opening_click_recovery_deadline(
+    error: &RendererError,
+    now: std::time::Instant,
+) -> Option<std::time::Instant> {
+    if is_closed_target_error(error) {
+        return Some(now + Duration::from_millis(750));
+    }
+
+    None
+}
+
 const SELECTION_TEXT_SCRIPT: &str = r#"
 (() => {
   const active = document.activeElement;
@@ -3187,6 +3201,32 @@ mod tests {
             ChromiumOptions::from_env_values(None, None, None, Some(PathBuf::from("")), None);
 
         assert_eq!(options.download_dir, None);
+    }
+
+    #[test]
+    fn popup_opening_click_recovery_deadline_handles_closed_target_errors() {
+        let now = std::time::Instant::now();
+        let error = RendererError::new(
+            RendererErrorKind::RenderFailed,
+            "hint click failed: underlying connection is closed",
+        );
+
+        let deadline = popup_opening_click_recovery_deadline(&error, now).expect(
+            "closed target click errors should start a target-registration suppression window",
+        );
+
+        assert!(deadline > now);
+        assert!(deadline <= now + Duration::from_millis(750));
+    }
+
+    #[test]
+    fn popup_opening_click_recovery_deadline_rejects_other_errors() {
+        let now = std::time::Instant::now();
+        let error = RendererError::new(RendererErrorKind::RenderFailed, "hint click failed: boom");
+
+        let recovered = popup_opening_click_recovery_deadline(&error, now);
+
+        assert_eq!(recovered, None);
     }
 
     #[test]

@@ -879,6 +879,111 @@ fn opt_in_e2e_serve_loop_selects_text_with_drag_point() {
 }
 
 #[test]
+fn opt_in_e2e_serve_loop_adopts_target_blank_point_click() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let fixture_path = directory.path().join("point-click-target-blank.html");
+    let blank_path = directory.path().join("point-click-adopted.html");
+    let blank_url = format!("file://{}", blank_path.display());
+    std::fs::write(
+        &blank_path,
+        r#"<!doctype html>
+<html>
+  <head><title>Point Click Adopted</title></head>
+  <body><main><p>point click adopted text</p></main></body>
+</html>"#,
+    )
+    .expect("adopted target fixture should be written");
+    std::fs::write(
+        &fixture_path,
+        format!(
+            r#"<!doctype html>
+<html>
+  <head><title>Point Click Opener</title></head>
+  <body>
+    <main>
+      <a target="_blank" href="{blank_url}" onpointerdown="window.open(this.href, this.target); event.preventDefault(); return false;">Open Blank Target</a>
+    </main>
+  </body>
+</html>"#
+        ),
+    )
+    .expect("opener fixture should be written");
+    let fixture_url = format!("file://{}", fixture_path.display());
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "48",
+            "--rows",
+            "16",
+            "--width",
+            "480",
+            "--height",
+            "320",
+            "--url",
+            &fixture_url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok", "initial navigation should succeed");
+    let blank_target_hint = initial["hints"]
+        .as_array()
+        .expect("initial response should include hints")
+        .iter()
+        .find(|hint| hint["kind"] == "link" && hint["label"] == "Open Blank Target")
+        .expect("real Chromium hints should include the target blank link");
+
+    let adopted_blank = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "click_point",
+        "x": blank_target_hint["x"].as_f64().expect("target blank hint should include x"),
+        "y": blank_target_hint["y"].as_f64().expect("target blank hint should include y")
+    }));
+    assert_eq!(
+        adopted_blank["status"], "ok",
+        "target blank point click should succeed; response={adopted_blank:?}"
+    );
+    assert_eq!(
+        adopted_blank["title"], "Point Click Adopted",
+        "target blank point click should adopt the new page target"
+    );
+    assert!(
+        adopted_blank["url"]
+            .as_str()
+            .is_some_and(|url| url.ends_with("point-click-adopted.html")),
+        "target blank point click response should use the adopted page URL"
+    );
+    let adopted_blank_text = serve.request(serde_json::json!({ "id": 2, "type": "page_text" }));
+    assert!(
+        adopted_blank_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("point click adopted text")),
+        "page_text should read from the point-click adopted target"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 3, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
+#[test]
 fn opt_in_e2e_serve_loop_focuses_hint_for_text_entry() {
     if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
         return;
