@@ -1418,6 +1418,19 @@ local function flush_latest_timer()
   end
 end
 
+function _G.nvim_browser_count_substrings(value, needle)
+  _G.nvim_browser_count_substrings_count = 0
+  _G.nvim_browser_count_substrings_start = 1
+  while true do
+    _G.nvim_browser_count_substrings_found = value:find(needle, _G.nvim_browser_count_substrings_start, true)
+    if _G.nvim_browser_count_substrings_found == nil then
+      return _G.nvim_browser_count_substrings_count
+    end
+    _G.nvim_browser_count_substrings_count = _G.nvim_browser_count_substrings_count + 1
+    _G.nvim_browser_count_substrings_start = _G.nvim_browser_count_substrings_found + #needle
+  end
+end
+
 function _G.nvim_browser_request_sequence()
   local sequence = {}
   for _, request in ipairs(sent_requests) do
@@ -1464,6 +1477,88 @@ assert(
 assert(#fake_timers == 1, "serve sessions should start a live refresh timer by default")
 assert(fake_timers[1].starts[1].timeout == 1500, "live refresh should use the default interval as its initial delay")
 assert(fake_timers[1].starts[1].repeat_ms == 1500, "live refresh should repeat at the configured interval")
+
+_G.nvim_browser_original_tmux_for_serve_egress = vim.env.TMUX
+_G.nvim_browser_serve_egress_payloads = {}
+vim.env.TMUX = "/tmp/tmux-501/default,123,0"
+vim.api.nvim_chan_send = function(channel, payload)
+  if channel == vim.v.stderr then
+    table.insert(_G.nvim_browser_serve_egress_payloads, payload)
+    return 0
+  end
+  return original_nvim_chan_send(channel, payload)
+end
+terminal.open({ "nvbrowser", "serve", "--output", "kitty-unicode", "--url", "https://example.com/tmux" })
+_G.nvim_browser_serve_egress_payloads = {}
+_G.nvim_browser_raw_unicode_payload = "\27_Ga=T,f=100,m=0;unicode-frame\27\\"
+_G.nvim_browser_tmx_preview_geometry = terminal.state().current_preview_geometry
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = _G.nvim_browser_raw_unicode_payload,
+  url = "https://example.com/tmux",
+  title = "tmux",
+  runtime = {
+    protocol_version = 18,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "kitty-unicode",
+    cells = { columns = _G.nvim_browser_tmx_preview_geometry.columns, rows = _G.nvim_browser_tmx_preview_geometry.rows },
+    viewport = { width = _G.nvim_browser_tmx_preview_geometry.width, height = _G.nvim_browser_tmx_preview_geometry.height, device_scale_factor = 1 },
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "tmux"
+end), "kitty-unicode serve frame responses should apply through the JSONL handler")
+assert(terminal.state().has_payload == true, "kitty-unicode serve responses should store the last raw payload for replay")
+assert(terminal.state().cursor_addressable_preview == true, "kitty-unicode serve previews should stay cursor-addressable")
+_G.nvim_browser_tmux_state = terminal.state()
+_G.nvim_browser_tmux_lines = vim.api.nvim_buf_get_lines(_G.nvim_browser_tmux_state.bufnr, 0, -1, false)
+assert(
+  #_G.nvim_browser_tmux_lines == _G.nvim_browser_tmx_preview_geometry.rows + 1,
+  "kitty-unicode serve buffers should contain placeholder rows plus footer"
+)
+assert(#_G.nvim_browser_tmux_lines[1] > 0, "kitty-unicode serve buffers should contain placeholder cells")
+assert(
+  _G.nvim_browser_tmux_lines[#_G.nvim_browser_tmux_lines] == terminal._test.preview_footer_line(_G.nvim_browser_tmx_preview_geometry.columns),
+  "kitty-unicode serve buffers should preserve a cursor-addressable footer"
+)
+assert(#_G.nvim_browser_serve_egress_payloads == 1, "kitty-unicode serve frames should emit exactly one terminal payload")
+_G.nvim_browser_wrapped_unicode_payload = _G.nvim_browser_serve_egress_payloads[1]
+assert(nvim_browser_count_substrings(_G.nvim_browser_wrapped_unicode_payload, "\27Ptmux;") == 1, "serve payload should be wrapped in tmux passthrough exactly once")
+assert(
+  _G.nvim_browser_wrapped_unicode_payload == "\27Ptmux;\27\27_Ga=T,f=100,m=0;unicode-frame\27\27\\\27\\",
+  "serve payload should double raw Kitty escapes inside the tmux passthrough wrapper"
+)
+_G.nvim_browser_serve_egress_payloads = {}
+assert(terminal.toggle() == false, "first toggle should close the active preview window")
+assert(terminal.toggle() == true, "second toggle should reopen the preview window")
+_G.nvim_browser_replayed_unicode_payloads = 0
+for _, payload in ipairs(_G.nvim_browser_serve_egress_payloads) do
+  if payload:find("unicode-frame", 1, true) then
+    _G.nvim_browser_replayed_unicode_payloads = _G.nvim_browser_replayed_unicode_payloads + 1
+  end
+end
+assert(_G.nvim_browser_replayed_unicode_payloads == 1, "reopening a kitty-unicode preview should replay one terminal frame payload")
+assert(
+  _G.nvim_browser_serve_egress_payloads[#_G.nvim_browser_serve_egress_payloads] == _G.nvim_browser_wrapped_unicode_payload,
+  "replayed kitty-unicode payload should be wrapped at egress instead of storing tmux-wrapped data"
+)
+vim.env.TMUX = _G.nvim_browser_original_tmux_for_serve_egress
+vim.api.nvim_chan_send = function(channel, payload)
+  if channel == vim.v.stderr then
+    return 0
+  end
+  return original_nvim_chan_send(channel, payload)
+end
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
+fake_timers[1] = fake_timers[#fake_timers]
+jobstart_calls = { jobstart_calls[#jobstart_calls] }
+jobstop_calls = {}
+first_state = terminal.state()
+startup_lines = vim.api.nvim_buf_get_lines(first_state.bufnr, 0, -1, false)
+startup_columns = math.max(20, vim.api.nvim_win_get_width(first_state.winid) - 2)
+startup_expected_rows = math.max(6, vim.api.nvim_win_get_height(first_state.winid) - 3) + 1
 
 do
 serve_stdout(nil, { vim.json.encode({
@@ -2278,6 +2373,8 @@ end
 assert(not page_state_while_pending, "live refresh should not send page_state while an operation is pending")
 terminal._test.clear_pending_operation(777)
 
+jobstart_calls = { jobstart_calls[#jobstart_calls] }
+jobstop_calls = {}
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.org" })
 local second_state = terminal.state()
 
