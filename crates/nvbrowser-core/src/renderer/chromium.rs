@@ -7,6 +7,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 use headless_chrome::{
     browser::tab::{point::Point, ModifierKey, Tab},
     protocol::cdp::types::{Event, Method},
@@ -42,6 +45,20 @@ pub struct ChromiumOptions {
     pub user_data_dir: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ChromiumBackendDiagnostics {
+    pub status: String,
+    pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cdp_ws_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chrome_binary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_data_dir: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+}
+
 impl ChromiumOptions {
     pub fn detect() -> Self {
         Self::from_env_values(
@@ -67,6 +84,61 @@ impl ChromiumOptions {
         }
     }
 
+    pub fn backend_diagnostics(&self) -> ChromiumBackendDiagnostics {
+        let chrome_binary = self
+            .binary
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned());
+        let user_data_dir = self
+            .user_data_dir
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned());
+        if let Some(cdp_ws_url) = self.cdp_ws_url.clone() {
+            return ChromiumBackendDiagnostics {
+                status: "available".to_string(),
+                source: "cdp".to_string(),
+                cdp_ws_url: Some(cdp_ws_url),
+                chrome_binary,
+                user_data_dir,
+                warning: None,
+            };
+        }
+        if let Some(chrome_binary) = chrome_binary.clone() {
+            if self.binary.as_ref().is_some_and(is_executable_file) {
+                return ChromiumBackendDiagnostics {
+                    status: "available".to_string(),
+                    source: "chrome".to_string(),
+                    cdp_ws_url: None,
+                    chrome_binary: Some(chrome_binary),
+                    user_data_dir,
+                    warning: None,
+                };
+            }
+            return ChromiumBackendDiagnostics {
+                status: "missing".to_string(),
+                source: "none".to_string(),
+                cdp_ws_url: None,
+                chrome_binary: Some(chrome_binary),
+                user_data_dir,
+                warning: Some(
+                    "Chrome binary is not executable; set NVBROWSER_CHROME to an existing Chrome/Chromium executable or set NVBROWSER_CDP_WS_URL"
+                        .to_string(),
+                ),
+            };
+        }
+        ChromiumBackendDiagnostics {
+            status: "missing".to_string(),
+            source: "none".to_string(),
+            cdp_ws_url: None,
+            chrome_binary: None,
+            user_data_dir,
+            warning: Some(
+                "Chrome/CDP backend was not found; set NVBROWSER_CDP_WS_URL or NVBROWSER_CHROME"
+                    .to_string(),
+            ),
+        }
+    }
+
     fn browser_source(&self) -> Result<BrowserSource, RendererError> {
         if let Some(cdp_ws_url) = self.cdp_ws_url.clone() {
             return Ok(BrowserSource::Connect(cdp_ws_url));
@@ -82,6 +154,18 @@ impl ChromiumOptions {
                 )
             })
     }
+}
+
+#[cfg(unix)]
+fn is_executable_file(path: &PathBuf) -> bool {
+    std::fs::metadata(path)
+        .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable_file(path: &PathBuf) -> bool {
+    path.is_file()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2493,6 +2577,133 @@ mod tests {
             options.user_data_dir,
             Some(PathBuf::from("/tmp/nvbrowser-profile-from-env"))
         );
+    }
+
+    #[test]
+    fn chromium_backend_diagnostics_prefers_cdp_over_binary() {
+        let diagnostics = ChromiumOptions::from_env_values(
+            Some("ws://127.0.0.1:9222/devtools/browser/test".to_string()),
+            Some(PathBuf::from(
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            )),
+            Some(PathBuf::from("/tmp/nvbrowser-profile")),
+        )
+        .backend_diagnostics();
+
+        assert_eq!(diagnostics.status, "available");
+        assert_eq!(diagnostics.source, "cdp");
+        assert_eq!(
+            diagnostics.cdp_ws_url.as_deref(),
+            Some("ws://127.0.0.1:9222/devtools/browser/test")
+        );
+        assert_eq!(
+            diagnostics.chrome_binary.as_deref(),
+            Some("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+        );
+        assert_eq!(
+            diagnostics.user_data_dir.as_deref(),
+            Some("/tmp/nvbrowser-profile")
+        );
+        assert!(diagnostics.warning.is_none());
+    }
+
+    #[test]
+    fn chromium_backend_diagnostics_reports_explicit_chrome_binary() {
+        let chrome_path =
+            std::env::temp_dir().join(format!("nvbrowser-test-chrome-{}", std::process::id()));
+        std::fs::write(&chrome_path, "").expect("chrome fixture should be written");
+        #[cfg(unix)]
+        {
+            let mut permissions = std::fs::metadata(&chrome_path)
+                .expect("chrome fixture metadata should exist")
+                .permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(&chrome_path, permissions)
+                .expect("chrome fixture should be executable");
+        }
+        let diagnostics = ChromiumOptions::from_env_values(None, Some(chrome_path.clone()), None)
+            .backend_diagnostics();
+
+        assert_eq!(diagnostics.status, "available");
+        assert_eq!(diagnostics.source, "chrome");
+        assert!(diagnostics.cdp_ws_url.is_none());
+        assert_eq!(
+            diagnostics.chrome_binary.as_deref(),
+            Some(chrome_path.to_string_lossy().as_ref())
+        );
+        assert!(diagnostics.warning.is_none());
+        let _ = std::fs::remove_file(chrome_path);
+    }
+
+    #[test]
+    fn chromium_backend_diagnostics_reports_invalid_chrome_binary_as_missing() {
+        let diagnostics = ChromiumOptions::from_env_values(
+            None,
+            Some(PathBuf::from("/definitely/not/nvbrowser-chrome")),
+            None,
+        )
+        .backend_diagnostics();
+
+        assert_eq!(diagnostics.status, "missing");
+        assert_eq!(diagnostics.source, "none");
+        assert_eq!(
+            diagnostics.chrome_binary.as_deref(),
+            Some("/definitely/not/nvbrowser-chrome")
+        );
+        assert!(diagnostics
+            .warning
+            .as_deref()
+            .unwrap_or("")
+            .contains("Chrome binary is not executable"));
+    }
+
+    #[test]
+    fn chromium_backend_diagnostics_rejects_non_executable_chrome_binary() {
+        let chrome_path = std::env::temp_dir().join(format!(
+            "nvbrowser-test-non-executable-chrome-{}",
+            std::process::id()
+        ));
+        std::fs::write(&chrome_path, "").expect("chrome fixture should be written");
+        #[cfg(unix)]
+        {
+            let mut permissions = std::fs::metadata(&chrome_path)
+                .expect("chrome fixture metadata should exist")
+                .permissions();
+            permissions.set_mode(0o644);
+            std::fs::set_permissions(&chrome_path, permissions)
+                .expect("chrome fixture should be non-executable");
+        }
+
+        let diagnostics = ChromiumOptions::from_env_values(None, Some(chrome_path.clone()), None)
+            .backend_diagnostics();
+
+        assert_eq!(diagnostics.status, "missing");
+        assert_eq!(diagnostics.source, "none");
+        assert_eq!(
+            diagnostics.chrome_binary.as_deref(),
+            Some(chrome_path.to_string_lossy().as_ref())
+        );
+        assert!(diagnostics
+            .warning
+            .as_deref()
+            .unwrap_or("")
+            .contains("Chrome binary is not executable"));
+        let _ = std::fs::remove_file(chrome_path);
+    }
+
+    #[test]
+    fn chromium_backend_diagnostics_reports_missing_backend() {
+        let diagnostics = ChromiumOptions::from_env_values(None, None, None).backend_diagnostics();
+
+        assert_eq!(diagnostics.status, "missing");
+        assert_eq!(diagnostics.source, "none");
+        assert!(diagnostics.cdp_ws_url.is_none());
+        assert!(diagnostics.chrome_binary.is_none());
+        assert!(diagnostics
+            .warning
+            .as_deref()
+            .unwrap_or("")
+            .contains("NVBROWSER_CDP_WS_URL"));
     }
 
     #[test]

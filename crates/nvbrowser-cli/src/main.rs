@@ -106,6 +106,14 @@ enum Command {
         #[arg(long)]
         user_data_dir: Option<PathBuf>,
     },
+    Doctor {
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        cdp_ws_url: Option<String>,
+        #[arg(long)]
+        user_data_dir: Option<PathBuf>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ValueEnum)]
@@ -263,6 +271,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 user_data_dir,
             };
             serve_stdio(options)?;
+        }
+        Command::Doctor {
+            json,
+            cdp_ws_url,
+            user_data_dir,
+        } => {
+            let report = DoctorReport {
+                backend: chromium_options(cdp_ws_url, user_data_dir).backend_diagnostics(),
+            };
+            if json {
+                println!("{}", serde_json::to_string(&report)?);
+            } else {
+                println!(
+                    "backend: {} via {}",
+                    report.backend.status, report.backend.source
+                );
+                if let Some(warning) = report.backend.warning {
+                    println!("warning: {warning}");
+                }
+            }
         }
     }
 
@@ -457,6 +485,11 @@ struct ServeRuntimeInfo {
     output: ImageOutput,
     cells: RuntimeCells,
     viewport: RuntimeViewport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct DoctorReport {
+    backend: nvbrowser_core::ChromiumBackendDiagnostics,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

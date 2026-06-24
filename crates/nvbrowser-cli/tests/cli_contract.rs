@@ -192,6 +192,43 @@ fn serve_help_documents_cdp_ws_url_flag() {
 }
 
 #[test]
+fn doctor_outputs_backend_json_without_launching_chrome() {
+    let directory = tempdir().expect("tempdir should be created");
+    let chrome_path = directory.path().join("chrome");
+    std::fs::write(&chrome_path, "").expect("chrome fixture should be written");
+    let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+    let output = command
+        .args([
+            "doctor",
+            "--json",
+            "--cdp-ws-url",
+            "ws://127.0.0.1:9222/devtools/browser/test",
+            "--user-data-dir",
+            "/tmp/nvbrowser-profile",
+        ])
+        .env("NVBROWSER_CHROME", &chrome_path)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: Value = serde_json::from_slice(&output).expect("doctor output should be json");
+
+    assert_eq!(json["backend"]["status"], "available");
+    assert_eq!(json["backend"]["source"], "cdp");
+    assert_eq!(
+        json["backend"]["cdp_ws_url"],
+        "ws://127.0.0.1:9222/devtools/browser/test"
+    );
+    assert_eq!(
+        json["backend"]["chrome_binary"],
+        chrome_path.to_string_lossy().as_ref()
+    );
+    assert_eq!(json["backend"]["user_data_dir"], "/tmp/nvbrowser-profile");
+}
+
+#[test]
 fn chromium_commands_help_document_user_data_dir_flag() {
     for subcommand in ["browse", "capture"] {
         let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");

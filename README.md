@@ -117,8 +117,8 @@ session:
 :NBrowserDoctor
 ```
 
-`NBrowserDoctor` reports whether the latest browser runtime metadata matches
-the configured cell-pixel calibration.
+`NBrowserDoctor` reports whether Chromium/CDP is available and whether the
+latest browser runtime metadata matches the configured cell-pixel calibration.
 
 To attach to an already-running Chrome DevTools Protocol browser instead of
 letting `nvbrowser` launch Chrome, pass the browser WebSocket URL:
@@ -184,6 +184,7 @@ cargo run -p nvbrowser -- render-md README.md
 cargo run -p nvbrowser -- show-image path/to/image.png
 cargo run -p nvbrowser -- capture https://example.com --output /tmp/frame.png --metadata /tmp/frame.json
 cargo run -p nvbrowser -- browse https://example.com
+cargo run -p nvbrowser -- doctor --json
 ```
 
 The `browse`, `capture`, and browser-session previews for local HTML/SVG/PDF
@@ -196,6 +197,8 @@ existing browser websocket endpoint. Chrome exposes that URL from
 `--remote-debugging-port=9222`.
 Use `NVBROWSER_USER_DATA_DIR` or `--user-data-dir` to opt in to a persistent
 Chromium profile directory for launched browser sessions.
+`nvbrowser doctor --json` reports the detected backend without launching
+Chrome; `:NBrowserDoctor` includes the same readiness check inside Neovim.
 The `capture` command writes raw Chromium viewport PNG frames independently
 from terminal rendering. Use `--output -` for PNG bytes on stdout, and
 `--metadata -` for JSON metadata on stdout when `--output` is a file.

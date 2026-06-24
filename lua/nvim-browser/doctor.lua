@@ -91,6 +91,74 @@ local function viewport_cell_pixels(config)
   }
 end
 
+local function doctor_command(config)
+  local command = { config.binary or "nvbrowser", "doctor", "--json" }
+  if config.cdp_ws_url ~= nil and config.cdp_ws_url ~= "" then
+    table.insert(command, "--cdp-ws-url")
+    table.insert(command, config.cdp_ws_url)
+  end
+  if config.user_data_dir ~= nil and config.user_data_dir ~= "" then
+    table.insert(command, "--user-data-dir")
+    table.insert(command, config.user_data_dir)
+  end
+  return command
+end
+
+local function default_system(command)
+  local output = vim.fn.system(command)
+  return {
+    code = vim.v.shell_error,
+    stdout = output,
+    stderr = "",
+  }
+end
+
+local function read_backend_diagnostics(config)
+  if config.backend_diagnostics == false then
+    return nil
+  end
+  local runner = config._system or default_system
+  local ok, result = pcall(runner, doctor_command(config))
+  if not ok or type(result) ~= "table" or result.code ~= 0 then
+    return nil, "backend diagnostics unavailable"
+  end
+  local decoded_ok, decoded = pcall(vim.json.decode, result.stdout or "")
+  if not decoded_ok or type(decoded) ~= "table" or type(decoded.backend) ~= "table" then
+    return nil, "backend diagnostics unavailable"
+  end
+  return decoded.backend, nil
+end
+
+local function append_backend_diagnostics(report, config)
+  local diagnostics, warning = read_backend_diagnostics(config)
+  if diagnostics == nil then
+    if warning ~= nil then
+      add_item(report, "warning", warning)
+    end
+    return
+  end
+
+  local status = diagnostics.status ~= nil and diagnostics.status ~= vim.NIL and tostring(diagnostics.status) or "unknown"
+  local source = diagnostics.source ~= nil and diagnostics.source ~= vim.NIL and tostring(diagnostics.source) or nil
+  if source ~= nil and source ~= "" and source ~= "none" then
+    table.insert(report.lines, "backend: " .. status .. " via " .. source)
+  else
+    table.insert(report.lines, "backend: " .. status)
+  end
+  if diagnostics.cdp_ws_url ~= nil and diagnostics.cdp_ws_url ~= vim.NIL and diagnostics.cdp_ws_url ~= "" then
+    table.insert(report.lines, "backend cdp: " .. tostring(diagnostics.cdp_ws_url))
+  end
+  if diagnostics.chrome_binary ~= nil and diagnostics.chrome_binary ~= vim.NIL and diagnostics.chrome_binary ~= "" then
+    table.insert(report.lines, "backend chrome: " .. tostring(diagnostics.chrome_binary))
+  end
+  if diagnostics.user_data_dir ~= nil and diagnostics.user_data_dir ~= vim.NIL and diagnostics.user_data_dir ~= "" then
+    table.insert(report.lines, "backend user data dir: " .. tostring(diagnostics.user_data_dir))
+  end
+  if diagnostics.warning ~= nil and diagnostics.warning ~= vim.NIL and diagnostics.warning ~= "" then
+    add_item(report, "warning", tostring(diagnostics.warning))
+  end
+end
+
 function M.run(config, terminal_state)
   config = config or {}
   terminal_state = terminal_state or {}
@@ -120,6 +188,7 @@ function M.run(config, terminal_state)
     table.insert(report.lines, runtime)
   end
   table.insert(report.lines, runtime_calibration(config, terminal_state, cell))
+  append_backend_diagnostics(report, config)
 
   if vim.fn.executable(config.binary or "nvbrowser") == 1 then
     add_item(report, "ok", "binary is executable")

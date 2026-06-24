@@ -61,6 +61,7 @@ vim.env.TERM_PROGRAM = "ghostty"
 vim.env.TERM = "xterm-ghostty"
 local outside_zellij = doctor.run({
   binary = "nvim",
+  backend_diagnostics = false,
   graphics = "auto",
   image_fit = "original",
   viewport = {
@@ -81,6 +82,7 @@ vim.env.TERM_PROGRAM = nil
 vim.env.TERM = "xterm-256color"
 local normalized_viewport = doctor.run({
   binary = "nvim",
+  backend_diagnostics = false,
   graphics = "auto",
   image_fit = "original",
   viewport = {
@@ -94,6 +96,7 @@ assert(contains_line(normalized_viewport, "browser output: ansi"), "unknown term
 vim.env.ZELLIJ = "1"
 local explicit_kitty = doctor.run({
   binary = "nvim",
+  backend_diagnostics = false,
   graphics = "kitty-unicode",
   image_fit = "original",
 }, {})
@@ -106,6 +109,7 @@ vim.env.TERM_PROGRAM = "ghostty"
 vim.env.TERM = "tmux-256color"
 local tmux_auto = doctor.run({
   binary = "nvim",
+  backend_diagnostics = false,
   graphics = "auto",
   image_fit = "original",
 }, {})
@@ -119,6 +123,7 @@ vim.env.TERM_PROGRAM = "ghostty"
 vim.env.TERM = "xterm-ghostty"
 local stale_session = doctor.run({
   binary = "nvim",
+  backend_diagnostics = false,
   graphics = "auto",
   image_fit = "original",
 }, {
@@ -146,6 +151,7 @@ assert(contains_line(stale_session, "warning: active session output differs"), "
 
 local mismatched_runtime = doctor.run({
   binary = "nvim",
+  backend_diagnostics = false,
   graphics = "auto",
   image_fit = "original",
   viewport = {
@@ -169,6 +175,117 @@ assert(
   contains_line(mismatched_runtime, "warning: calibration runtime viewport differs from configured cell pixels; expected viewport=720x432 actual viewport=800x480"),
   "doctor should warn when runtime viewport does not match configured calibration"
 )
+
+local backend_ready = doctor.run({
+  binary = "nvbrowser-test",
+  graphics = "auto",
+  image_fit = "original",
+  cdp_ws_url = "ws://127.0.0.1:9222/devtools/browser/test",
+  user_data_dir = "/tmp/nvbrowser-profile",
+  _system = function(command)
+    assert(table.concat(command, " "):find("doctor %-%-json", 1, false), "doctor should call CLI doctor --json")
+    assert(vim.tbl_contains(command, "--cdp-ws-url"), "doctor should pass configured CDP URL")
+    assert(vim.tbl_contains(command, "--user-data-dir"), "doctor should pass configured user data dir")
+    return {
+      code = 0,
+      stdout = vim.json.encode({
+        backend = {
+          status = "available",
+          source = "cdp",
+          cdp_ws_url = "ws://127.0.0.1:9222/devtools/browser/test",
+          chrome_binary = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+          user_data_dir = "/tmp/nvbrowser-profile",
+        },
+      }),
+      stderr = "",
+    }
+  end,
+}, {})
+assert(contains_line(backend_ready, "backend: available via cdp"), "doctor should include backend readiness")
+assert(contains_line(backend_ready, "backend cdp: ws://127.0.0.1:9222/devtools/browser/test"), "doctor should include CDP URL")
+assert(contains_line(backend_ready, "backend chrome: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), "doctor should include Chrome path")
+assert(contains_line(backend_ready, "backend user data dir: /tmp/nvbrowser-profile"), "doctor should include user data dir")
+
+local custom_binary_backend = doctor.run({
+  binary = "/opt/bin/browser-backend",
+  graphics = "auto",
+  image_fit = "original",
+  _system = function(command)
+    assert(command[1] == "/opt/bin/browser-backend", "doctor should use the configured binary even when it is renamed")
+    return {
+      code = 0,
+      stdout = vim.json.encode({
+        backend = {
+          status = "available",
+          source = "chrome",
+          chrome_binary = "/tmp/chrome",
+        },
+      }),
+      stderr = "",
+    }
+  end,
+}, {})
+assert(contains_line(custom_binary_backend, "backend: available via chrome"), "doctor should run backend diagnostics for renamed binaries")
+
+local backend_missing = doctor.run({
+  binary = "nvbrowser-test",
+  graphics = "auto",
+  image_fit = "original",
+  _system = function()
+    return {
+      code = 0,
+      stdout = vim.json.encode({
+        backend = {
+          status = "missing",
+          source = "none",
+          warning = "Chrome/CDP backend was not found; set NVBROWSER_CDP_WS_URL or NVBROWSER_CHROME",
+        },
+      }),
+      stderr = "",
+    }
+  end,
+}, {})
+assert(contains_line(backend_missing, "backend: missing"), "doctor should report missing backend state")
+assert(contains_line(backend_missing, "warning: Chrome/CDP backend was not found"), "doctor should include backend warning")
+
+local invalid_backend = doctor.run({
+  binary = "nvbrowser-test",
+  graphics = "auto",
+  image_fit = "original",
+  _system = function()
+    return { code = 0, stdout = "not json", stderr = "" }
+  end,
+}, {})
+assert(contains_line(invalid_backend, "warning: backend diagnostics unavailable"), "doctor should degrade on invalid CLI JSON")
+
+local malformed_backend = doctor.run({
+  binary = "nvbrowser-test",
+  graphics = "auto",
+  image_fit = "original",
+  _system = function()
+    return {
+      code = 0,
+      stdout = vim.json.encode({
+        backend = {
+          status = vim.NIL,
+          source = vim.NIL,
+        },
+      }),
+      stderr = "",
+    }
+  end,
+}, {})
+assert(contains_line(malformed_backend, "backend: unknown"), "doctor should not stringify vim.NIL backend status/source")
+
+local missing_cli_backend = doctor.run({
+  binary = "nvbrowser-test",
+  graphics = "auto",
+  image_fit = "original",
+  _system = function()
+    return { code = 127, stdout = "", stderr = "not found" }
+  end,
+}, {})
+assert(contains_line(missing_cli_backend, "warning: backend diagnostics unavailable"), "doctor should degrade when CLI diagnostics cannot run")
 
 vim.env.ZELLIJ = original_zellij
 vim.env.TERM = original_term
