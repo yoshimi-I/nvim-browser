@@ -1744,6 +1744,20 @@ function _G.nvim_browser_requests_of_type(kind)
   return matches
 end
 
+function _G.nvim_browser_stop_with_backend_error()
+  assert(terminal.stop() == true, "test setup should send stop_loading")
+  _G.nvim_browser_stop_with_backend_error_request = last_request_of_type("stop_loading")
+  assert(_G.nvim_browser_stop_with_backend_error_request ~= nil, "test setup should send stop_loading before fallback")
+  serve_stdout(nil, { vim.json.encode({
+    id = _G.nvim_browser_stop_with_backend_error_request.id,
+    status = "error",
+    error = "stop loading failed",
+  }), "" })
+  assert(vim.wait(1000, function()
+    return terminal.state().mode == nil
+  end), "test setup should hard stop after stop_loading failure")
+end
+
 function _G.nvim_browser_latest_timer()
   return fake_timers[#fake_timers]
 end
@@ -3631,31 +3645,105 @@ assert(terminal.state().pending_operation ~= nil, "link follow should mark the n
 assert(terminal._test.preview_footer_line(120):match("^loading | https://example%.com/docs | Esc stop"), "link follow should refresh the footer with loading feedback")
 
 sent_requests = {}
-local pending_request_id = terminal.state().pending_operation.id
+_G.nvim_browser_stop_pending_request_id = terminal.state().pending_operation.id
 assert(terminal.stop() == true, "stop should cancel a pending browser operation")
-assert(terminal.state().pending_operation == nil, "stop should clear the pending browser operation")
-assert(#jobstop_calls >= 1, "stop should terminate the serve job when a pending operation is stuck")
-assert(terminal.state().mode == nil, "stop should mark the serve session inactive after terminating the job")
-assert(terminal.state().serve_output == nil, "stop should clear stale serve output metadata")
+_G.nvim_browser_stop_loading_request = last_request_of_type("stop_loading")
+assert(_G.nvim_browser_stop_loading_request ~= nil, "stop should ask the backend to stop loading before killing the serve job")
+assert(_G.nvim_browser_stop_loading_request.id ~= _G.nvim_browser_stop_pending_request_id, "stop loading should use its own protocol request id")
+assert(#jobstop_calls == 0, "graceful stop should keep the serve job alive while waiting for the backend")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_stop_pending_request_id,
+  status = "ok",
+  payload = "early late frame",
+  url = "https://example.com/docs",
+  title = "Early Late Page",
+  downloads = {
+    { path = "/tmp/early-late.txt", status = "completed" },
+  },
+  dialogs = {
+    { kind = "alert", message = "early late", action = "dismissed" },
+  },
+}), "" })
+assert(not vim.wait(200, function()
+  return terminal.state().current_title == "Early Late Page"
+end), "stopped operation responses should be ignored even before stop_loading ack")
+assert(#terminal.downloads() == 0, "stopped operation responses before stop_loading ack should not record downloads")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_stop_loading_request.id,
+  status = "ok",
+  url = "https://example.com/docs",
+  title = "Stopped Page",
+  runtime = {
+    protocol_version = 21,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = 80, rows = 24 },
+    viewport = { width = 800, height = 480, device_scale_factor = 1 },
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().pending_operation == nil
+end), "graceful stop ack should clear the pending browser operation")
+assert(#jobstop_calls == 0, "successful stop_loading should not terminate the serve job")
+assert(terminal.state().mode == "serve", "successful stop_loading should keep the serve session active")
+assert(terminal.state().serve_output == "ansi", "successful stop_loading should keep serve output metadata")
 assert(terminal._test.preview_footer_line(120):match("^stopped | https://example%.com/docs"), "stop should leave a stopped footer message")
 assert(terminal.state().stopped_operation ~= nil, "stop should keep stopped operation metadata for the footer")
-local cancelled_response = vim.json.encode({
-  id = pending_request_id,
+_G.nvim_browser_cancelled_response = vim.json.encode({
+  id = _G.nvim_browser_stop_pending_request_id,
   status = "ok",
   payload = "late frame",
   url = "https://example.com/docs",
   title = "Late Page",
+  downloads = {
+    { path = "/tmp/late.txt", status = "completed" },
+  },
+  dialogs = {
+    { kind = "alert", message = "late", action = "dismissed" },
+  },
 })
-serve_stdout(nil, { cancelled_response, "" })
+serve_stdout(nil, { _G.nvim_browser_cancelled_response, "" })
 assert(vim.wait(1000, function()
   return terminal.state().current_title ~= "Late Page"
 end), "cancelled operation responses should be ignored")
+assert(#terminal.downloads() == 0, "cancelled operation responses should not record downloads")
+
+terminal._test.clear_in_flight_capture()
+assert(terminal.navigate("https://example.com/hard-stop") == true, "test setup should create a pending navigation for stop fallback")
+sent_requests = {}
+jobstop_calls = {}
+_G.nvim_browser_hard_stop_pending_id = terminal.state().pending_operation.id
+assert(terminal.stop() == true, "stop should send a stoppable backend request")
+_G.nvim_browser_failed_stop_loading_request = last_request_of_type("stop_loading")
+assert(_G.nvim_browser_failed_stop_loading_request ~= nil, "stop fallback setup should send stop_loading")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_failed_stop_loading_request.id,
+  status = "error",
+  error = "stop loading failed",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().mode == nil
+end), "stop_loading errors should fall back to hard stopping the serve job")
+assert(#jobstop_calls >= 1, "stop_loading errors should terminate the serve job")
+assert(terminal.state().pending_operation == nil, "stop fallback should clear pending operation")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_hard_stop_pending_id,
+  status = "ok",
+  payload = "late hard stop frame",
+  url = "https://example.com/hard-stop",
+  title = "Late Hard Stop",
+}), "" })
+assert(not vim.wait(200, function()
+  return terminal.state().current_title == "Late Hard Stop"
+end), "hard-stopped operation responses should still be ignored")
+
 jobstart_calls = {}
 sent_requests = {}
 assert(terminal.refresh() == true, "refresh after hard stop should restart the serve session")
 assert(#jobstart_calls == 1, "refresh after hard stop should start one replacement serve job")
 assert(jobstart_calls[1][2] == "serve", "refresh restart should use the serve backend")
-assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == "https://example.com/docs", "refresh restart should target the stopped navigation URL")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == "https://example.com/hard-stop", "refresh restart should target the stopped navigation URL")
 assert(terminal.state().mode == "serve", "refresh restart should reactivate serve mode")
 assert(terminal.state().pending_operation == nil, "refresh restart should start without stale pending operations")
 assert(terminal._test.response_handler_count() == 0, "refresh restart should start without stale response handlers")
@@ -3666,7 +3754,7 @@ assert(#terminal.state().element_hints == 0, "refresh restart should start witho
 terminal._test.clear_in_flight_capture()
 assert(terminal.navigate("https://example.com/reload-stopped") == true, "test setup should create another stoppable navigation")
 _G.nvim_browser_reload_stopped_target = terminal.state().pending_operation.target
-assert(terminal.stop() == true, "test setup should stop the second pending navigation")
+_G.nvim_browser_stop_with_backend_error()
 jobstart_calls = {}
 sent_requests = {}
 assert(terminal.reload() == true, "reload after hard stop should restart the serve session")
@@ -3674,7 +3762,7 @@ assert(#jobstart_calls == 1, "reload after hard stop should start one replacemen
 assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == _G.nvim_browser_reload_stopped_target, "reload restart should target the stopped operation")
 terminal._test.clear_in_flight_capture()
 assert(terminal.navigate("https://example.com/address-stopped") == true, "test setup should create a pending address navigation")
-assert(terminal.stop() == true, "test setup should stop the address navigation")
+_G.nvim_browser_stop_with_backend_error()
 jobstart_calls = {}
 sent_requests = {}
 assert(terminal.navigate("https://example.com/address-restart") == true, "address navigation after hard stop should restart serve")
@@ -3688,7 +3776,7 @@ assert(terminal.refresh() == false, "refresh after close should not restart the 
 assert(#jobstart_calls == 0, "refresh after close should not start a replacement serve job")
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--markdown", "/tmp/docs/README.md" })
 assert(terminal.navigate("https://example.com/from-markdown") == true, "test setup should create a pending navigation from markdown")
-assert(terminal.stop() == true, "test setup should stop markdown-origin navigation")
+_G.nvim_browser_stop_with_backend_error()
 jobstart_calls = {}
 assert(terminal.navigate("https://example.com/markdown-address-restart") == true, "address navigation after markdown hard stop should restart serve")
 assert(#jobstart_calls == 1, "markdown-origin address restart should start one replacement serve job")

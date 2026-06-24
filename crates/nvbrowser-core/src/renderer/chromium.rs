@@ -35,8 +35,8 @@ use crate::{
         PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer,
         RendererError, RendererErrorKind, RightClickHintRequest, RightClickPointRequest,
         ScrollRequest, ScrollResult, SelectHintRequest, SelectionTextRequest, SelectionTextResult,
-        ShutdownResult, TextInputRequest, ToggleHintRequest, UploadHintRequest, WheelPointRequest,
-        ZoomRequest, ZoomResult,
+        ShutdownResult, StopLoadingRequest, StopLoadingResult, TextInputRequest, ToggleHintRequest,
+        UploadHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -428,6 +428,18 @@ impl Renderer for ChromiumRenderer {
             session_id: request.session_id,
             page_id: request.page_id,
             scale: request.scale,
+        })
+    }
+
+    fn stop_loading(
+        &mut self,
+        request: StopLoadingRequest,
+    ) -> Result<StopLoadingResult, RendererError> {
+        self.mark_interaction_start();
+        self.tab.stop_loading().map_err(render_error)?;
+        Ok(StopLoadingResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
         })
     }
 

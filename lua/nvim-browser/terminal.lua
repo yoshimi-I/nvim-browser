@@ -42,6 +42,7 @@ local state = {
   operation_watchdog_timer = nil,
   operation_watchdog_request_id = nil,
   navigation_admission_id = nil,
+  navigation_control_request_ids = {},
   navigation_suppressed_request_ids = {},
   live_refresh_timer = nil,
   live_refresh_generation = 0,
@@ -455,6 +456,7 @@ local function send_terminal_escape(payload)
 end
 
 local is_navigation_class_request
+local is_navigation_control_request
 local stop_operation_watchdog_timer
 local schedule_operation_watchdog
 local hard_stop_pending_operation
@@ -467,8 +469,11 @@ local function send_serve_request(request, on_response)
 
   request.id = state.next_request_id
   state.next_request_id = state.next_request_id + 1
-  if state.navigation_admission_id ~= nil and not is_navigation_class_request(request) then
+  if state.navigation_admission_id ~= nil and not is_navigation_class_request(request) and not is_navigation_control_request(request) then
     state.navigation_suppressed_request_ids[request.id] = true
+  end
+  if is_navigation_control_request(request) then
+    state.navigation_control_request_ids[request.id] = true
   end
   if request.capture == false then
     state.quiet_request_ids[request.id] = true
@@ -479,6 +484,7 @@ local function send_serve_request(request, on_response)
   local ok, sent = pcall(vim.fn.chansend, state.job_id, vim.json.encode(request) .. "\n")
   if not ok or sent == 0 then
     state.quiet_request_ids[request.id] = nil
+    state.navigation_control_request_ids[request.id] = nil
     state.navigation_suppressed_request_ids[request.id] = nil
     state.response_handlers[request.id] = nil
     return false
@@ -1207,8 +1213,15 @@ is_navigation_class_request = function(request)
     )
 end
 
+is_navigation_control_request = function(request)
+  return type(request) == "table" and request.type == "stop_loading"
+end
+
 local function is_stale_serve_response(response)
   if response.id == 0 and response.status == "error" then
+    return false
+  end
+  if state.navigation_control_request_ids[response.id] then
     return false
   end
   if state.navigation_suppressed_request_ids[response.id] then
@@ -1219,6 +1232,7 @@ end
 
 local function clear_stale_serve_response_bookkeeping(response)
   state.navigation_suppressed_request_ids[response.id] = nil
+  state.navigation_control_request_ids[response.id] = nil
   state.response_handlers[response.id] = nil
   if state.live_refresh_request_id == response.id then
     state.live_refresh_request_id = nil
@@ -2379,18 +2393,20 @@ function M.open(command)
         if not vim.api.nvim_buf_is_valid(bufnr) then
           return
         end
-        record_completed_download(response)
         if state.canceled_request_ids[response.id] then
           state.canceled_request_ids[response.id] = nil
+          state.navigation_control_request_ids[response.id] = nil
           state.navigation_suppressed_request_ids[response.id] = nil
           state.response_handlers[response.id] = nil
           return
         end
+        record_completed_download(response)
         if is_stale_serve_response(response) then
           clear_stale_serve_response_bookkeeping(response)
           return
         end
         state.quiet_request_ids[response.id] = nil
+        state.navigation_control_request_ids[response.id] = nil
         local is_protocol_error = response.id == 0 and response.status == "error"
         if is_protocol_error and state.live_refresh_request_id ~= nil then
           clear_in_flight_capture()
@@ -2699,6 +2715,7 @@ function M.close()
   state.canceled_request_ids = {}
   state.quiet_request_ids = {}
   state.navigation_admission_id = nil
+  state.navigation_control_request_ids = {}
   state.navigation_suppressed_request_ids = {}
   state.latest_applied_response_id = 0
   state.latest_reader_request_id = nil
@@ -2789,6 +2806,65 @@ function M.forward()
   return send_pending_request({ type = "forward" }, state.current_url or state.last_target or "forward")
 end
 
+local function mark_pending_operation_stopped(pending, reason)
+  state.canceled_request_ids[pending.id] = true
+  clear_navigation_admission(pending.id)
+  state.stopped_operation = {
+    id = pending.id,
+    target = pending.target,
+    reason = reason,
+  }
+  state.status_error = nil
+  state.hint_error = nil
+  state.response_handlers[pending.id] = nil
+  if state.latest_find_request_id == pending.id then
+    state.latest_find_request_id = nil
+  end
+end
+
+local function clear_pending_operation_as_stopped(pending, reason)
+  mark_pending_operation_stopped(pending, reason)
+  if state.pending_operation ~= nil and state.pending_operation.id == pending.id then
+    state.pending_operation = nil
+    stop_operation_watchdog_timer()
+  end
+  if is_valid_buffer() then
+    refresh_preview_footer(state.bufnr)
+  end
+end
+
+local function graceful_stop_pending_operation()
+  local pending = state.pending_operation
+  if pending == nil then
+    return false
+  end
+  if pending.label == "find" then
+    clear_pending_operation_as_stopped(pending)
+    return true
+  end
+  if state.mode ~= "serve" or state.job_id == nil then
+    return hard_stop_pending_operation()
+  end
+
+  local ok = send_serve_request({ type = "stop_loading" }, function(response)
+    if response.status ~= "ok" then
+      if state.pending_operation ~= nil and state.pending_operation.id == pending.id then
+        hard_stop_pending_operation()
+      end
+      return
+    end
+    clear_pending_operation_as_stopped(pending)
+  end)
+  if not ok then
+    return hard_stop_pending_operation()
+  end
+  mark_pending_operation_stopped(pending)
+  if is_valid_buffer() then
+    refresh_preview_footer(state.bufnr)
+  end
+  return true
+end
+
 function M.stop()
   if state.pending_operation == nil then
     if state.scroll_coalesce_request ~= nil then
@@ -2803,30 +2879,18 @@ function M.stop()
     return false
   end
 
-  return hard_stop_pending_operation()
+  return graceful_stop_pending_operation()
 end
 
 hard_stop_pending_operation = function(reason)
   local pending = state.pending_operation
-  state.canceled_request_ids[pending.id] = true
+  mark_pending_operation_stopped(pending, reason)
   state.pending_operation = nil
   stop_operation_watchdog_timer()
-  clear_navigation_admission(pending.id)
-  state.stopped_operation = {
-    id = pending.id,
-    target = pending.target,
-    reason = reason,
-  }
-  state.status_error = nil
-  state.hint_error = nil
   state.dom_epoch = nil
   state.rendered_frame_geometry = nil
   state.rendered_frame_url = nil
   state.rendered_frame_dom_epoch = nil
-  state.response_handlers[pending.id] = nil
-  if state.latest_find_request_id == pending.id then
-    state.latest_find_request_id = nil
-  end
   state.generation = state.generation + 1
   stop_text_mode_flush_timer()
   stop_live_refresh()

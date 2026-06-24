@@ -22,12 +22,12 @@ use nvbrowser_core::{
     PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest, RenderFrameRequest,
     RenderedFrame, Renderer, RendererError, RendererErrorKind, RightClickHintRequest,
     RightClickPointRequest, ScrollRequest, SelectHintRequest, SelectionTextRequest, SessionId,
-    TextInputRequest, ToggleHintRequest, UploadHintRequest, Viewport, WheelPointRequest,
-    ZoomRequest,
+    StopLoadingRequest, TextInputRequest, ToggleHintRequest, UploadHintRequest, Viewport,
+    WheelPointRequest, ZoomRequest,
 };
 use serde::{Deserialize, Serialize};
 
-const SERVE_PROTOCOL_VERSION: u32 = 20;
+const SERVE_PROTOCOL_VERSION: u32 = 21;
 
 #[derive(Debug, Parser)]
 #[command(name = "nvbrowser")]
@@ -361,6 +361,9 @@ enum ServeRequest {
     Zoom {
         id: u64,
         scale: f64,
+    },
+    StopLoading {
+        id: u64,
     },
     Reload {
         id: u64,
@@ -1032,6 +1035,13 @@ impl<R: Renderer> ServeRuntime<R> {
                 ))?;
                 self.capture_payload(true).map(Some)
             }
+            ServeRequest::StopLoading { .. } => {
+                self.renderer.stop_loading(StopLoadingRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                ))?;
+                self.interaction_metadata_payload(true).map(Some)
+            }
             ServeRequest::Reload { .. } => {
                 let reload = self.renderer.reload(ReloadRequest::new(
                     self.session.id(),
@@ -1545,6 +1555,7 @@ impl ServeRequest {
             | ServeRequest::PageState { id }
             | ServeRequest::Scroll { id, .. }
             | ServeRequest::Zoom { id, .. }
+            | ServeRequest::StopLoading { id }
             | ServeRequest::Reload { id }
             | ServeRequest::Back { id }
             | ServeRequest::Forward { id }
@@ -2071,8 +2082,8 @@ mod tests {
         HistoryNavigationResult, InputResult, InteractionSettleResult, NavigationResult, PageId,
         PageMetricsRequest, PageTextRequest, ReloadResult, RendererError, RendererErrorKind,
         ScrollResult, SelectHintRequest, SelectOptionHint, SelectionTextRequest,
-        SelectionTextResult, ShutdownResult, ToggleHintRequest, UploadHintRequest,
-        WheelPointRequest, ZoomResult,
+        SelectionTextResult, ShutdownResult, StopLoadingResult, ToggleHintRequest,
+        UploadHintRequest, WheelPointRequest, ZoomResult,
     };
 
     struct FakeRenderer {
@@ -2099,6 +2110,7 @@ mod tests {
         dragged_points: Vec<(f64, f64, f64, f64)>,
         find_queries: Vec<String>,
         find_directions: Vec<bool>,
+        stop_loading_count: u32,
         fail_click: bool,
         fail_click_hint: bool,
         fail_right_click_hint: bool,
@@ -2152,6 +2164,7 @@ mod tests {
                 dragged_points: Vec::new(),
                 find_queries: Vec::new(),
                 find_directions: Vec::new(),
+                stop_loading_count: 0,
                 fail_click: false,
                 fail_click_hint: false,
                 fail_right_click_hint: false,
@@ -2246,6 +2259,18 @@ mod tests {
                 session_id: request.session_id,
                 page_id: request.page_id,
                 scale: request.scale,
+            })
+        }
+
+        fn stop_loading(
+            &mut self,
+            request: StopLoadingRequest,
+        ) -> Result<StopLoadingResult, RendererError> {
+            self.operations.push("stop_loading");
+            self.stop_loading_count += 1;
+            Ok(StopLoadingResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
             })
         }
 
@@ -2910,6 +2935,12 @@ mod tests {
             parse_serve_request(r#"{"type":"page_state","id":12}"#)
                 .expect("page_state request should parse"),
             ServeRequest::PageState { id: 12 }
+        );
+
+        assert_eq!(
+            parse_serve_request(r#"{"type":"stop_loading","id":13}"#)
+                .expect("stop_loading request should parse"),
+            ServeRequest::StopLoading { id: 13 }
         );
     }
 
@@ -3684,7 +3715,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":20,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":21,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -5221,6 +5252,53 @@ mod tests {
                 "hints"
             ]
         );
+    }
+
+    #[test]
+    fn serve_runtime_stops_loading_without_capturing_or_shutting_down() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        let navigate = runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        assert_eq!(navigate.status, ServeStatus::Ok);
+        let captures_before_stop = runtime.renderer.captures;
+        let response = runtime.handle(ServeRequest::StopLoading { id: 2 });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert_eq!(runtime.renderer.stop_loading_count, 1);
+        assert!(
+            !runtime.renderer.shutdown,
+            "stop_loading should not shut down the renderer"
+        );
+        assert_eq!(
+            runtime.renderer.captures, captures_before_stop,
+            "stop_loading should not force a new frame capture"
+        );
+        assert!(
+            response.runtime.is_some(),
+            "stop_loading should return runtime metadata"
+        );
+        assert!(
+            response.payload.is_none(),
+            "stop_loading should be a lightweight response"
+        );
+        assert_eq!(response.url.as_deref(), Some("https://example.com"));
     }
 
     #[test]

@@ -127,10 +127,12 @@ viewed, navigated, clicked, searched, and typed into from Neovim.
   idle metadata or DOM mutation epoch changes debounce one full-frame capture so
   the preview image catches up without returning to constant screenshots.
 - Guards pending navigation-like operations and explicit frame captures with a
-  Neovim-side watchdog based on `navigation_timeout_ms`. When Chromium/CDP
-  stalls, Lua hard-stops the serve job, advances the generation so late stdout
-  is quarantined, leaves `timeout | ...` footer metadata, and can restart from
-  the stopped target through refresh, reload, or address navigation.
+  Neovim-side watchdog based on `navigation_timeout_ms`. `:NBrowserStop` first
+  asks Chromium/CDP to stop loading while keeping the serve session alive; if
+  Chromium/CDP stalls or rejects that request, Lua hard-stops the serve job,
+  advances the generation so late stdout is quarantined, leaves `timeout | ...`
+  or `stopped | ...` footer metadata, and can restart from the stopped target
+  through refresh, reload, or address navigation.
 - Extracts a reader buffer from the current browser page and resolves reader
   links against the snapshot page URL, including dot-segment normalization for
   relative `http(s)` and `file` links while preserving meaningful path content.

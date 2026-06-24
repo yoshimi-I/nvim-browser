@@ -423,10 +423,12 @@ and it stops the timer when the browser preview is stopped, closed, or replaced.
 
 Navigation-like operations show immediate `loading | ... | Esc stop` feedback
 in the preview footer before Chromium returns a frame. Run `:NBrowserStop`, or
-press `<Esc>` in the focused preview buffer, to cancel the pending operation and
-terminate a stuck serve job. After a hard stop, `:NBrowserRefresh`,
-`:NBrowserReload`, or `:NBrowserAddress` starts a fresh serve session from the
-stopped, timed-out, or requested URL; closing the preview does not restart it.
+press `<Esc>` in the focused preview buffer, to ask Chromium/CDP to stop loading
+while keeping the serve session alive. If the backend cannot acknowledge that
+request, nvim-browser falls back to terminating the stuck serve job. After a
+hard stop, `:NBrowserRefresh`, `:NBrowserReload`, or `:NBrowserAddress` starts a
+fresh serve session from the stopped, timed-out, or requested URL; closing the
+preview does not restart it.
 
 `:NBrowserHints` echoes the latest keyboard labels and numbered browser
 elements, including link destinations when available. On ANSI and Kitty Unicode

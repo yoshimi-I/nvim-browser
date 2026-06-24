@@ -21,6 +21,16 @@ pub trait Renderer {
         ))
     }
 
+    fn stop_loading(
+        &mut self,
+        _request: StopLoadingRequest,
+    ) -> Result<StopLoadingResult, RendererError> {
+        Err(RendererError::new(
+            RendererErrorKind::InvalidState,
+            "stopping page loading is not supported by this renderer",
+        ))
+    }
+
     fn reload(&mut self, request: ReloadRequest) -> Result<ReloadResult, RendererError>;
 
     fn go_back(
@@ -327,6 +337,27 @@ pub struct ZoomResult {
     pub session_id: SessionId,
     pub page_id: PageId,
     pub scale: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct StopLoadingRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+}
+
+impl StopLoadingRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId) -> Self {
+        Self {
+            session_id,
+            page_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct StopLoadingResult {
+    pub session_id: SessionId,
+    pub page_id: PageId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -1008,6 +1039,7 @@ mod tests {
         current_url: Option<String>,
         settled: bool,
         shutdown: bool,
+        stop_loading_count: u32,
     }
 
     impl FakeRenderer {
@@ -1016,6 +1048,7 @@ mod tests {
                 current_url: None,
                 settled: false,
                 shutdown: false,
+                stop_loading_count: 0,
             }
         }
     }
@@ -1072,6 +1105,17 @@ mod tests {
                 session_id: request.session_id,
                 page_id: request.page_id,
                 scale: request.scale,
+            })
+        }
+
+        fn stop_loading(
+            &mut self,
+            request: StopLoadingRequest,
+        ) -> Result<StopLoadingResult, RendererError> {
+            self.stop_loading_count += 1;
+            Ok(StopLoadingResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
             })
         }
 
@@ -1337,6 +1381,9 @@ mod tests {
         let zoom = renderer
             .zoom(ZoomRequest::new(session_id, page_id, 1.25))
             .expect("zoom should succeed");
+        let stop_loading = renderer
+            .stop_loading(StopLoadingRequest::new(session_id, page_id))
+            .expect("stop loading should succeed");
         let reload = renderer
             .reload(ReloadRequest::new(session_id, page_id))
             .expect("reload should succeed");
@@ -1353,6 +1400,9 @@ mod tests {
         assert_eq!(zoom.session_id, session_id);
         assert_eq!(zoom.page_id, page_id);
         assert_eq!(zoom.scale, 1.25);
+        assert_eq!(stop_loading.session_id, session_id);
+        assert_eq!(stop_loading.page_id, page_id);
+        assert_eq!(renderer.stop_loading_count, 1);
         assert_eq!(reload.session_id, session_id);
         assert_eq!(reload.page_id, page_id);
         assert_eq!(reload.url, "https://example.com");
