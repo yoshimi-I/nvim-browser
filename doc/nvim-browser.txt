@@ -132,6 +132,12 @@ COMMANDS                                           *nvim-browser-commands*
 	navigates the active browser session, or opens a new browser preview when
 	no browser session is active.
 
+							*:NBrowserActions*
+:NBrowserActions
+	Open a compact picker for common browser actions such as address, reload,
+	back, forward, find, hints, text mode, screenshot, reader, status, doctor,
+	and close. Focused preview buffers map ? to this picker by default.
+
 							*:NBrowserBack*
 :NBrowserBack
 	Go back in the active browser session history and capture a fresh frame.
@@ -529,6 +535,7 @@ G   scroll to bottom
 -  zoom out
 =  reset zoom
 a  address prompt
+?  actions picker
 /  find prompt
 n  repeat find forward
 N  repeat find backward
@@ -573,6 +580,7 @@ require("nvim-browser").setup({
       right_click_here = "gr",
       left_click = false,
       right_click_mouse = "<RightMouse>",
+      actions = "?",
       scroll_down = "j",
       scroll_up = "k",
       scroll_top = "gg",

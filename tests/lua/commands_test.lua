@@ -10,6 +10,7 @@ local prompt_default = nil
 local warnings = {}
 local addressed = nil
 local history_picked = false
+local actions_picked = false
 local found = nil
 local found_next = false
 local found_previous = false
@@ -108,6 +109,18 @@ local browser = {
     }, { prompt = "nvim-browser history: " }, function(choice)
       if choice ~= nil then
         addressed = choice.url
+      end
+    end)
+    return true
+  end,
+  actions = function(opts)
+    actions_picked = true
+    opts.select({
+      { label = "Address" },
+      { label = "Reload" },
+    }, { prompt = "nvim-browser action: " }, function(choice)
+      if choice ~= nil then
+        addressed = choice.label
       end
     end)
     return true
@@ -714,6 +727,14 @@ assert(history_picked == true, "NBrowserHistory should open the history picker")
 assert(prompted == "nvim-browser history: ", "NBrowserHistory should use a history picker prompt")
 assert(addressed == "https://example.com/docs", "NBrowserHistory should navigate to the selected history URL")
 
+actions_picked = false
+addressed = nil
+prompted = nil
+vim.cmd("NBrowserActions")
+assert(actions_picked == true, "NBrowserActions should open the actions picker")
+assert(prompted == "nvim-browser action: ", "NBrowserActions should use an actions picker prompt")
+assert(addressed == "Address", "NBrowserActions should run the selected action")
+
 local original_pick_history = browser.pick_history
 browser.pick_history = function(_, opts)
   opts.on_error("action_failed")
@@ -727,6 +748,30 @@ assert(
 )
 assert(#warnings == history_warning_count + 1, "NBrowserHistory should warn once when picker action fails")
 browser.pick_history = original_pick_history
+
+local original_actions = browser.actions
+browser.actions = function(opts)
+  opts.select({ { label = "Address" } }, { prompt = "nvim-browser action: " }, function()
+    return nil
+  end)
+  return true
+end
+local action_cancel_warning_count = #warnings
+vim.cmd("NBrowserActions")
+assert(#warnings == action_cancel_warning_count, "NBrowserActions should not warn when the picker is canceled")
+
+browser.actions = function(opts)
+  opts.on_error("action_failed")
+  return false
+end
+local action_warning_count = #warnings
+vim.cmd("NBrowserActions")
+assert(
+  warnings[#warnings] == "nvim-browser: selected browser action failed or browser session is inactive",
+  "NBrowserActions should warn when the selected action fails"
+)
+assert(#warnings == action_warning_count + 1, "NBrowserActions should warn once when picker action fails")
+browser.actions = original_actions
 
 vim.cmd("NBrowserFind needle")
 assert(found.query == "needle", "NBrowserFind should pass an argument to browser.find_text")

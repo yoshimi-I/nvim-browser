@@ -123,6 +123,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: no browser history available or selected page could not be opened", "WarningMsg" } }, false, {})
   end
 
+  local function warn_action_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: selected browser action failed or browser session is inactive", "WarningMsg" } }, false, {})
+  end
+
   local function warn_focused_input_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: focused text input failed or browser session is inactive", "WarningMsg" } }, false, {})
   end
@@ -276,6 +280,34 @@ function M.register(browser, opts)
       end,
     }) then
       report_history_error()
+    end
+  end, {
+    nargs = 0,
+  })
+
+  vim.api.nvim_create_user_command("NBrowserActions", function()
+    local action_error_reported = false
+    local function report_action_error()
+      if action_error_reported then
+        return
+      end
+      action_error_reported = true
+      warn_action_unavailable()
+    end
+    if browser.actions == nil or not browser.actions({
+      select = select,
+      input = input,
+      on_error = function()
+        report_action_error()
+      end,
+      on_status = function(status)
+        vim.api.nvim_echo({ { status or "unknown" } }, false, {})
+      end,
+      on_report = function(report)
+        vim.api.nvim_echo({ { table.concat((report and report.lines) or {}, "\n") } }, false, {})
+      end,
+    }) then
+      report_action_error()
     end
   end, {
     nargs = 0,

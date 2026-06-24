@@ -84,6 +84,7 @@ assert(configured.preview_keymaps.mappings.half_page_up == "<C-u>", "preview-loc
 assert(configured.preview_keymaps.mappings.zoom_in == "+", "preview-local keymaps should include zoom in")
 assert(configured.preview_keymaps.mappings.zoom_out == "-", "preview-local keymaps should include zoom out")
 assert(configured.preview_keymaps.mappings.zoom_reset == "=", "preview-local keymaps should include zoom reset")
+assert(configured.preview_keymaps.mappings.actions == "?", "preview-local keymaps should include actions picker")
 assert(configured.preview_keymaps.mappings.click_here == "gc", "preview-local keymaps should include cursor click")
 assert(configured.preview_keymaps.mappings.right_click_here == "gr", "preview-local keymaps should include cursor right click")
 assert(configured.preview_keymaps.mappings.right_click_mouse == "<RightMouse>", "preview-local keymaps should include mouse right click")
@@ -157,6 +158,10 @@ assert(
 assert(
   remapped.preview_keymaps.mappings.find_next == "n",
   "preview-local partial remaps should retain find-next"
+)
+assert(
+  remapped.preview_keymaps.mappings.actions == "?",
+  "preview-local partial remaps should retain actions picker"
 )
 assert(
   remapped.preview_keymaps.mappings.find_previous == "N",

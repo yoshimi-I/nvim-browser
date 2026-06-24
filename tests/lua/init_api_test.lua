@@ -62,6 +62,7 @@ assert(type(browser.reader) == "function", "reader API should exist")
 assert(type(browser.reader_follow) == "function", "reader_follow API should exist")
 assert(type(browser.click_mouse) == "function", "click_mouse API should exist")
 assert(type(browser.stop) == "function", "stop API should exist")
+assert(type(browser.actions) == "function", "actions picker API should exist")
 
 assert(browser.resolve_address_target("https://example.com") == "https://example.com", "address resolver should preserve explicit URLs")
 assert(browser.resolve_address_target("example.com") == "https://example.com", "address resolver should add https to host-like inputs")
@@ -136,6 +137,426 @@ assert(#limited_history == 50, "history should keep a bounded number of recent p
 assert(limited_history[1].url == "https://example.com/page-55", "history limit should keep the newest page first")
 assert(limited_history[#limited_history].url == "https://example.com/page-6", "history limit should drop the oldest pages")
 browser.clear_history()
+
+local action_calls = {}
+local function with_action_stubs(fn)
+  local originals = {
+    address = browser.address,
+    reload = browser.reload,
+    back = browser.back,
+    forward = browser.forward,
+    find_text = browser.find_text,
+    pick_hint = browser.pick_hint,
+    start_text_mode = browser.start_text_mode,
+    screenshot = browser.screenshot,
+    reader = browser.reader,
+    status = browser.status,
+    page_metrics = browser.page_metrics,
+    focused_element = browser.focused_element,
+    runtime_metadata = browser.runtime_metadata,
+    current_url = browser.current_url,
+    current_title = browser.current_title,
+    status_error = browser.status_error,
+    doctor = browser.doctor,
+    close = browser.close,
+  }
+  browser.address = function()
+    table.insert(action_calls, "address")
+    return true
+  end
+  browser.reload = function()
+    table.insert(action_calls, "reload")
+    return true
+  end
+  browser.back = function()
+    table.insert(action_calls, "back")
+    return true
+  end
+  browser.forward = function()
+    table.insert(action_calls, "forward")
+    return true
+  end
+  browser.find_text = function(query)
+    table.insert(action_calls, "find:" .. tostring(query))
+    return true
+  end
+  browser.pick_hint = function()
+    table.insert(action_calls, "hints")
+    return true
+  end
+  browser.start_text_mode = function()
+    table.insert(action_calls, "text_mode")
+    return true
+  end
+  browser.screenshot = function(path)
+    table.insert(action_calls, "screenshot:" .. tostring(path))
+    return true, "/tmp/action.png"
+  end
+  browser.reader = function()
+    table.insert(action_calls, "reader")
+    return true
+  end
+  browser.status = function()
+    table.insert(action_calls, "status")
+    return "ok"
+  end
+  browser.page_metrics = function()
+    return { scroll_y = 50, viewport_height = 100, document_height = 300 }
+  end
+  browser.focused_element = function()
+    return { kind = "input", label = "Search box" }
+  end
+  browser.runtime_metadata = function()
+    return {
+      output = "kitty",
+      viewport = { width = 960, height = 720 },
+      cells = { columns = 120, rows = 40 },
+      renderer = "chromium",
+    }
+  end
+  browser.current_url = function()
+    return "https://example.com"
+  end
+  browser.current_title = function()
+    return "Example"
+  end
+  browser.status_error = function()
+    return "last error"
+  end
+  browser.doctor = function()
+    table.insert(action_calls, "doctor")
+    return { lines = { "nvim-browser doctor" } }
+  end
+  browser.close = function()
+    table.insert(action_calls, "close")
+    return true
+  end
+  fn()
+  for name, value in pairs(originals) do
+    browser[name] = value
+  end
+end
+
+with_action_stubs(function()
+  local action_items = nil
+  local action_prompt = nil
+  local first_label = nil
+  assert(browser.actions({
+    select = function(items, opts, on_choice)
+      action_items = items
+      action_prompt = opts.prompt
+      first_label = opts.format_item(items[1])
+      on_choice(items[1])
+    end,
+    input = function()
+      return "needle"
+    end,
+  }) == true, "actions should open the operation picker")
+  assert(#action_items >= 12, "actions should offer the core browser operations")
+  assert(action_prompt == "nvim-browser action: ", "actions should use an action picker prompt")
+  assert(first_label == "Address", "actions should format action labels")
+  local labels = {}
+  for _, item in ipairs(action_items) do
+    labels[item.label] = true
+  end
+  for _, label in ipairs({ "Address", "Reload", "Back", "Forward", "Find", "Hints", "Text mode", "Screenshot", "Reader", "Status", "Doctor", "Close" }) do
+    assert(labels[label] == true, "actions should include " .. label)
+  end
+  assert(action_calls[#action_calls] == "address", "actions should run the selected action")
+
+  action_calls = {}
+  local address_warning = nil
+  assert(browser.actions({
+    select = function(items, _, on_choice)
+      on_choice(items[1])
+    end,
+    input = function(prompt)
+      assert(prompt == "nvim-browser address: ", "Address action should prompt for an address")
+      return ""
+    end,
+    on_error = function(reason)
+      address_warning = reason
+    end,
+  }) == true, "Address action should treat an empty nested prompt as a no-op")
+  assert(address_warning == nil, "Address action should not warn on empty nested prompt")
+  assert(#action_calls == 0, "Address action should not navigate on empty nested prompt")
+
+  action_calls = {}
+  assert(browser.actions({
+    select = function(items, _, on_choice)
+      for _, item in ipairs(items) do
+        if item.label == "Find" then
+          on_choice(item)
+          return
+        end
+      end
+    end,
+    input = function(prompt)
+      assert(prompt == "nvim-browser find: ", "Find action should prompt for search text")
+      return "needle"
+    end,
+  }) == true, "Find action should run")
+  assert(action_calls[#action_calls] == "find:needle", "Find action should call find_text")
+
+  action_calls = {}
+  local status_message = nil
+  assert(browser.actions({
+    select = function(items, _, on_choice)
+      for _, item in ipairs(items) do
+        if item.label == "Status" then
+          on_choice(item)
+          return
+        end
+      end
+    end,
+    on_status = function(message)
+      status_message = message
+    end,
+  }) == true, "Status action should run")
+  assert(action_calls[#action_calls] == "status", "Status action should call status")
+  assert(status_message:find("Example", 1, true), "Status action should include the title")
+  assert(status_message:find("scroll 25%%"), "Status action should include scroll metrics")
+  assert(status_message:find("focus=input Search box", 1, true), "Status action should include focused element")
+  assert(status_message:find("output=kitty", 1, true), "Status action should include runtime output")
+  assert(status_message:find("viewport=960x720", 1, true), "Status action should include runtime viewport")
+  assert(status_message:find("cells=120x40", 1, true), "Status action should include runtime cells")
+  assert(status_message:find("renderer=chromium", 1, true), "Status action should include runtime renderer")
+  assert(status_message:find("https://example.com", 1, true), "Status action should include the current URL")
+  assert(status_message:find("last error", 1, true), "Status action should include the status error")
+
+  action_calls = {}
+  assert(browser.actions({
+    select = function(_, _, on_choice)
+      on_choice(nil)
+    end,
+  }) == true, "actions should treat picker cancel as a no-op")
+  assert(#action_calls == 0, "canceled actions should not run anything")
+end)
+
+with_action_stubs(function()
+  browser.reload = function()
+    return false
+  end
+  local failed_reason = nil
+  assert(browser.actions({
+    select = function(items, _, on_choice)
+      for _, item in ipairs(items) do
+        if item.label == "Reload" then
+          on_choice(item)
+          return
+        end
+      end
+    end,
+    on_error = function(reason)
+      failed_reason = reason
+    end,
+  }) == false, "failed actions should return false")
+  assert(failed_reason == "action_failed", "failed actions should report action_failed")
+end)
+
+with_action_stubs(function()
+  browser.reload = function()
+    return false
+  end
+  local original_echo = vim.api.nvim_echo
+  local action_warning = nil
+  local action_warning_group = nil
+  vim.api.nvim_echo = function(chunks)
+    action_warning = chunks[1][1]
+    action_warning_group = chunks[1][2]
+  end
+  assert(browser.actions({
+    select = function(items, _, on_choice)
+      for _, item in ipairs(items) do
+        if item.label == "Reload" then
+          on_choice(item)
+          return
+        end
+      end
+    end,
+  }) == false, "failed actions without on_error should return false")
+  vim.api.nvim_echo = original_echo
+  assert(
+    action_warning == "nvim-browser: selected browser action failed or browser session is inactive",
+    "failed actions without on_error should show the default warning"
+  )
+  assert(action_warning_group == "WarningMsg", "failed actions without on_error should use WarningMsg")
+end)
+
+with_action_stubs(function()
+  browser.start_text_mode = function()
+    vim.api.nvim_echo({ { "nvim-browser: text mode requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+    return false
+  end
+  local original_echo = vim.api.nvim_echo
+  local action_warning_count = 0
+  vim.api.nvim_echo = function(chunks)
+    if chunks[1][2] == "WarningMsg" then
+      action_warning_count = action_warning_count + 1
+    end
+  end
+  assert(browser.actions({
+    select = function(items, _, on_choice)
+      for _, item in ipairs(items) do
+        if item.label == "Text mode" then
+          on_choice(item)
+          return
+        end
+      end
+    end,
+  }) == false, "Text mode action should fail when text mode is unavailable")
+  vim.api.nvim_echo = original_echo
+  assert(action_warning_count == 1, "Text mode action should not add a duplicate generic warning")
+end)
+
+with_action_stubs(function()
+  local forwarded_on_error = nil
+  browser.pick_hint = function(opts)
+    forwarded_on_error = opts.on_error
+    return true
+  end
+  assert(browser.actions({
+    select = function(items, _, on_choice)
+      for _, item in ipairs(items) do
+        if item.label == "Hints" then
+          on_choice(item)
+          return
+        end
+      end
+    end,
+    on_error = function() end,
+  }) == true, "Hints action should open hint picker")
+  assert(type(forwarded_on_error) == "function", "Hints action should forward async picker errors")
+end)
+
+with_action_stubs(function()
+  browser.pick_hint = function(opts)
+    opts.on_cancel()
+    return false
+  end
+  local failed_reason = nil
+  assert(browser.actions({
+    select = function(items, _, on_choice)
+      for _, item in ipairs(items) do
+        if item.label == "Hints" then
+          on_choice(item)
+          return
+        end
+      end
+    end,
+    on_error = function(reason)
+      failed_reason = reason
+    end,
+  }) == true, "Hints action should treat nested picker cancel as a no-op")
+  assert(failed_reason == nil, "Hints action cancel should not report an error")
+end)
+
+with_action_stubs(function()
+  browser.pick_hint = function()
+    return false
+  end
+  local failed_reason = nil
+  assert(browser.actions({
+    select = function(items, _, on_choice)
+      for _, item in ipairs(items) do
+        if item.label == "Hints" then
+          on_choice(item)
+          return
+        end
+      end
+    end,
+    on_error = function(reason)
+      failed_reason = reason
+    end,
+  }) == false, "Hints action should fail when hints are unavailable before picker selection")
+  assert(failed_reason == "action_failed", "Hints action should report pre-picker failures")
+end)
+
+with_action_stubs(function()
+  local forwarded_on_error = nil
+  browser.pick_hint = function(opts)
+    forwarded_on_error = opts.on_error
+    return true
+  end
+  local original_echo = vim.api.nvim_echo
+  local action_warning = nil
+  local action_warning_group = nil
+  vim.api.nvim_echo = function(chunks)
+    action_warning = chunks[1][1]
+    action_warning_group = chunks[1][2]
+  end
+  assert(browser.actions({
+    select = function(items, _, on_choice)
+      for _, item in ipairs(items) do
+        if item.label == "Hints" then
+          on_choice(item)
+          return
+        end
+      end
+    end,
+  }) == true, "Hints action should support async picker errors without explicit on_error")
+  forwarded_on_error("action_failed")
+  vim.api.nvim_echo = original_echo
+  assert(
+    action_warning == "nvim-browser: selected browser action failed or browser session is inactive",
+    "Hints action async failures should show the default warning"
+  )
+  assert(action_warning_group == "WarningMsg", "Hints action async failures should use WarningMsg")
+end)
+
+with_action_stubs(function()
+  browser.screenshot = function(_, opts)
+    local ok, path = true, "/tmp/action.png"
+    opts.on_response({ status = "ok" })
+    return ok, path
+  end
+  local original_echo = vim.api.nvim_echo
+  local screenshot_message = nil
+  vim.api.nvim_echo = function(chunks)
+    screenshot_message = chunks[1][1]
+  end
+  assert(browser.actions({
+    select = function(items, _, on_choice)
+      for _, item in ipairs(items) do
+        if item.label == "Screenshot" then
+          on_choice(item)
+          return
+        end
+      end
+    end,
+  }) == true, "Screenshot action should run")
+  vim.api.nvim_echo = original_echo
+  assert(
+    screenshot_message == "nvim-browser: screenshot saved: /tmp/action.png",
+    "Screenshot action should echo the saved path"
+  )
+end)
+
+with_action_stubs(function()
+  browser.pick_hint = function(opts)
+    opts.on_error("action_failed")
+    return false
+  end
+  local original_echo = vim.api.nvim_echo
+  local action_warning_count = 0
+  vim.api.nvim_echo = function(chunks)
+    if chunks[1][2] == "WarningMsg" then
+      action_warning_count = action_warning_count + 1
+    end
+  end
+  assert(browser.actions({
+    select = function(items, _, on_choice)
+      for _, item in ipairs(items) do
+        if item.label == "Hints" then
+          on_choice(item)
+          return
+        end
+      end
+    end,
+  }) == false, "Hints action synchronous failures should fail")
+  vim.api.nvim_echo = original_echo
+  assert(action_warning_count == 1, "Hints action synchronous failures should warn once")
+end)
 
 local original_hints = browser.hints
 local original_click_hint = browser.click_hint

@@ -232,6 +232,12 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.address()
   end, "nvim-browser: address", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "actions", "?"), function()
+    if browser.actions ~= nil then
+      browser.actions()
+    end
+  end, "nvim-browser: actions", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "find", "/"), function()
     local query = input("nvim-browser find: ")
     if query == nil or query == "" then

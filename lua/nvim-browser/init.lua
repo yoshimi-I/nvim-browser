@@ -287,6 +287,304 @@ function M.pick_history(select_or_opts, maybe_opts)
   return true
 end
 
+local function action_picker_label(item)
+  return type(item) == "table" and item.label or ""
+end
+
+local function action_echo(message)
+  vim.api.nvim_echo({ { tostring(message or "") } }, false, {})
+end
+
+local function report_action_error(opts, reason)
+  if type(opts.on_error) == "function" then
+    opts.on_error(reason)
+    return
+  end
+  vim.api.nvim_echo({ { "nvim-browser: selected browser action failed or browser session is inactive", "WarningMsg" } }, false, {})
+end
+
+local function page_scroll_label(metrics)
+  if type(metrics) ~= "table" then
+    return nil
+  end
+  local scroll_y = tonumber(metrics.scroll_y)
+  local viewport_height = tonumber(metrics.viewport_height)
+  local document_height = tonumber(metrics.document_height)
+  if scroll_y == nil or viewport_height == nil or document_height == nil then
+    return nil
+  end
+  local scrollable = document_height - viewport_height
+  if scrollable <= 0 then
+    return "scroll 0%"
+  end
+  local percent = math.floor(math.max(0, math.min(100, (scroll_y / scrollable) * 100)) + 0.5)
+  return "scroll " .. percent .. "%"
+end
+
+local function runtime_status_label(runtime)
+  if type(runtime) ~= "table" then
+    return nil
+  end
+  local parts = {}
+  if runtime.output ~= nil and runtime.output ~= vim.NIL then
+    table.insert(parts, "output=" .. tostring(runtime.output))
+  end
+  if type(runtime.viewport) == "table" then
+    local width = runtime.viewport.width
+    local height = runtime.viewport.height
+    if width ~= nil and height ~= nil then
+      table.insert(parts, "viewport=" .. tostring(width) .. "x" .. tostring(height))
+    end
+  end
+  if type(runtime.cells) == "table" then
+    local columns = runtime.cells.columns
+    local rows = runtime.cells.rows
+    if columns ~= nil and rows ~= nil then
+      table.insert(parts, "cells=" .. tostring(columns) .. "x" .. tostring(rows))
+    end
+  end
+  if runtime.renderer ~= nil and runtime.renderer ~= vim.NIL then
+    table.insert(parts, "renderer=" .. tostring(runtime.renderer))
+  end
+  if #parts == 0 then
+    return nil
+  end
+  return table.concat(parts, " ")
+end
+
+local function focused_element_label(focused)
+  if type(focused) ~= "table" then
+    return nil
+  end
+  local kind = focused.kind ~= nil and tostring(focused.kind) or nil
+  if kind == nil or kind == "" then
+    return nil
+  end
+  local label = focused.label ~= nil and focused.label ~= vim.NIL and tostring(focused.label) or nil
+  if label ~= nil then
+    label = label:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    if label == "" then
+      label = nil
+    end
+  end
+  if label ~= nil then
+    return "focus=" .. kind .. " " .. label
+  end
+  return "focus=" .. kind
+end
+
+local function action_status_message()
+  local parts = { M.status() or "unknown" }
+  local title = M.current_title()
+  if title ~= nil and title ~= "" then
+    table.insert(parts, title)
+  end
+  local scroll = M.page_metrics and page_scroll_label(M.page_metrics()) or nil
+  if scroll ~= nil then
+    table.insert(parts, scroll)
+  end
+  local focused = M.focused_element and focused_element_label(M.focused_element()) or nil
+  if focused ~= nil then
+    table.insert(parts, focused)
+  end
+  local runtime = M.runtime_metadata and runtime_status_label(M.runtime_metadata()) or nil
+  if runtime ~= nil then
+    table.insert(parts, runtime)
+  end
+  local url = M.current_url()
+  if url ~= nil and url ~= "" then
+    table.insert(parts, url)
+  end
+  local error = M.status_error()
+  if error ~= nil and error ~= "" then
+    table.insert(parts, error)
+  end
+  return table.concat(parts, " ")
+end
+
+local function action_items(opts, report_error)
+  return {
+    {
+      label = "Address",
+      run = function()
+        local value = (opts.input or vim.fn.input)("nvim-browser address: ", M.current_url() or M.last_target() or "")
+        if value == nil or value == "" then
+          return true
+        end
+        return M.address(value)
+      end,
+    },
+    {
+      label = "Reload",
+      run = function()
+        return M.reload()
+      end,
+    },
+    {
+      label = "Back",
+      run = function()
+        return M.back()
+      end,
+    },
+    {
+      label = "Forward",
+      run = function()
+        return M.forward()
+      end,
+    },
+    {
+      label = "Find",
+      run = function()
+        local text = (opts.input or vim.fn.input)("nvim-browser find: ")
+        if text == nil or text == "" then
+          return true
+        end
+        return M.find_text(text, { backwards = false })
+      end,
+    },
+    {
+      label = "Hints",
+      run = function()
+        if M.pick_hint ~= nil then
+          local hint_error_reported = false
+          local hint_canceled = false
+          local function report_hint_error(reason)
+            hint_error_reported = true
+            report_error(reason)
+          end
+          local function report_hint_cancel()
+            hint_canceled = true
+          end
+          local ok = M.pick_hint({
+            select = opts.select,
+            input = opts.input,
+            on_error = report_hint_error,
+            on_cancel = report_hint_cancel,
+          }) ~= false
+          return ok or (hint_canceled and not hint_error_reported)
+        end
+        return M.hint_mode(opts.input)
+      end,
+    },
+    {
+      label = "Text mode",
+      reports_own_error = true,
+      run = function()
+        return M.start_text_mode()
+      end,
+    },
+    {
+      label = "Screenshot",
+      run = function()
+        local saved_path = nil
+        local pending_response = nil
+        local function handle_response(response)
+          if saved_path == nil then
+            pending_response = response
+            return
+          end
+          if type(response) == "table" and response.status == "ok" then
+            action_echo("nvim-browser: screenshot saved: " .. tostring(saved_path))
+          end
+        end
+        local ok, path = M.screenshot(nil, {
+          on_response = handle_response,
+        })
+        saved_path = path
+        if pending_response ~= nil then
+          handle_response(pending_response)
+        end
+        return ok == true
+      end,
+    },
+    {
+      label = "Reader",
+      run = function()
+        return M.reader()
+      end,
+    },
+    {
+      label = "Status",
+      run = function()
+        local status = action_status_message()
+        if type(opts.on_status) == "function" then
+          opts.on_status(status)
+        else
+          action_echo(status)
+        end
+        return true
+      end,
+    },
+    {
+      label = "Doctor",
+      run = function()
+        local report = M.doctor()
+        if type(opts.on_report) == "function" then
+          opts.on_report(report)
+        elseif report ~= nil then
+          action_echo(table.concat(report.lines or {}, "\n"))
+        end
+        return report ~= nil
+      end,
+    },
+    {
+      label = "Close",
+      run = function()
+        M.close()
+        return true
+      end,
+    },
+  }
+end
+
+function M.actions(select_or_opts, maybe_opts)
+  local select = vim.ui.select
+  local opts = maybe_opts or {}
+  if type(select_or_opts) == "function" then
+    select = select_or_opts
+  elseif type(select_or_opts) == "table" then
+    opts = select_or_opts
+    if type(opts.select) == "function" then
+      select = opts.select
+    end
+  end
+
+  local action_error_reported = false
+  local function report_error_once(reason)
+    if action_error_reported then
+      return
+    end
+    action_error_reported = true
+    report_action_error(opts, reason)
+  end
+  local items = action_items(opts, report_error_once)
+  local completed = false
+  local selected = nil
+  local action_ok = true
+  select(items, {
+    prompt = opts.prompt or "nvim-browser action: ",
+    format_item = opts.format_item or action_picker_label,
+  }, function(choice)
+    completed = true
+    selected = choice
+    if choice == nil then
+      return
+    end
+    action_ok = choice.run() ~= false
+    if not action_ok and not choice.reports_own_error then
+      report_error_once("action_failed")
+    end
+  end)
+
+  if completed and selected == nil then
+    return true
+  end
+  if completed and not action_ok then
+    return false
+  end
+  return true
+end
+
 function M.back()
   return terminal.back()
 end
@@ -824,6 +1122,9 @@ function M.pick_hint(select_or_opts, maybe_opts)
   end)
 
   if completed and selected == nil then
+    if type(opts.on_cancel) == "function" then
+      opts.on_cancel()
+    end
     return false
   end
   if completed and not action_ok then

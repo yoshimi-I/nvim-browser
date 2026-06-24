@@ -127,6 +127,10 @@ local browser = {
   close = function()
     table.insert(calls, "close")
   end,
+  actions = function()
+    table.insert(calls, "actions")
+    return true
+  end,
 }
 
 local function mapping(lhs)
@@ -295,6 +299,7 @@ assert_buffer_mapping(first_bufnr, "+", "buffer-local controls should install zo
 assert_buffer_mapping(first_bufnr, "-", "buffer-local controls should install zoom-out mapping")
 assert_buffer_mapping(first_bufnr, "=", "buffer-local controls should install zoom-reset mapping")
 assert_buffer_mapping(first_bufnr, "a", "buffer-local controls should install address mapping")
+assert_buffer_mapping(first_bufnr, "?", "buffer-local controls should install actions picker mapping")
 assert_buffer_mapping(first_bufnr, "/", "buffer-local controls should install find mapping")
 assert_buffer_mapping(first_bufnr, "n", "buffer-local controls should install find-next mapping")
 assert_buffer_mapping(first_bufnr, "N", "buffer-local controls should install find-previous mapping")
@@ -342,6 +347,7 @@ trigger_buffer(first_bufnr, "+")
 trigger_buffer(first_bufnr, "-")
 trigger_buffer(first_bufnr, "=")
 trigger_buffer(first_bufnr, "a")
+trigger_buffer(first_bufnr, "?")
 trigger_buffer(first_bufnr, "/")
 trigger_buffer(first_bufnr, "n")
 trigger_buffer(first_bufnr, "N")
@@ -383,7 +389,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,right_click_here,hover_here,close,click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,actions,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,key:L:meta,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,right_click_here,hover_here,close,click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
 
@@ -412,6 +418,7 @@ keymaps.setup_buffer(browser, first_bufnr, {
   enabled = true,
   mappings = {
     reload = "x",
+    actions = "??",
     forward = false,
     type_hint_mode = "i",
     submit_hint_mode = false,
@@ -444,6 +451,7 @@ assert_no_buffer_mapping(first_bufnr, "-", "false buffer-local zoom-out mapping 
 assert_buffer_mapping(first_bufnr, "z0", "custom buffer-local zoom-reset mapping should be installed")
 assert_buffer_mapping(first_bufnr, "cc", "custom buffer-local cursor click mapping should be installed")
 assert_buffer_mapping(first_bufnr, "I", "custom buffer-local focused input mapping should be installed")
+assert_buffer_mapping(first_bufnr, "??", "custom buffer-local actions mapping should be installed")
 assert_buffer_mapping(first_bufnr, "P", "custom buffer-local paste mapping should be installed")
 assert_buffer_mapping(first_bufnr, "yy", "custom buffer-local browser selection yank mapping should be installed")
 assert_buffer_mapping(first_bufnr, "YU", "custom buffer-local current URL yank mapping should be installed")
@@ -474,11 +482,16 @@ keymaps.setup_buffer(browser, disabled_click_bufnr, {
   enabled = true,
   mappings = {
     click_here = false,
+    actions = false,
   },
 })
 assert(
   buffer_mapping(disabled_click_bufnr, "gc").buffer ~= 1,
   "false cursor click mapping should disable the default buffer-local mapping"
+)
+assert(
+  buffer_mapping(disabled_click_bufnr, "?").buffer ~= 1,
+  "false actions mapping should disable the default buffer-local mapping"
 )
 
 keymaps.setup_buffer(browser, first_bufnr, {

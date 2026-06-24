@@ -220,6 +220,7 @@ Then run:
 :NBrowserNavigate https://example.org
 :NBrowserAddress
 :NBrowserHistory
+:NBrowserActions
 :NBrowserBack
 :NBrowserForward
 :NBrowserScrollDown 400
@@ -383,6 +384,9 @@ URLs. `:NBrowserHistory` opens a recent page picker for this Neovim session and
 navigates to the selected URL, or opens it when no browser session is active.
 Lua mappings can call `require("nvim-browser").address()` or pass a value
 directly with `require("nvim-browser").address("example.com")`.
+`:NBrowserActions` opens a compact picker for common browser actions such as
+address, reload, history movement, find, hints, text mode, screenshot, reader,
+status, doctor, and close. Preview buffers map `?` to this picker by default.
 
 `:NBrowserFind {text}` finds text in the active browser page, scrolls to the
 match through the browser's native find behavior, and captures a fresh frame.
@@ -451,7 +455,7 @@ Focused preview buffers also install buffer-local browser controls by default:
 `r` reload, `H` back, `L` forward, `j`/`k` scroll, `<PageDown>/<PageUp>` scroll
 by 90% of the browser viewport, `gg` top, `G` bottom, `<C-d>/<C-u>` scroll by
 half the browser viewport, `+` zoom in, `-` zoom out, `=` reset zoom,
-`a` address, `/` find, `n` repeat find forward, `N`
+`a` address, `?` actions picker, `/` find, `n` repeat find forward, `N`
 repeat find backward, `f` hint mode, `t` type into a hinted field, `s` type and
 submit, `o` select a hinted option, `c` toggle a hinted checkbox/radio, `i`
 type into the focused element with browser text mode, `p` paste the selected

@@ -67,6 +67,7 @@ M.options = {
       zoom_out = "-",
       zoom_reset = "=",
       address = "a",
+      actions = "?",
       find = "/",
       find_next = "n",
       find_previous = "N",
