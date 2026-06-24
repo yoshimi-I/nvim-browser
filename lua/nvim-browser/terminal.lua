@@ -33,6 +33,7 @@ local state = {
   runtime_metadata = nil,
   rendered_frame_geometry = nil,
   rendered_frame_url = nil,
+  rendered_frame_dom_epoch = nil,
   status = nil,
   status_error = nil,
   hint_error = nil,
@@ -1160,6 +1161,7 @@ local function apply_serve_response_metadata(response)
   if response.status == "ok" and response.payload ~= nil then
     state.rendered_frame_geometry = rendered_frame_geometry_from_runtime(response.runtime)
     state.rendered_frame_url = response.url ~= nil and response.url ~= vim.NIL and tostring(response.url) or state.current_url
+    state.rendered_frame_dom_epoch = state.dom_epoch
     if response.found == nil then
       state.last_find_found = nil
       state.last_find_match_count = nil
@@ -2286,6 +2288,7 @@ function M.open(command)
   state.runtime_metadata = nil
   state.rendered_frame_geometry = nil
   state.rendered_frame_url = nil
+  state.rendered_frame_dom_epoch = nil
   state.status = nil
   state.status_error = nil
   state.hint_error = nil
@@ -2424,6 +2427,7 @@ function M.open(command)
         if response.status == "ok" and response.payload ~= nil then
           state.rendered_frame_geometry = rendered_frame_geometry_from_runtime(response.runtime)
           state.rendered_frame_url = response.url ~= nil and response.url ~= vim.NIL and tostring(response.url) or state.current_url
+          state.rendered_frame_dom_epoch = state.dom_epoch
           apply_payload_to_buffer(bufnr, response.payload, uses_kitty, uses_kitty_unicode, command, geometry)
           if uses_kitty then
             emit_terminal_graphics(response.payload, state.winid)
@@ -2504,6 +2508,7 @@ function M.open(command)
           state.runtime_metadata = nil
           state.rendered_frame_geometry = nil
           state.rendered_frame_url = nil
+          state.rendered_frame_dom_epoch = nil
           state.focused_element = nil
           state.latest_download = nil
           state.download_history = {}
@@ -2667,6 +2672,7 @@ function M.close()
   state.runtime_metadata = nil
   state.rendered_frame_geometry = nil
   state.rendered_frame_url = nil
+  state.rendered_frame_dom_epoch = nil
   state.status = nil
   state.status_error = nil
   state.hint_error = nil
@@ -2798,6 +2804,7 @@ hard_stop_pending_operation = function(reason)
   state.dom_epoch = nil
   state.rendered_frame_geometry = nil
   state.rendered_frame_url = nil
+  state.rendered_frame_dom_epoch = nil
   state.response_handlers[pending.id] = nil
   if state.latest_find_request_id == pending.id then
     state.latest_find_request_id = nil
@@ -2815,6 +2822,7 @@ hard_stop_pending_operation = function(reason)
   state.serve_output = nil
   state.runtime_metadata = nil
   state.rendered_frame_url = nil
+  state.rendered_frame_dom_epoch = nil
   state.latest_download = nil
   state.download_history = {}
   state.download_recorded_response_ids = {}
@@ -2847,6 +2855,7 @@ hard_stop_capture_operation = function(reason)
   state.hint_error = nil
   state.rendered_frame_geometry = nil
   state.rendered_frame_url = nil
+  state.rendered_frame_dom_epoch = nil
   state.generation = state.generation + 1
   stop_text_mode_flush_timer()
   stop_live_refresh()
@@ -3779,11 +3788,23 @@ local function send_right_click_hint_request(hint)
   }, state.current_url or state.last_target or "right-click", "right-click")
 end
 
+local function rendered_frame_dom_epoch_is_current()
+  if state.dom_epoch == nil or state.rendered_frame_dom_epoch == nil then
+    return true
+  end
+  return state.dom_epoch == state.rendered_frame_dom_epoch
+end
+
+local function element_hints_are_current()
+  return same_preview_geometry(state.element_hints_geometry, current_preview_geometry())
+    and rendered_frame_dom_epoch_is_current()
+end
+
 function M.click_hint(id)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false
   end
-  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+  if not element_hints_are_current() then
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -3797,7 +3818,7 @@ function M.right_click_hint(id)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false
   end
-  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+  if not element_hints_are_current() then
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -3811,7 +3832,7 @@ function M.hover_hint(id)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false
   end
-  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+  if not element_hints_are_current() then
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -3829,7 +3850,7 @@ function M.focus_hint(id)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false
   end
-  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+  if not element_hints_are_current() then
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -3847,7 +3868,7 @@ function M.follow_hint(id)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false
   end
-  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+  if not element_hints_are_current() then
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -3864,7 +3885,7 @@ local function active_hint_for_identifier(id)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return nil
   end
-  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+  if not element_hints_are_current() then
     return nil
   end
   return find_hint(state.element_hints, id)
@@ -3894,7 +3915,7 @@ function M.type_hint(id, text, opts)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false
   end
-  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+  if not element_hints_are_current() then
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -3919,7 +3940,7 @@ function M.select_hint(id, choice)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false
   end
-  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+  if not element_hints_are_current() then
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -3951,7 +3972,7 @@ function M.upload_hint(id, paths)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false
   end
-  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+  if not element_hints_are_current() then
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -3970,7 +3991,7 @@ function M.toggle_hint(id)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false
   end
-  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+  if not element_hints_are_current() then
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -4081,6 +4102,7 @@ function M.state()
     runtime_metadata = state.runtime_metadata,
     rendered_frame_geometry = state.rendered_frame_geometry,
     rendered_frame_url = state.rendered_frame_url,
+    rendered_frame_dom_epoch = state.rendered_frame_dom_epoch,
     status = state.status,
     status_error = state.status_error,
     hint_error = state.hint_error,

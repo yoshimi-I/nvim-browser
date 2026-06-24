@@ -146,7 +146,9 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   URL/title, page-metrics, focused-element metadata, and a Chromium-backed DOM
   mutation epoch when available. The current frame and hints remain visible
   until Enter, exit, manual refresh, or an adaptive/live captured response
-  refreshes them.
+  refreshes them. When that DOM epoch advances without a captured frame, old
+  hints must stay visible only as stale context; hint-driven actions should not
+  send old backend hint IDs until a fresh captured frame refreshes hints.
 - Chromium target lifecycle is a core reliability area. `target=_blank`,
   `window.open`, and delayed `about:blank` navigations should stay covered by
   opt-in E2E because real pages commonly create and navigate child targets

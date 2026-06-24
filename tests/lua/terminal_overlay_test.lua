@@ -4273,6 +4273,111 @@ assert(terminal.state().page_metrics.scroll_y == 80, "quiet metadata should upda
 assert(terminal.state().rendered_frame_geometry == quiet_geometry, "quiet metadata without payload should keep current frame geometry")
 assert(#terminal.state().element_hints == 1, "quiet metadata without payload should keep current hints")
 
+serve_stdout(nil, { vim.json.encode({
+  id = quiet_request.id + 1,
+  status = "ok",
+  payload = "dom epoch baseline frame",
+  url = "https://example.com/dom-epoch-baseline",
+  title = "DOM Epoch Baseline",
+  dom_epoch = 10,
+  hints = {
+    {
+      id = 10,
+      kind = "button",
+      label = "Old DOM Button",
+      href = "https://example.com/old-dom-button",
+      x = 10,
+      y = 20,
+      width = 30,
+      height = 10,
+      clickable = true,
+      focusable = true,
+    },
+  },
+  runtime = {
+    protocol_version = 19,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 450, height = 165, device_scale_factor = 1 },
+  },
+}), "" })
+assert(vim.wait(200, function()
+  return terminal.state().dom_epoch == 10 and #terminal.state().element_hints == 1
+end), "test setup should apply a captured DOM epoch baseline with hints")
+_G.nvim_browser_dom_epoch_stale_geometry = terminal.state().rendered_frame_geometry
+vim.fn.setreg("b", "before-same-dom")
+terminal._test.apply_serve_response({
+  id = quiet_request.id + 2,
+  status = "ok",
+  url = "https://example.com/dom-epoch-baseline",
+  title = "DOM Epoch Baseline",
+  dom_epoch = 10,
+})
+assert(terminal.yank_hint_url("a", "b") == true, "same DOM epoch lightweight metadata should keep existing hints usable")
+assert(
+  vim.fn.getreg("b") == "https://example.com/old-dom-button",
+  "same DOM epoch lightweight metadata should keep hint hrefs available"
+)
+sent_requests = {}
+assert(terminal.input_text("quiet stale dom", { capture = false, resize = false }) == true, "quiet stale setup should send quiet input")
+_G.nvim_browser_stale_dom_request = last_request_of_type("text_input")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_stale_dom_request.id,
+  status = "ok",
+  url = "https://example.com/dom-epoch-baseline",
+  title = "DOM Epoch Baseline",
+  dom_epoch = 11,
+}), "" })
+assert(vim.wait(200, function()
+  return terminal.state().dom_epoch == 11
+end), "quiet DOM epoch changes should update DOM metadata")
+assert(#terminal.state().element_hints == 1, "quiet DOM epoch changes should leave stale hints visible until capture")
+vim.fn.setreg("b", "preserve-stale-dom")
+assert(terminal.yank_hint_url("a", "b") == false, "advanced DOM epoch should make old hint hrefs unavailable")
+assert(vim.fn.getreg("b") == "preserve-stale-dom", "stale DOM hints should not mutate registers")
+sent_requests = {}
+assert(terminal.click_hint("a") == false, "advanced DOM epoch should make old hint actions unavailable")
+assert(last_request_of_type("click_hint") == nil, "advanced DOM epoch should not send old backend hint ids")
+
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_stale_dom_request.id + 1,
+  status = "ok",
+  payload = "fresh dom epoch frame",
+  url = "https://example.com/dom-epoch-baseline",
+  title = "DOM Epoch Baseline",
+  dom_epoch = 11,
+  runtime = {
+    protocol_version = 19,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 450, height = 165, device_scale_factor = 1 },
+  },
+  hints = {
+    {
+      id = 11,
+      kind = "button",
+      label = "Fresh DOM Button",
+      x = 10,
+      y = 20,
+      width = 30,
+      height = 10,
+      clickable = true,
+      focusable = true,
+    },
+  },
+}), "" })
+assert(vim.wait(200, function()
+  return terminal.state().dom_epoch == 11 and terminal.state().rendered_frame_geometry ~= _G.nvim_browser_dom_epoch_stale_geometry
+end), "fresh DOM epoch capture should replace the stale rendered frame")
+sent_requests = {}
+assert(terminal.click_hint("a") == true, "captured DOM epoch frame should make fresh hints usable again")
+assert(last_request_of_type("click_hint") ~= nil, "fresh hints should send backend hint ids")
+terminal._test.set_pending_operation(nil)
+
 sent_requests = {}
 assert(terminal.start_text_mode({
   getcharstr = (function()
