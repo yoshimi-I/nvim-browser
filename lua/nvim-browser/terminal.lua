@@ -43,6 +43,7 @@ local state = {
   zoom_scale = 1.0,
   reader_bufnr = nil,
   reader_base_url = nil,
+  latest_reader_request_id = nil,
 }
 
 local options = {
@@ -643,8 +644,22 @@ local function apply_reader_snapshot(snapshot)
 end
 
 local function handle_reader_response(response)
+  if
+    response.id ~= nil
+    and state.latest_reader_request_id ~= nil
+    and tonumber(response.id) ~= nil
+    and tonumber(response.id) < state.latest_reader_request_id
+  then
+    return
+  end
   if response.status ~= "ok" or response.text == nil or response.text == vim.NIL then
+    delete_reader_buffer()
     vim.api.nvim_echo({ { "nvim-browser: reader snapshot failed", "WarningMsg" } }, false, {})
+    return
+  end
+  if response.text.text == nil or response.text.text == "" or response.text.text == vim.NIL then
+    delete_reader_buffer()
+    vim.api.nvim_echo({ { "nvim-browser: reader snapshot was empty", "WarningMsg" } }, false, {})
     return
   end
   apply_reader_snapshot(response.text)
@@ -1375,6 +1390,7 @@ function M.open(command)
   state.canceled_request_ids = {}
   state.quiet_request_ids = {}
   state.latest_applied_response_id = 0
+  state.latest_reader_request_id = nil
   state.last_find_found = nil
   state.last_find_query = nil
   state.response_handlers = {}
@@ -1697,6 +1713,7 @@ function M.close()
   state.canceled_request_ids = {}
   state.quiet_request_ids = {}
   state.latest_applied_response_id = 0
+  state.latest_reader_request_id = nil
   state.last_find_found = nil
   state.last_find_query = nil
   state.response_handlers = {}
@@ -2140,7 +2157,11 @@ function M.find_previous()
 end
 
 function M.reader()
-  return send_serve_request({ type = "page_text" }, handle_reader_response)
+  local ok, id = send_serve_request({ type = "page_text" }, handle_reader_response)
+  if ok then
+    state.latest_reader_request_id = id
+  end
+  return ok
 end
 
 function M.yank_selection(register)

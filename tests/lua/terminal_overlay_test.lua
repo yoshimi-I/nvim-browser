@@ -317,6 +317,36 @@ local reader_lines = table.concat(vim.api.nvim_buf_get_lines(reader_bufnr, 0, -1
 assert(reader_lines:match("# Example"), "reader buffer should include page title")
 assert(reader_lines:match("https://example%.com"), "reader buffer should include page URL")
 assert(reader_lines:match("Body text"), "reader buffer should include page text")
+
+terminal._test.handle_reader_response({
+  status = "error",
+  error = "page text failed",
+})
+assert(not vim.api.nvim_buf_is_valid(reader_bufnr), "failed reader snapshots should delete stale reader buffers")
+assert(terminal.state().reader_bufnr == nil, "failed reader snapshots should clear stale reader state")
+
+terminal._test.handle_reader_response({
+  status = "ok",
+  text = {
+    title = "Empty Reader",
+    url = "https://example.com/empty",
+    text = "",
+    truncated = false,
+  },
+})
+assert(terminal.state().reader_bufnr == nil, "empty reader snapshots should not create stale reader buffers")
+
+terminal._test.handle_reader_response({
+  status = "ok",
+  text = {
+    title = "Example",
+    url = "https://example.com",
+    text = "# Example\n\nBody text\n\n[Docs](https://example.com/docs)",
+    truncated = false,
+  },
+})
+reader_bufnr = terminal.state().reader_bufnr
+assert(reader_bufnr ~= nil and vim.api.nvim_buf_is_valid(reader_bufnr), "reader should recreate after a failed or empty snapshot")
 assert(
   vim.api.nvim_buf_call(reader_bufnr, function()
     return vim.fn.maparg("<CR>", "n", false, true).buffer == 1
@@ -500,6 +530,40 @@ assert(
   vim.api.nvim_buf_get_name(second_reader_bufnr) == "nvim-browser-reader://Example",
   "reader buffer names should be reusable after close"
 )
+
+terminal._test.set_mode("serve")
+terminal._test.set_job_id(99)
+stale_reader_requests = {}
+vim.fn.chansend = function(job_id, payload)
+  table.insert(stale_reader_requests, { job_id = job_id, request = vim.json.decode(payload) })
+  return 1
+end
+assert(terminal.reader() == true, "first overlapping reader request should be sent")
+assert(terminal.reader() == true, "second overlapping reader request should be sent")
+vim.fn.chansend = original_chansend_for_reader
+stale_reader_first_id = stale_reader_requests[1].request.id
+stale_reader_second_id = stale_reader_requests[2].request.id
+assert(stale_reader_first_id < stale_reader_second_id, "reader requests should have increasing ids")
+terminal._test.dispatch_serve_response_handler({
+  id = stale_reader_second_id,
+  status = "ok",
+  text = {
+    title = "Fresh Reader",
+    url = "https://example.com/fresh",
+    text = "# Fresh Reader\n\nFresh body",
+    truncated = false,
+  },
+})
+fresh_reader_bufnr = terminal.state().reader_bufnr
+assert(fresh_reader_bufnr ~= nil and vim.api.nvim_buf_is_valid(fresh_reader_bufnr), "fresh reader response should create a buffer")
+terminal._test.dispatch_serve_response_handler({
+  id = stale_reader_first_id,
+  status = "error",
+  error = "late reader failure",
+})
+assert(vim.api.nvim_buf_is_valid(fresh_reader_bufnr), "late stale reader failures should not delete newer reader buffers")
+fresh_reader_lines = table.concat(vim.api.nvim_buf_get_lines(fresh_reader_bufnr, 0, -1, false), "\n")
+assert(fresh_reader_lines:match("Fresh Reader"), "late stale reader failures should preserve newer reader content")
 
 vim.cmd("vsplit")
 local image_win = vim.api.nvim_get_current_win()
