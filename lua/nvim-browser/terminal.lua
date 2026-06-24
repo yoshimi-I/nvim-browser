@@ -26,6 +26,8 @@ local state = {
   latest_download = nil,
   download_history = {},
   download_recorded_response_ids = {},
+  latest_dialog = nil,
+  dialog_history = {},
   runtime_metadata = nil,
   rendered_frame_geometry = nil,
   status = nil,
@@ -915,6 +917,55 @@ local function latest_download_from_response(response)
   return nil
 end
 
+local function copy_dialog(dialog)
+  if type(dialog) ~= "table" then
+    return nil
+  end
+  local copy = {}
+  for key, value in pairs(dialog) do
+    if value ~= vim.NIL then
+      copy[key] = value
+    end
+  end
+  return copy
+end
+
+local function dialogs_from_response(response)
+  local dialogs = {}
+  if type(response) ~= "table" then
+    return dialogs
+  end
+  if type(response.dialogs) == "table" then
+    for _, dialog in ipairs(response.dialogs) do
+      local copied = copy_dialog(dialog)
+      if copied ~= nil then
+        table.insert(dialogs, copied)
+      end
+    end
+  end
+  if #dialogs == 0 then
+    local copied = copy_dialog(response.dialog)
+    if copied ~= nil then
+      table.insert(dialogs, copied)
+    end
+  end
+  return dialogs
+end
+
+local function latest_dialog_from_response(response)
+  local dialogs = dialogs_from_response(response)
+  if #dialogs > 0 then
+    return dialogs[#dialogs]
+  end
+  return nil
+end
+
+local function record_dialogs(response)
+  for _, dialog in ipairs(dialogs_from_response(response)) do
+    table.insert(state.dialog_history, dialog)
+  end
+end
+
 local function copy_download_history()
   local downloads = {}
   for _, download in ipairs(state.download_history) do
@@ -1007,6 +1058,16 @@ local function apply_serve_response_metadata(response)
     if latest_download ~= nil then
       state.latest_download = latest_download
       record_completed_download(response)
+    end
+  end
+  if response.dialog ~= nil and response.dialog ~= vim.NIL then
+    state.latest_dialog = copy_dialog(response.dialog)
+    record_dialogs(response)
+  else
+    local latest_dialog = latest_dialog_from_response(response)
+    if latest_dialog ~= nil then
+      state.latest_dialog = latest_dialog
+      record_dialogs(response)
     end
   end
   if response.status == "ok" and response.payload ~= nil then
@@ -1690,6 +1751,26 @@ local function download_footer_label(download)
   return "download=" .. tostring(filename)
 end
 
+local function dialog_footer_label(dialog)
+  if type(dialog) ~= "table" then
+    return nil
+  end
+  local kind = dialog.kind ~= nil and dialog.kind ~= vim.NIL and tostring(dialog.kind) or nil
+  local action = dialog.action ~= nil and dialog.action ~= vim.NIL and tostring(dialog.action) or nil
+  if kind == nil or kind == "" or action == nil or action == "" then
+    return nil
+  end
+  local label = "dialog=" .. kind .. " " .. action
+  local message = dialog.message ~= nil and dialog.message ~= vim.NIL and tostring(dialog.message) or nil
+  if message ~= nil then
+    message = message:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    if message ~= "" then
+      label = label .. ": " .. message
+    end
+  end
+  return label
+end
+
 local function truncate_cells(value, width)
   width = tonumber(width) or 0
   if width <= 0 then
@@ -1738,6 +1819,11 @@ local function preview_footer_line(width)
   local focused = focused_element_label(state.focused_element)
   if focused ~= nil then
     table.insert(parts, focused)
+  end
+
+  local dialog = dialog_footer_label(state.latest_dialog)
+  if dialog ~= nil then
+    table.insert(parts, dialog)
   end
 
   local download = download_footer_label(state.latest_download)
@@ -2047,6 +2133,8 @@ function M.open(command)
   state.latest_download = nil
   state.download_history = {}
   state.download_recorded_response_ids = {}
+  state.latest_dialog = nil
+  state.dialog_history = {}
   state.runtime_metadata = nil
   state.rendered_frame_geometry = nil
   state.status = nil
@@ -2267,6 +2355,8 @@ function M.open(command)
           state.latest_download = nil
           state.download_history = {}
           state.download_recorded_response_ids = {}
+          state.latest_dialog = nil
+          state.dialog_history = {}
           state.zoom_scale = 1.0
           state.element_hints = {}
           state.element_hints_geometry = nil
@@ -2416,6 +2506,8 @@ function M.close()
   state.latest_download = nil
   state.download_history = {}
   state.download_recorded_response_ids = {}
+  state.latest_dialog = nil
+  state.dialog_history = {}
   state.runtime_metadata = nil
   state.rendered_frame_geometry = nil
   state.status = nil
@@ -2559,6 +2651,8 @@ function M.stop()
   state.latest_download = nil
   state.download_history = {}
   state.download_recorded_response_ids = {}
+  state.latest_dialog = nil
+  state.dialog_history = {}
   state.element_hints = {}
   state.element_hints_geometry = nil
   state.cursor_addressable_preview = false
@@ -3664,6 +3758,8 @@ function M.state()
     focused_element = state.focused_element,
     latest_download = state.latest_download,
     download_history = copy_download_history(),
+    latest_dialog = state.latest_dialog,
+    dialog_history = vim.deepcopy(state.dialog_history),
     zoom_scale = state.zoom_scale,
     runtime_metadata = state.runtime_metadata,
     rendered_frame_geometry = state.rendered_frame_geometry,

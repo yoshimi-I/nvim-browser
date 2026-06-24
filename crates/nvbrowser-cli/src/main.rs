@@ -13,15 +13,15 @@ use nvbrowser_core::{
     render_markdown_document_with_base_url,
     renderer::chromium::{render_url_png, ChromiumOptions},
     tmux_passthrough_escape, BrowserSession, ChromiumRenderer, ClickHintRequest, ClickPointRequest,
-    DownloadInfo, DownloadStatus, DragPointRequest, ElementHint, ElementHintsRequest,
-    FindTextRequest, FocusHintRequest, FocusSelectorRequest, FocusedElement, FocusedElementRequest,
-    FrameArtifact, HistoryNavigationRequest, HoverHintRequest, HoverPointRequest, KeyPressRequest,
-    KittyImageDelete, KittyImageTransfer, NavigateRequest, PageMetadataRequest, PageMetrics,
-    PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest, RenderFrameRequest,
-    RenderedFrame, Renderer, RendererError, RendererErrorKind, RightClickHintRequest,
-    RightClickPointRequest, ScrollRequest, SelectHintRequest, SelectionTextRequest, SessionId,
-    TextInputRequest, ToggleHintRequest, UploadHintRequest, Viewport, WheelPointRequest,
-    ZoomRequest,
+    DialogAction, DialogEvent, DialogKind, DownloadInfo, DownloadStatus, DragPointRequest,
+    ElementHint, ElementHintsRequest, FindTextRequest, FocusHintRequest, FocusSelectorRequest,
+    FocusedElement, FocusedElementRequest, FrameArtifact, HistoryNavigationRequest,
+    HoverHintRequest, HoverPointRequest, KeyPressRequest, KittyImageDelete, KittyImageTransfer,
+    NavigateRequest, PageMetadataRequest, PageMetrics, PageMetricsRequest, PageTextRequest,
+    PageTextSnapshot, ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
+    RendererErrorKind, RightClickHintRequest, RightClickPointRequest, ScrollRequest,
+    SelectHintRequest, SelectionTextRequest, SessionId, TextInputRequest, ToggleHintRequest,
+    UploadHintRequest, Viewport, WheelPointRequest, ZoomRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -517,6 +517,10 @@ struct ServeResponse {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     downloads: Vec<ServeDownloadInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    dialog: Option<ServeDialogInfo>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    dialogs: Vec<ServeDialogInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
 
@@ -534,6 +538,23 @@ impl From<DownloadInfo> for ServeDownloadInfo {
             path: download.path,
             suggested_filename: download.suggested_filename,
             status: download.status,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct ServeDialogInfo {
+    kind: DialogKind,
+    message: String,
+    action: DialogAction,
+}
+
+impl From<DialogEvent> for ServeDialogInfo {
+    fn from(dialog: DialogEvent) -> Self {
+        Self {
+            kind: dialog.kind,
+            message: dialog.message,
+            action: dialog.action,
         }
     }
 }
@@ -781,6 +802,7 @@ struct ServeRuntime<R: Renderer> {
     output: ImageOutput,
     _markdown_preview: Option<MarkdownPreviewFile>,
     pending_downloads: Vec<DownloadInfo>,
+    pending_dialogs: Vec<DialogEvent>,
 }
 
 struct CapturePayload {
@@ -795,6 +817,8 @@ struct CapturePayload {
     match_count: Option<u32>,
     download: Option<DownloadInfo>,
     downloads: Vec<DownloadInfo>,
+    dialog: Option<DialogEvent>,
+    dialogs: Vec<DialogEvent>,
 }
 
 impl<R: Renderer> ServeRuntime<R> {
@@ -807,6 +831,7 @@ impl<R: Renderer> ServeRuntime<R> {
             output: options.output,
             _markdown_preview: options.markdown_preview,
             pending_downloads: Vec::new(),
+            pending_dialogs: Vec::new(),
         }
     }
 
@@ -826,6 +851,8 @@ impl<R: Renderer> ServeRuntime<R> {
                     match_count,
                     download,
                     downloads,
+                    dialog,
+                    dialogs,
                 ) = capture
                     .map(|capture| {
                         (
@@ -840,6 +867,8 @@ impl<R: Renderer> ServeRuntime<R> {
                             capture.match_count,
                             capture.download,
                             capture.downloads,
+                            capture.dialog,
+                            capture.dialogs,
                         )
                     })
                     .unwrap_or((
@@ -854,8 +883,11 @@ impl<R: Renderer> ServeRuntime<R> {
                         None,
                         None,
                         Vec::new(),
+                        None,
+                        Vec::new(),
                     ));
                 let download = download.or_else(|| downloads.last().cloned());
+                let dialog = dialog.or_else(|| dialogs.last().cloned());
                 ServeResponse {
                     id,
                     status: ServeStatus::Ok,
@@ -873,6 +905,8 @@ impl<R: Renderer> ServeRuntime<R> {
                     match_count,
                     download: download.map(ServeDownloadInfo::from),
                     downloads: downloads.into_iter().map(ServeDownloadInfo::from).collect(),
+                    dialog: dialog.map(ServeDialogInfo::from),
+                    dialogs: dialogs.into_iter().map(ServeDialogInfo::from).collect(),
                     error: None,
                 }
             }
@@ -893,6 +927,8 @@ impl<R: Renderer> ServeRuntime<R> {
                 match_count: None,
                 download: None,
                 downloads: Vec::new(),
+                dialog: None,
+                dialogs: Vec::new(),
                 error: Some(error.to_string()),
             },
         }
@@ -901,7 +937,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 17,
+            protocol_version: 18,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -1271,6 +1307,8 @@ impl<R: Renderer> ServeRuntime<R> {
                     match_count: None,
                     download: None,
                     downloads: Vec::new(),
+                    dialog: None,
+                    dialogs: Vec::new(),
                 }))
             }
             ServeRequest::SelectionText { .. } => {
@@ -1290,6 +1328,8 @@ impl<R: Renderer> ServeRuntime<R> {
                     match_count: None,
                     download: None,
                     downloads: Vec::new(),
+                    dialog: None,
+                    dialogs: Vec::new(),
                 }))
             }
             ServeRequest::Screenshot { path, .. } => {
@@ -1362,6 +1402,8 @@ impl<R: Renderer> ServeRuntime<R> {
             match_count: None,
             download: None,
             downloads: std::mem::take(&mut self.pending_downloads),
+            dialog: None,
+            dialogs: std::mem::take(&mut self.pending_dialogs),
         })
     }
 
@@ -1404,6 +1446,8 @@ impl<R: Renderer> ServeRuntime<R> {
             match_count: None,
             download: None,
             downloads: std::mem::take(&mut self.pending_downloads),
+            dialog: None,
+            dialogs: std::mem::take(&mut self.pending_dialogs),
         })
     }
 
@@ -1427,6 +1471,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn settle_after_interaction(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let settled = self.renderer.settle_after_interaction()?;
         self.pending_downloads.extend(settled.downloads);
+        self.pending_dialogs.extend(settled.dialogs);
         self.session
             .navigate_active_page_with_title(settled.url, settled.title);
         self.session.finish_active_page_load();
@@ -1603,6 +1648,8 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         match_count: None,
                         download: None,
                         downloads: Vec::new(),
+                        dialog: None,
+                        dialogs: Vec::new(),
                         error: Some(error.to_string()),
                     })
                 )?;
@@ -2009,6 +2056,7 @@ mod tests {
         next_frame_title: Option<String>,
         next_download: Option<DownloadInfo>,
         next_downloads: Vec<DownloadInfo>,
+        next_dialogs: Vec<DialogEvent>,
         hints: Vec<ElementHint>,
         focused: Option<FocusedElement>,
         shutdown: bool,
@@ -2058,6 +2106,7 @@ mod tests {
                 next_frame_title: None,
                 next_download: None,
                 next_downloads: Vec::new(),
+                next_dialogs: Vec::new(),
                 hints: Vec::new(),
                 focused: None,
                 shutdown: false,
@@ -2527,10 +2576,16 @@ mod tests {
             if let Some(download) = self.next_download.take() {
                 downloads.push(download);
             }
-            Ok(if downloads.is_empty() {
+            let dialogs = std::mem::take(&mut self.next_dialogs);
+            let result = if downloads.is_empty() {
                 result
             } else {
                 result.with_downloads(downloads)
+            };
+            Ok(if dialogs.is_empty() {
+                result
+            } else {
+                result.with_dialogs(dialogs)
             })
         }
 
@@ -3062,6 +3117,8 @@ mod tests {
             match_count: None,
             download: None,
             downloads: Vec::new(),
+            dialog: None,
+            dialogs: Vec::new(),
             error: None,
         };
 
@@ -3103,6 +3160,8 @@ mod tests {
             match_count: None,
             download: None,
             downloads: Vec::new(),
+            dialog: None,
+            dialogs: Vec::new(),
             error: None,
         };
 
@@ -3131,6 +3190,8 @@ mod tests {
             match_count: Some(3),
             download: None,
             downloads: Vec::new(),
+            dialog: None,
+            dialogs: Vec::new(),
             error: None,
         };
 
@@ -3165,12 +3226,52 @@ mod tests {
                 PathBuf::from("/tmp/downloads/report.pdf"),
                 Some("report.pdf".to_string()),
             ))],
+            dialog: None,
+            dialogs: Vec::new(),
             error: None,
         };
 
         assert_eq!(
             encode_serve_response(&response),
             r#"{"id":19,"status":"ok","payload":"frame","url":"https://example.com","title":"Example","download":{"path":"/tmp/downloads/report.pdf","suggested_filename":"report.pdf","status":"completed"},"downloads":[{"path":"/tmp/downloads/report.pdf","suggested_filename":"report.pdf","status":"completed"}]}"#
+        );
+    }
+
+    #[test]
+    fn serve_response_encodes_dialog_when_present() {
+        let response = ServeResponse {
+            id: 20,
+            status: ServeStatus::Ok,
+            runtime: None,
+            payload: Some("frame".to_string()),
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            page: None,
+            focused: None,
+            text: None,
+            selection: None,
+            hints: Vec::new(),
+            hint_error: None,
+            found: None,
+            match_count: None,
+            download: None,
+            downloads: Vec::new(),
+            dialog: Some(ServeDialogInfo::from(DialogEvent {
+                kind: DialogKind::Confirm,
+                message: "continue?".to_string(),
+                action: DialogAction::Dismissed,
+            })),
+            dialogs: vec![ServeDialogInfo::from(DialogEvent {
+                kind: DialogKind::Confirm,
+                message: "continue?".to_string(),
+                action: DialogAction::Dismissed,
+            })],
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r#"{"id":20,"status":"ok","payload":"frame","url":"https://example.com","title":"Example","dialog":{"kind":"confirm","message":"continue?","action":"dismissed"},"dialogs":[{"kind":"confirm","message":"continue?","action":"dismissed"}]}"#
         );
     }
 
@@ -3200,6 +3301,8 @@ mod tests {
             match_count: None,
             download: None,
             downloads: Vec::new(),
+            dialog: None,
+            dialogs: Vec::new(),
             error: None,
         };
 
@@ -3235,6 +3338,8 @@ mod tests {
             match_count: None,
             download: None,
             downloads: Vec::new(),
+            dialog: None,
+            dialogs: Vec::new(),
             error: None,
         };
 
@@ -3263,6 +3368,8 @@ mod tests {
             match_count: None,
             download: None,
             downloads: Vec::new(),
+            dialog: None,
+            dialogs: Vec::new(),
             error: None,
         };
 
@@ -3298,6 +3405,8 @@ mod tests {
             match_count: None,
             download: None,
             downloads: Vec::new(),
+            dialog: None,
+            dialogs: Vec::new(),
             error: None,
         };
 
@@ -3326,6 +3435,8 @@ mod tests {
             match_count: None,
             download: None,
             downloads: Vec::new(),
+            dialog: None,
+            dialogs: Vec::new(),
             error: None,
         };
 
@@ -3341,7 +3452,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 17,
+                protocol_version: 18,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -3368,12 +3479,14 @@ mod tests {
             match_count: None,
             download: None,
             downloads: Vec::new(),
+            dialog: None,
+            dialogs: Vec::new(),
             error: None,
         };
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":17,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":18,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -3402,7 +3515,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 17);
+        assert_eq!(runtime_info.protocol_version, 18);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -3850,6 +3963,63 @@ mod tests {
                 "capture",
                 "hints"
             ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_reports_dialog_after_interaction_without_clearing_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+        let navigate = runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        assert_eq!(navigate.status, ServeStatus::Ok);
+        runtime.renderer.next_dialogs = vec![DialogEvent {
+            kind: DialogKind::Alert,
+            message: "hello".to_string(),
+            action: DialogAction::Accepted,
+        }];
+
+        let response = runtime.handle(ServeRequest::ClickPoint {
+            id: 2,
+            x: 5.0,
+            y: 6.0,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(
+            response.payload.is_some(),
+            "dialog responses should preserve the captured preview frame"
+        );
+        assert_eq!(
+            response.dialog,
+            Some(ServeDialogInfo::from(DialogEvent {
+                kind: DialogKind::Alert,
+                message: "hello".to_string(),
+                action: DialogAction::Accepted,
+            }))
+        );
+        assert_eq!(
+            response.dialogs,
+            vec![ServeDialogInfo::from(DialogEvent {
+                kind: DialogKind::Alert,
+                message: "hello".to_string(),
+                action: DialogAction::Accepted,
+            })]
         );
     }
 

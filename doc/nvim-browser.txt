@@ -90,7 +90,7 @@ require("nvim-browser").setup({
 <
 
 Active browser previews refresh lightweight page state every 1500ms by
-default. This keeps URL, title, scroll, focus, and download metadata current
+default. This keeps URL, title, scroll, focus, dialog, and download metadata current
 without constant screenshots. If the lightweight state shows the idle page
 changed, nvim-browser debounces one full-frame capture. Use :NBrowserRefresh
 when you want a fresh frame immediately.
@@ -486,10 +486,14 @@ COMMANDS                                           *nvim-browser-commands*
 	latest completed download filename, and current URL. When available, the
 	status line also includes serve runtime diagnostics such as output mode,
 	viewport, cell size, and renderer. The active browser preview also shows
-	a compact footer with status, title or URL, scroll progress, download
-	filename, non-default zoom, output mode, cell geometry, and current URL.
+	a compact footer with status, title or URL, scroll progress, latest
+	handled JavaScript dialog, download filename, non-default zoom, output
+	mode, cell geometry, and current URL.
 	The preview buffer name is also kept in sync with the current title or
 	URL. Non-default zoom is reported as "zoom=125%".
+	JavaScript dialogs are auto-handled: alerts are accepted, while confirm,
+	prompt, and beforeunload dialogs are dismissed and reported as
+	"dialog=confirm dismissed: message".
 	Navigation-like operations show immediate "loading | ... | Esc stop"
 	feedback in this footer before Chromium returns a new frame.
 	Idle browser previews periodically send lightweight page-state requests to

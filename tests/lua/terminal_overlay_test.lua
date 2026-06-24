@@ -3959,6 +3959,29 @@ terminal._test.apply_serve_response({
 })
 assert(#terminal.downloads() == 2, "multi-download responses should record all completed downloads without duplicating the compatibility download")
 assert(terminal.downloads()[2].suggested_filename == "before-exit-2.txt", "multi-download responses should preserve download order")
+terminal._test.clear_pending_operation(4)
+
+terminal._test.apply_serve_response({
+  id = 704,
+  status = "ok",
+  dialog = {
+    kind = "confirm",
+    message = "continue?",
+    action = "dismissed",
+  },
+  dialogs = {
+    {
+      kind = "confirm",
+      message = "continue?",
+      action = "dismissed",
+    },
+  },
+})
+assert(terminal.state().latest_dialog.kind == "confirm", "serve dialog responses should record the latest dialog")
+assert(
+  terminal._test.preview_footer_line(120):find("dialog=confirm dismissed: continue?", 1, true),
+  "preview footer should show the latest auto-handled dialog"
+)
 sent_requests = {}
 assert(terminal.zoom_in() == true, "test setup should apply zoom before serve job exit")
 local pre_exit_zoom_request = last_request_of_type("zoom")

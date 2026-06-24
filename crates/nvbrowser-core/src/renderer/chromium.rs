@@ -25,17 +25,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     renderer::{
-        ClickHintRequest, ClickPointRequest, DownloadInfo, DragPointRequest, ElementHint,
-        ElementHintsRequest, FindTextRequest, FindTextResult, FocusHintRequest,
-        FocusSelectorRequest, FocusedElement, FocusedElementRequest, FrameArtifact,
-        HistoryNavigationRequest, HistoryNavigationResult, HoverHintRequest, HoverPointRequest,
-        InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
-        PageMetadata, PageMetadataRequest, PageMetrics, PageMetricsRequest, PageTextRequest,
-        PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer,
-        RendererError, RendererErrorKind, RightClickHintRequest, RightClickPointRequest,
-        ScrollRequest, ScrollResult, SelectHintRequest, SelectionTextRequest, SelectionTextResult,
-        ShutdownResult, TextInputRequest, ToggleHintRequest, UploadHintRequest, WheelPointRequest,
-        ZoomRequest, ZoomResult,
+        ClickHintRequest, ClickPointRequest, DialogAction, DialogEvent, DialogKind, DownloadInfo,
+        DragPointRequest, ElementHint, ElementHintsRequest, FindTextRequest, FindTextResult,
+        FocusHintRequest, FocusSelectorRequest, FocusedElement, FocusedElementRequest,
+        FrameArtifact, HistoryNavigationRequest, HistoryNavigationResult, HoverHintRequest,
+        HoverPointRequest, InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest,
+        NavigationResult, PageMetadata, PageMetadataRequest, PageMetrics, PageMetricsRequest,
+        PageTextRequest, PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest,
+        RenderedFrame, Renderer, RendererError, RendererErrorKind, RightClickHintRequest,
+        RightClickPointRequest, ScrollRequest, ScrollResult, SelectHintRequest,
+        SelectionTextRequest, SelectionTextResult, ShutdownResult, TextInputRequest,
+        ToggleHintRequest, UploadHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -215,7 +215,7 @@ pub fn render_url_png(
     let browser = open_browser(&options, viewport)?;
     let tab = browser.new_tab().map_err(render_error)?;
     configure_tab_timeout(&tab, &options);
-    install_default_dialog_handler(&tab)?;
+    install_default_dialog_handler(&tab, None)?;
     resize_tab(&tab, viewport)?;
     tab.navigate_to(url)
         .map_err(|error| navigation_start_error(url, error))?;
@@ -250,6 +250,8 @@ pub struct ChromiumRenderer {
     known_target_ids: HashSet<String>,
     pending_page_target_ids: HashSet<String>,
     dialog_handler_target_ids: HashSet<String>,
+    dialog_event_tx: mpsc::Sender<DialogEvent>,
+    dialog_event_rx: mpsc::Receiver<DialogEvent>,
     suppress_target_registration_until: Option<std::time::Instant>,
     skip_next_target_adoption: bool,
     active_viewport: Viewport,
@@ -284,7 +286,8 @@ impl ChromiumRenderer {
         let browser = open_browser(&options, viewport)?;
         let tab = browser.new_tab().map_err(render_error)?;
         configure_tab_timeout(&tab, &options);
-        install_default_dialog_handler(&tab)?;
+        let (dialog_event_tx, dialog_event_rx) = mpsc::channel::<DialogEvent>();
+        install_default_dialog_handler(&tab, Some(dialog_event_tx.clone()))?;
         let download_events = configure_download_behavior(&tab, options.download_dir.as_deref())?;
         let dialog_handler_target_ids = HashSet::from([tab.get_target_id().clone()]);
         resize_tab(&tab, viewport)?;
@@ -297,6 +300,8 @@ impl ChromiumRenderer {
             known_target_ids,
             pending_page_target_ids: HashSet::new(),
             dialog_handler_target_ids,
+            dialog_event_tx,
+            dialog_event_rx,
             suppress_target_registration_until: None,
             skip_next_target_adoption: false,
             active_viewport: viewport,
@@ -919,10 +924,16 @@ impl Renderer for ChromiumRenderer {
         self.current_title = title.clone();
         let settled = InteractionSettleResult::new(url, title);
         let downloads = self.collect_completed_downloads(interaction_started);
-        Ok(if downloads.is_empty() {
+        let dialogs = self.collect_dialog_events();
+        let settled = if downloads.is_empty() {
             settled
         } else {
             settled.with_downloads(downloads)
+        };
+        Ok(if dialogs.is_empty() {
+            settled
+        } else {
+            settled.with_dialogs(dialogs)
         })
     }
 
@@ -934,7 +945,20 @@ impl Renderer for ChromiumRenderer {
 
 impl ChromiumRenderer {
     fn mark_interaction_start(&mut self) {
+        self.drain_dialog_events();
         self.last_interaction_started = Some(SystemTime::now());
+    }
+
+    fn collect_dialog_events(&mut self) -> Vec<DialogEvent> {
+        let mut dialogs = Vec::new();
+        while let Ok(dialog) = self.dialog_event_rx.try_recv() {
+            dialogs.push(dialog);
+        }
+        dialogs
+    }
+
+    fn drain_dialog_events(&mut self) {
+        while self.dialog_event_rx.try_recv().is_ok() {}
     }
 
     fn collect_completed_downloads(
@@ -1123,7 +1147,7 @@ impl ChromiumRenderer {
         if self.dialog_handler_target_ids.contains(&target_id) {
             return Ok(());
         }
-        install_default_dialog_handler(tab)?;
+        install_default_dialog_handler(tab, Some(self.dialog_event_tx.clone()))?;
         self.dialog_handler_target_ids.insert(target_id);
         Ok(())
     }
@@ -2707,7 +2731,35 @@ fn default_dialog_policy(dialog_type: &DialogType) -> DialogPolicy {
     }
 }
 
-fn install_default_dialog_handler(tab: &Arc<Tab>) -> Result<(), RendererError> {
+fn dialog_kind(dialog_type: &DialogType) -> DialogKind {
+    match dialog_type {
+        DialogType::Alert => DialogKind::Alert,
+        DialogType::Confirm => DialogKind::Confirm,
+        DialogType::Prompt => DialogKind::Prompt,
+        DialogType::Beforeunload => DialogKind::Beforeunload,
+    }
+}
+
+fn dialog_action(policy: DialogPolicy) -> DialogAction {
+    match policy {
+        DialogPolicy::Accept => DialogAction::Accepted,
+        DialogPolicy::Dismiss => DialogAction::Dismissed,
+    }
+}
+
+fn dialog_event(dialog_type: &DialogType, message: impl Into<String>) -> DialogEvent {
+    let policy = default_dialog_policy(dialog_type);
+    DialogEvent {
+        kind: dialog_kind(dialog_type),
+        message: message.into(),
+        action: dialog_action(policy),
+    }
+}
+
+fn install_default_dialog_handler(
+    tab: &Arc<Tab>,
+    event_tx: Option<mpsc::Sender<DialogEvent>>,
+) -> Result<(), RendererError> {
     let dialog = tab.get_dialog();
     let (dialog_tx, dialog_rx) = mpsc::channel::<DialogPolicy>();
     thread::Builder::new()
@@ -2724,7 +2776,14 @@ fn install_default_dialog_handler(tab: &Arc<Tab>) -> Result<(), RendererError> {
 
     tab.add_event_listener(Arc::new(move |event: &Event| {
         if let Event::PageJavascriptDialogOpening(event) = event {
-            let _ = dialog_tx.send(default_dialog_policy(&event.params.Type));
+            let policy = default_dialog_policy(&event.params.Type);
+            if let Some(event_tx) = event_tx.as_ref() {
+                let _ = event_tx.send(dialog_event(
+                    &event.params.Type,
+                    event.params.message.clone(),
+                ));
+            }
+            let _ = dialog_tx.send(policy);
         }
     }))
     .map(|_| ())

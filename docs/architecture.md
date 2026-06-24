@@ -66,10 +66,11 @@ browser frames into stable row-major image tiles. Tile payloads clear the full
 stable tile ID range before reusing IDs so frame replacement is deterministic
 when a large capture is followed by a smaller one.
 
-The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 17
-includes lightweight `page_state` requests for idle metadata refresh and
+The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 18
+includes lightweight `page_state` requests for idle metadata refresh,
 multi-download reporting through a `downloads` array while preserving the
-single `download` compatibility field. The same protocol also covers
+single `download` compatibility field, and auto-handled JavaScript dialog
+reporting through `dialog`/`dialogs`. The same protocol also covers
 screenshot, click, right-click, hover, wheel, focus, form, text, key, reader,
 selection, find, and hint actions. Most browser actions default to returning a
 fresh frame payload after applying the action. Text input and key press requests

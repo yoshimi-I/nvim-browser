@@ -581,6 +581,9 @@ local function with_action_stubs(fn)
   browser.focused_element = function()
     return { kind = "input", label = "Search box" }
   end
+  browser.latest_dialog = function()
+    return { kind = "confirm", message = "continue?", action = "dismissed" }
+  end
   browser.runtime_metadata = function()
     return {
       output = "kitty",
@@ -902,6 +905,7 @@ with_action_stubs(function()
   assert(status_message:find("scroll 25%%"), "Status action should include scroll metrics")
   assert(status_message:find("zoom=125%%"), "Status action should include non-default browser zoom")
   assert(status_message:find("focus=input Search box", 1, true), "Status action should include focused element")
+  assert(status_message:find("dialog=confirm dismissed: continue?", 1, true), "Status action should include dialog metadata")
   assert(status_message:find("output=kitty", 1, true), "Status action should include runtime output")
   assert(status_message:find("viewport=960x720", 1, true), "Status action should include runtime viewport")
   assert(status_message:find("cells=120x40", 1, true), "Status action should include runtime cells")

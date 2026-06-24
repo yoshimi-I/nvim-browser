@@ -101,6 +101,26 @@ function M.register(browser, opts)
     return "download=" .. tostring(filename)
   end
 
+  local function dialog_status_label(dialog)
+    if type(dialog) ~= "table" then
+      return nil
+    end
+    local kind = dialog.kind ~= nil and dialog.kind ~= vim.NIL and tostring(dialog.kind) or nil
+    local action = dialog.action ~= nil and dialog.action ~= vim.NIL and tostring(dialog.action) or nil
+    if kind == nil or kind == "" or action == nil or action == "" then
+      return nil
+    end
+    local label = "dialog=" .. kind .. " " .. action
+    local message = dialog.message ~= nil and dialog.message ~= vim.NIL and tostring(dialog.message) or nil
+    if message ~= nil then
+      message = message:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+      if message ~= "" then
+        label = label .. ": " .. message
+      end
+    end
+    return label
+  end
+
   local function warn_hint_input_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: hint input failed, stale, or browser session is inactive", "WarningMsg" } }, false, {})
   end
@@ -993,6 +1013,7 @@ function M.register(browser, opts)
     local runtime = browser.runtime_metadata and runtime_status_label(browser.runtime_metadata()) or nil
     local focused = browser.focused_element and focused_element_label(browser.focused_element()) or nil
     local download = browser.latest_download and download_status_label(browser.latest_download()) or nil
+    local dialog = browser.latest_dialog and dialog_status_label(browser.latest_dialog()) or nil
     local message = status
     if title ~= nil and title ~= "" then
       message = message .. " " .. title
@@ -1008,6 +1029,9 @@ function M.register(browser, opts)
     end
     if download ~= nil then
       message = message .. " " .. download
+    end
+    if dialog ~= nil then
+      message = message .. " " .. dialog
     end
     if runtime ~= nil then
       message = message .. " " .. runtime

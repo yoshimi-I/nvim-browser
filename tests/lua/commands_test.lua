@@ -359,6 +359,9 @@ local browser = {
       status = "completed",
     }
   end,
+  latest_dialog = function()
+    return { kind = "confirm", message = "continue?", action = "dismissed" }
+  end,
   zoom_scale = function()
     return 1.25
   end,
@@ -692,6 +695,7 @@ assert(echoed:match("scroll 25%%"), "NBrowserStatus should include scroll progre
 assert(echoed:match("zoom=125%%"), "NBrowserStatus should include non-default browser zoom")
 assert(echoed:match("focus=input Search"), "NBrowserStatus should include focused element metadata")
 assert(echoed:match("download=report%.pdf"), "NBrowserStatus should include latest download metadata")
+assert(echoed:find("dialog=confirm dismissed: continue?", 1, true), "NBrowserStatus should include latest dialog metadata")
 assert(echoed:match("output=kitty%-unicode"), "NBrowserStatus should include runtime output when available")
 assert(echoed:match("viewport=800x600"), "NBrowserStatus should include runtime viewport when available")
 assert(echoed:match("cells=80x24"), "NBrowserStatus should include runtime cell size when available")

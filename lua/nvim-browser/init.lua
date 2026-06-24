@@ -708,6 +708,26 @@ local function download_status_label(download)
   return "download=" .. tostring(filename)
 end
 
+local function dialog_status_label(dialog)
+  if type(dialog) ~= "table" then
+    return nil
+  end
+  local kind = dialog.kind ~= nil and dialog.kind ~= vim.NIL and tostring(dialog.kind) or nil
+  local action = dialog.action ~= nil and dialog.action ~= vim.NIL and tostring(dialog.action) or nil
+  if kind == nil or kind == "" or action == nil or action == "" then
+    return nil
+  end
+  local label = "dialog=" .. kind .. " " .. action
+  local message = dialog.message ~= nil and dialog.message ~= vim.NIL and tostring(dialog.message) or nil
+  if message ~= nil then
+    message = message:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    if message ~= "" then
+      label = label .. ": " .. message
+    end
+  end
+  return label
+end
+
 local function action_status_message()
   local parts = { M.status() or "unknown" }
   local title = M.current_title()
@@ -729,6 +749,10 @@ local function action_status_message()
   local download = M.latest_download and download_status_label(M.latest_download()) or nil
   if download ~= nil then
     table.insert(parts, download)
+  end
+  local dialog = M.latest_dialog and dialog_status_label(M.latest_dialog()) or nil
+  if dialog ~= nil then
+    table.insert(parts, dialog)
   end
   local runtime = M.runtime_metadata and runtime_status_label(M.runtime_metadata()) or nil
   if runtime ~= nil then
@@ -1849,6 +1873,10 @@ end
 
 function M.latest_download()
   return terminal.state().latest_download
+end
+
+function M.latest_dialog()
+  return terminal.state().latest_dialog
 end
 
 local function copy_downloads(downloads)

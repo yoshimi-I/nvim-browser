@@ -389,6 +389,29 @@ pub struct InputResult {
     pub page_id: PageId,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DialogKind {
+    Alert,
+    Confirm,
+    Prompt,
+    Beforeunload,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DialogAction {
+    Accepted,
+    Dismissed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DialogEvent {
+    pub kind: DialogKind,
+    pub message: String,
+    pub action: DialogAction,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct InteractionSettleResult {
     pub url: String,
@@ -397,6 +420,10 @@ pub struct InteractionSettleResult {
     pub download: Option<DownloadInfo>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub downloads: Vec<DownloadInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dialog: Option<DialogEvent>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub dialogs: Vec<DialogEvent>,
 }
 
 impl InteractionSettleResult {
@@ -406,6 +433,8 @@ impl InteractionSettleResult {
             title,
             download: None,
             downloads: Vec::new(),
+            dialog: None,
+            dialogs: Vec::new(),
         }
     }
 
@@ -420,6 +449,20 @@ impl InteractionSettleResult {
             self.download = Some(download.clone());
         }
         self.downloads.extend(downloads);
+        self
+    }
+
+    pub fn with_dialog(mut self, dialog: DialogEvent) -> Self {
+        self.dialog = Some(dialog.clone());
+        self.dialogs.push(dialog);
+        self
+    }
+
+    pub fn with_dialogs(mut self, dialogs: Vec<DialogEvent>) -> Self {
+        if let Some(dialog) = dialogs.last() {
+            self.dialog = Some(dialog.clone());
+        }
+        self.dialogs.extend(dialogs);
         self
     }
 }
@@ -1173,7 +1216,12 @@ mod tests {
             Ok(InteractionSettleResult::new(
                 "https://example.com",
                 Some("Example Domain".to_string()),
-            ))
+            )
+            .with_dialog(DialogEvent {
+                kind: DialogKind::Confirm,
+                message: "continue?".to_string(),
+                action: DialogAction::Dismissed,
+            }))
         }
 
         fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
@@ -1529,5 +1577,14 @@ mod tests {
 
         assert!(renderer.settled);
         assert_eq!(settled.url, "https://example.com");
+        assert_eq!(
+            settled.dialog,
+            Some(DialogEvent {
+                kind: DialogKind::Confirm,
+                message: "continue?".to_string(),
+                action: DialogAction::Dismissed,
+            })
+        );
+        assert_eq!(settled.dialogs.len(), 1);
     }
 }

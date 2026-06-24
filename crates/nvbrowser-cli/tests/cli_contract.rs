@@ -573,6 +573,10 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         "hint_id": alert_hint_id
     }));
     assert_eq!(alerted["status"], "ok", "alert click should not hang");
+    assert_eq!(alerted["dialog"]["kind"], "alert");
+    assert_eq!(alerted["dialog"]["message"], "hello");
+    assert_eq!(alerted["dialog"]["action"], "accepted");
+    assert_eq!(alerted["dialogs"].as_array().map(Vec::len), Some(1));
     let alerted_text = serve.request(serde_json::json!({ "id": 7, "type": "page_text" }));
     assert!(
         alerted_text["text"]["text"]
@@ -596,6 +600,10 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         "hint_id": confirm_hint_id
     }));
     assert_eq!(confirmed["status"], "ok", "confirm click should not hang");
+    assert_eq!(confirmed["dialog"]["kind"], "confirm");
+    assert_eq!(confirmed["dialog"]["message"], "continue?");
+    assert_eq!(confirmed["dialog"]["action"], "dismissed");
+    assert_eq!(confirmed["dialogs"].as_array().map(Vec::len), Some(1));
     let confirmed_text = serve.request(serde_json::json!({ "id": 9, "type": "page_text" }));
     assert!(
         confirmed_text["text"]["text"]
@@ -619,6 +627,10 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
         "hint_id": prompt_hint_id
     }));
     assert_eq!(prompted["status"], "ok", "prompt click should not hang");
+    assert_eq!(prompted["dialog"]["kind"], "prompt");
+    assert_eq!(prompted["dialog"]["message"], "name");
+    assert_eq!(prompted["dialog"]["action"], "dismissed");
+    assert_eq!(prompted["dialogs"].as_array().map(Vec::len), Some(1));
     let prompted_text = serve.request(serde_json::json!({ "id": 11, "type": "page_text" }));
     assert!(
         prompted_text["text"]["text"]

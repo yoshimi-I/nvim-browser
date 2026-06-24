@@ -84,13 +84,17 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   `DOM.setFileInputFiles`, hinted checkbox/radio toggles, direct href following,
   current URL and hinted link URL yanking, focused-element metadata, and
   submit-current-focus form UX.
+- Auto-handles JavaScript dialogs with a safe non-interactive policy: alerts are
+  accepted, confirm/prompt/beforeunload dialogs are dismissed, and handled
+  dialog metadata is surfaced to Neovim.
 - Browser hint discovery walks the top document, open shadow roots, and
   same-origin iframe documents with top-viewport coordinate translation for
   hinted click/right-click/hover actions. Closed shadow roots and cross-origin
   iframe DOMs are outside the POC scope.
 - Shows live browser state in a preview footer: status, title/URL, scroll
-  progress, focused element kind/label, latest completed download filename,
-  non-default zoom, output mode, cells, viewport, and errors.
+  progress, focused element kind/label, latest handled JavaScript dialog,
+  latest completed download filename, non-default zoom, output mode, cells,
+  viewport, and errors.
 - Saves browser-initiated downloads into a configured `download_dir`, reports
   the latest completed file path in the JSONL response plus footer/status,
   keeps an indexed session list for `:NBrowserDownloads`, and can reopen
