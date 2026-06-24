@@ -323,8 +323,10 @@ COMMANDS                                           *nvim-browser-commands*
 
 							*:NBrowserSelectHintMode*
 :NBrowserSelectHintMode
-	Prompt for a browser hint label and option choice, select the matching
-	<option> in a hinted <select> element, and capture a fresh frame.
+	Open Neovim pickers for hinted <select> elements and their enabled
+	options when option metadata is available, then select the chosen option
+	and capture a fresh frame. Falls back to typed hint and option prompts
+	for older hint metadata. Disabled options are not submitted.
 
 							*:NBrowserFocusHintMode*
 :NBrowserFocusHintMode

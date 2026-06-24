@@ -1609,8 +1609,8 @@ mod tests {
         ElementHintKind, ElementHintsRequest, FocusedElementRequest, FrameId, FrameMetadata,
         HistoryNavigationResult, InputResult, InteractionSettleResult, NavigationResult, PageId,
         PageMetricsRequest, PageTextRequest, ReloadResult, RendererError, RendererErrorKind,
-        ScrollResult, SelectHintRequest, SelectionTextRequest, SelectionTextResult, ShutdownResult,
-        ToggleHintRequest, WheelPointRequest, ZoomResult,
+        ScrollResult, SelectHintRequest, SelectOptionHint, SelectionTextRequest,
+        SelectionTextResult, ShutdownResult, ToggleHintRequest, WheelPointRequest, ZoomResult,
     };
 
     struct FakeRenderer {
@@ -2539,6 +2539,7 @@ mod tests {
                 label: "Docs".to_string(),
                 href: Some("https://example.com/docs".to_string()),
                 checked: None,
+                options: Vec::new(),
                 x: 120.5,
                 y: 240.0,
                 width: 80.0,
@@ -2985,19 +2986,49 @@ mod tests {
     #[test]
     fn serve_runtime_returns_hints_with_captured_frame() {
         let mut renderer = FakeRenderer::new();
-        renderer.hints = vec![ElementHint {
-            id: 1,
-            kind: ElementHintKind::Button,
-            label: "Search".to_string(),
-            href: None,
-            checked: None,
-            x: 50.0,
-            y: 60.0,
-            width: 100.0,
-            height: 30.0,
-            clickable: true,
-            focusable: true,
-        }];
+        renderer.hints = vec![
+            ElementHint {
+                id: 1,
+                kind: ElementHintKind::Button,
+                label: "Search".to_string(),
+                href: None,
+                checked: None,
+                options: Vec::new(),
+                x: 50.0,
+                y: 60.0,
+                width: 100.0,
+                height: 30.0,
+                clickable: true,
+                focusable: true,
+            },
+            ElementHint {
+                id: 2,
+                kind: ElementHintKind::Select,
+                label: "Country".to_string(),
+                href: None,
+                checked: None,
+                options: vec![
+                    SelectOptionHint {
+                        value: "jp".to_string(),
+                        label: "Japan".to_string(),
+                        disabled: false,
+                        selected: false,
+                    },
+                    SelectOptionHint {
+                        value: "ca".to_string(),
+                        label: "Canada".to_string(),
+                        disabled: false,
+                        selected: true,
+                    },
+                ],
+                x: 80.0,
+                y: 90.0,
+                width: 140.0,
+                height: 30.0,
+                clickable: true,
+                focusable: true,
+            },
+        ];
         let mut runtime = ServeRuntime::new(
             renderer,
             ServeOptions {
@@ -3018,8 +3049,10 @@ mod tests {
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
-        assert_eq!(response.hints.len(), 1);
+        assert_eq!(response.hints.len(), 2);
         assert_eq!(response.hints[0].label, "Search");
+        assert_eq!(response.hints[1].options[1].value, "ca");
+        assert!(response.hints[1].options[1].selected);
         assert_eq!(runtime.renderer.operations, vec!["capture", "hints"]);
     }
 

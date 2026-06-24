@@ -645,6 +645,61 @@ assert(selected_hint.label == "s", "select_hint_mode should pass the prompted hi
 assert(selected_hint.choice == "Canada", "select_hint_mode should pass the prompted option choice")
 
 browser.hints = function()
+  return {
+    {
+      id = 8,
+      hint_label = "s",
+      kind = "select",
+      label = "Country",
+      options = {
+        { value = "jp", label = "Japan", disabled = false, selected = false },
+        { value = "ca", label = "Canada", disabled = false, selected = true },
+        { value = "xx", label = "Disabled", disabled = true, selected = false },
+      },
+    },
+  }
+end
+selected_hint = nil
+local picker_prompts = {}
+local picker_items = {}
+assert(browser.select_hint_mode({
+  select = function(items, opts, on_choice)
+    table.insert(picker_prompts, opts.prompt)
+    table.insert(picker_items, items)
+    if opts.prompt == "nvim-browser hint: " then
+      on_choice(items[1])
+    else
+      on_choice(items[2])
+    end
+  end,
+}) == true, "select_hint_mode should use option pickers when select metadata exists")
+assert(table.concat(picker_prompts, "|") == "nvim-browser hint: |nvim-browser option: ", "select_hint_mode should picker-select hint then option")
+assert(#picker_items[2] == 2, "select_hint_mode should omit disabled options from the option picker")
+assert(selected_hint.label == "s", "select_hint_mode should select the chosen hint label")
+assert(selected_hint.choice == "ca", "select_hint_mode should submit the chosen option value")
+
+selected_hint = nil
+assert(browser.select_hint_mode({
+  select = function(_, opts, on_choice)
+    if opts.prompt == "nvim-browser hint: " then
+      on_choice(nil)
+    end
+  end,
+}) == false, "select_hint_mode should cancel when the hint picker is cancelled")
+assert(selected_hint == nil, "select_hint_mode hint cancellation should not send a backend request")
+
+assert(browser.select_hint_mode({
+  select = function(items, opts, on_choice)
+    if opts.prompt == "nvim-browser hint: " then
+      on_choice(items[1])
+    else
+      on_choice(nil)
+    end
+  end,
+}) == false, "select_hint_mode should cancel when the option picker is cancelled")
+assert(selected_hint == nil, "select_hint_mode option cancellation should not send a backend request")
+
+browser.hints = function()
   return { { id = 3, hint_label = "c" } }
 end
 toggled_hint = nil
@@ -727,6 +782,19 @@ assert(browser.type_hint("s", "hello") == false, "type_hint should propagate ter
 terminal.select_hint = function()
   return false
 end
+browser.hints = function()
+  return { { id = 2, hint_label = "s" } }
+end
+local select_fallback_errors = {}
+local failed_choice_responses = { "s", "Canada" }
+assert(browser.select_hint_mode(function()
+  return table.remove(failed_choice_responses, 1)
+end, {
+  on_error = function(kind)
+    table.insert(select_fallback_errors, kind)
+  end,
+}) == false, "select_hint_mode typed fallback should propagate terminal failure")
+assert(select_fallback_errors[1] == "action_failed", "select_hint_mode typed fallback failures should call on_error")
 assert(browser.select_hint("s", "Canada") == false, "select_hint should propagate terminal failure")
 terminal.toggle_hint = function()
   return false

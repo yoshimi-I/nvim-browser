@@ -578,17 +578,11 @@ function M.register(browser, opts)
       warn_no_hints()
       return
     end
-    local label = input("nvim-browser hint: ")
-    if label == nil or label == "" then
-      return
-    end
-    local choice = input("nvim-browser option: ")
-    if choice == nil or choice == "" then
-      return
-    end
-    if not browser.select_hint(label, choice) then
-      warn_hint_input_unavailable()
-    end
+    browser.select_hint_mode({
+      input = input,
+      select = select,
+      on_error = warn_hint_input_unavailable,
+    })
   end, {})
 
   vim.api.nvim_create_user_command("NBrowserFocusHintMode", function()

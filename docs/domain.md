@@ -63,8 +63,9 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   motions, repeatable find next/previous, focused input, key presses, selector
   focus, point clicks, CDP mouse-move hovers, native CDP mouse-wheel input at
   preview coordinates, hints, hinted focus for search/input workflows, hinted
-  `<select>` option selection, hinted checkbox/radio toggles, direct href
-  following, focused-element metadata, and submit-current-focus form UX.
+  `<select>` option selection with Neovim pickers when option metadata is
+  available, hinted checkbox/radio toggles, direct href following,
+  focused-element metadata, and submit-current-focus form UX.
 - Shows live browser state in a preview footer: status, title/URL, scroll
   progress, focused element kind/label, output mode, cells, viewport, and
   errors.

@@ -1110,6 +1110,15 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
     if (kind !== 'checkbox' && kind !== 'radio') return null;
     return element.checked === true;
   };
+  const optionsFor = (element) => {
+    if (kindFor(element) !== 'select') return [];
+    return Array.from(element.options || []).map((option) => ({
+      value: typeof option.value === 'string' ? option.value : '',
+      label: normalize(option.textContent || option.label || option.value || ''),
+      disabled: option.disabled === true,
+      selected: option.selected === true
+    }));
+  };
   const isVisible = (element) => {
     const style = window.getComputedStyle(element);
     return style.display !== 'none'
@@ -1168,6 +1177,7 @@ const ELEMENT_HINTS_SCRIPT: &str = r#"
         label: labelFor(element),
         href: hrefFor(element),
         checked: checkedFor(element),
+        options: optionsFor(element),
         x,
         y,
         width: Math.max(0, right - left),
@@ -2308,6 +2318,10 @@ mod tests {
         assert!(CLICK_HINT_ACTION_SCRIPT.contains("location.assign(href)"));
         assert!(CLICK_HINT_ACTION_SCRIPT.contains("direct_navigated"));
         assert!(!CLICK_HINT_ACTION_SCRIPT.contains("element.click()"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("optionsFor(element)"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("Array.from(element.options || [])"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("disabled: option.disabled === true"));
+        assert!(ELEMENT_HINTS_SCRIPT.contains("selected: option.selected === true"));
         assert!(SELECT_HINT_SCRIPT.contains("__nvbrowserHintRegistry"));
         assert!(SELECT_HINT_SCRIPT.contains("registry.elements.get(hintId)"));
         assert!(SELECT_HINT_SCRIPT.contains("tagName.toLowerCase() !== 'select'"));

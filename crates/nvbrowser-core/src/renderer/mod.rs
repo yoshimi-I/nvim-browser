@@ -605,6 +605,14 @@ pub enum ElementHintKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct SelectOptionHint {
+    pub value: String,
+    pub label: String,
+    pub disabled: bool,
+    pub selected: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct ElementHint {
     pub id: u32,
     pub kind: ElementHintKind,
@@ -613,6 +621,8 @@ pub struct ElementHint {
     pub href: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checked: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<SelectOptionHint>,
     pub x: f64,
     pub y: f64,
     pub width: f64,
@@ -1178,6 +1188,7 @@ mod tests {
             label: "Docs".to_string(),
             href: Some("https://example.com/docs".to_string()),
             checked: None,
+            options: Vec::new(),
             x: 120.5,
             y: 240.0,
             width: 80.0,
@@ -1194,6 +1205,7 @@ mod tests {
             label: "Subscribe".to_string(),
             href: None,
             checked: Some(true),
+            options: Vec::new(),
             x: 10.0,
             y: 20.0,
             width: 16.0,
@@ -1207,6 +1219,44 @@ mod tests {
         assert!(checkbox_json.contains(r#""checked":true"#));
         assert!(json.contains(r#""label":"Docs""#));
         assert!(json.contains(r#""href":"https://example.com/docs""#));
+
+        let select = ElementHint {
+            id: 3,
+            kind: ElementHintKind::Select,
+            label: "Country".to_string(),
+            href: None,
+            checked: None,
+            options: vec![
+                SelectOptionHint {
+                    value: "jp".to_string(),
+                    label: "Japan".to_string(),
+                    disabled: false,
+                    selected: false,
+                },
+                SelectOptionHint {
+                    value: "ca".to_string(),
+                    label: "Canada".to_string(),
+                    disabled: true,
+                    selected: true,
+                },
+            ],
+            x: 20.0,
+            y: 30.0,
+            width: 120.0,
+            height: 24.0,
+            clickable: true,
+            focusable: true,
+        };
+        let select_json = serde_json::to_string(&select).expect("select hint should serialize");
+        assert!(select_json.contains(r#""kind":"select""#));
+        assert!(
+            select_json.contains(r#""options":["#),
+            "select hint should include option metadata"
+        );
+        assert!(select_json.contains(r#""value":"jp""#));
+        assert!(select_json.contains(r#""label":"Japan""#));
+        assert!(select_json.contains(r#""disabled":true"#));
+        assert!(select_json.contains(r#""selected":true"#));
     }
 
     #[test]

@@ -378,6 +378,63 @@ local function hint_picker_label(hint)
   return table.concat(parts, " ")
 end
 
+local function select_option_picker_label(option)
+  if type(option) ~= "table" then
+    return ""
+  end
+  local label = option.label ~= nil and tostring(option.label) or ""
+  local value = option.value ~= nil and tostring(option.value) or ""
+  local parts = {}
+  if option.selected == true then
+    table.insert(parts, "[selected]")
+  end
+  if label ~= "" then
+    table.insert(parts, label)
+  end
+  if value ~= "" and value ~= label then
+    table.insert(parts, "(" .. value .. ")")
+  end
+  return table.concat(parts, " ")
+end
+
+local function select_option_choice(option)
+  if type(option) ~= "table" then
+    return nil
+  end
+  local value = option.value ~= nil and tostring(option.value) or ""
+  if value ~= "" then
+    return value
+  end
+  local label = option.label ~= nil and tostring(option.label) or ""
+  if label ~= "" then
+    return label
+  end
+  return nil
+end
+
+local function select_hints_with_options(hints)
+  local selectable = {}
+  for _, hint in ipairs(hints) do
+    if type(hint) == "table" and type(hint.options) == "table" and #hint.options > 0 then
+      table.insert(selectable, hint)
+    end
+  end
+  return selectable
+end
+
+local function enabled_select_options(hint)
+  local enabled = {}
+  if type(hint) ~= "table" or type(hint.options) ~= "table" then
+    return enabled
+  end
+  for _, option in ipairs(hint.options) do
+    if type(option) == "table" and option.disabled ~= true then
+      table.insert(enabled, option)
+    end
+  end
+  return enabled
+end
+
 local function pick_hint_action(action)
   if action == nil or action == "" or action == "follow" then
     return M.follow_hint
@@ -541,11 +598,90 @@ function M.type_hint_mode(input, opts)
   return M.type_hint(label, text, { submit = opts.submit == true })
 end
 
-function M.select_hint_mode(input)
-  input = input or vim.fn.input
-  if #M.hints() == 0 then
+function M.select_hint_mode(input_or_opts, maybe_opts)
+  local input = vim.fn.input
+  local select = vim.ui.select
+  local opts = maybe_opts or {}
+  if type(input_or_opts) == "function" then
+    input = input_or_opts
+  elseif type(input_or_opts) == "table" then
+    opts = input_or_opts
+  elseif input_or_opts ~= nil then
+    input = input_or_opts
+  end
+  if type(opts.input) == "function" then
+    input = opts.input
+  end
+  if type(opts.select) == "function" then
+    select = opts.select
+  end
+
+  local hints = M.hints()
+  if #hints == 0 then
     return false
   end
+
+  local selectable = select_hints_with_options(hints)
+  if #selectable > 0 then
+    local selected_hint = nil
+    local selected_option = nil
+    local completed_hint = false
+    local completed_option = false
+    local action_ok = true
+    select(selectable, {
+      prompt = "nvim-browser hint: ",
+      format_item = hint_picker_label,
+    }, function(hint)
+      completed_hint = true
+      selected_hint = hint
+      if hint == nil then
+        return
+      end
+      local options = enabled_select_options(hint)
+      if #options == 0 then
+        action_ok = false
+        if type(opts.on_error) == "function" then
+          opts.on_error("no_enabled_options")
+        end
+        return
+      end
+      select(options, {
+        prompt = "nvim-browser option: ",
+        format_item = select_option_picker_label,
+      }, function(option)
+        completed_option = true
+        selected_option = option
+        if option == nil then
+          return
+        end
+        local identifier = hint_identifier(hint)
+        local choice = select_option_choice(option)
+        if identifier == nil or choice == nil then
+          action_ok = false
+          if type(opts.on_error) == "function" then
+            opts.on_error("missing_identifier")
+          end
+          return
+        end
+        action_ok = M.select_hint(identifier, choice) ~= false
+        if not action_ok and type(opts.on_error) == "function" then
+          opts.on_error("action_failed")
+        end
+      end)
+    end)
+
+    if completed_hint and selected_hint == nil then
+      return false
+    end
+    if completed_option and selected_option == nil then
+      return false
+    end
+    if (completed_hint or completed_option) and not action_ok then
+      return false
+    end
+    return true
+  end
+
   local label = input("nvim-browser hint: ")
   if label == nil or label == "" then
     return false
@@ -554,7 +690,11 @@ function M.select_hint_mode(input)
   if choice == nil or choice == "" then
     return false
   end
-  return M.select_hint(label, choice)
+  local ok = M.select_hint(label, choice)
+  if not ok and type(opts.on_error) == "function" then
+    opts.on_error("action_failed")
+  end
+  return ok
 end
 
 function M.focus_hint_mode(input)

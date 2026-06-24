@@ -265,6 +265,48 @@ local browser = {
     return true
   end,
 }
+browser.select_hint_mode = function(opts)
+  opts = opts or {}
+  local hints = browser.hints()
+  local selectable = {}
+  for _, hint in ipairs(hints) do
+    if type(hint.options) == "table" and #hint.options > 0 then
+      table.insert(selectable, hint)
+    end
+  end
+  if #selectable > 0 then
+    opts.select(selectable, { prompt = "nvim-browser hint: " }, function(hint)
+      if hint == nil then
+        return
+      end
+      local options = {}
+      for _, option in ipairs(hint.options) do
+        if option.disabled ~= true then
+          table.insert(options, option)
+        end
+      end
+      opts.select(options, { prompt = "nvim-browser option: " }, function(option)
+        if option ~= nil then
+          browser.select_hint(hint.hint_label, option.value ~= "" and option.value or option.label)
+        end
+      end)
+    end)
+    return true
+  end
+  local label = opts.input("nvim-browser hint: ")
+  if label == nil or label == "" then
+    return false
+  end
+  local choice = opts.input("nvim-browser option: ")
+  if choice == nil or choice == "" then
+    return false
+  end
+  local ok = browser.select_hint(label, choice)
+  if not ok and type(opts.on_error) == "function" then
+    opts.on_error("action_failed")
+  end
+  return ok
+end
 
 local echoed = nil
 local original_echo = vim.api.nvim_echo
@@ -526,6 +568,68 @@ commands.register(browser, {
 vim.cmd("NBrowserSelectHintMode")
 assert(selected_hint == "s:Canada", "NBrowserSelectHintMode should prompt and select a hinted option")
 
+browser.hints = function()
+  return {
+    {
+      id = 8,
+      hint_label = "s",
+      kind = "select",
+      label = "Country",
+      options = {
+        { value = "jp", label = "Japan", disabled = false, selected = false },
+        { value = "ca", label = "Canada", disabled = false, selected = true },
+        { value = "xx", label = "Disabled", disabled = true, selected = false },
+      },
+    },
+  }
+end
+selected_hint = nil
+local command_select_prompts = {}
+commands.register(browser, {
+  input = function()
+    error("input should not be used when select option metadata is available")
+  end,
+  select = function(items, opts, on_choice)
+    table.insert(command_select_prompts, opts.prompt)
+    if opts.prompt == "nvim-browser hint: " then
+      on_choice(items[1])
+    else
+      assert(#items == 2, "NBrowserSelectHintMode should filter disabled select options")
+      on_choice(items[2])
+    end
+  end,
+})
+vim.cmd("NBrowserSelectHintMode")
+assert(selected_hint == "s:ca", "NBrowserSelectHintMode should submit the selected option value")
+assert(
+  table.concat(command_select_prompts, "|") == "nvim-browser hint: |nvim-browser option: ",
+  "NBrowserSelectHintMode should picker-select hint then option"
+)
+
+local original_select_hint_mode = browser.select_hint_mode
+local async_select_error = nil
+browser.select_hint_mode = function(opts)
+  async_select_error = opts.on_error
+  return true
+end
+warnings = {}
+commands.register(browser, {
+  input = function()
+    error("input should not be used for async picker failure")
+  end,
+  select = function()
+    error("select should be handled by browser.select_hint_mode")
+  end,
+})
+vim.cmd("NBrowserSelectHintMode")
+assert(#warnings == 0, "NBrowserSelectHintMode should not warn before an async picker failure is reported")
+async_select_error("action_failed")
+assert(
+  warnings[#warnings] == "nvim-browser: hint input failed, stale, or browser session is inactive",
+  "NBrowserSelectHintMode should warn when an async picker action fails"
+)
+browser.select_hint_mode = original_select_hint_mode
+
 focused_hint = nil
 hint_responses = { "s" }
 local focus_prompts = {}
@@ -627,6 +731,12 @@ local failed_browser = {
     return false
   end,
   select_hint = function()
+    return false
+  end,
+  select_hint_mode = function(opts)
+    if type(opts) == "table" and type(opts.on_error) == "function" then
+      opts.on_error("action_failed")
+    end
     return false
   end,
   toggle_hint = function()

@@ -338,10 +338,12 @@ an ANSI or Kitty Unicode browser preview and ignore the preview footer row.
 
 `:NBrowserTypeHintMode` prompts for a hint label and text, then types into the
 hinted element. `:NBrowserSubmitHintMode` does the same and presses Enter after
-the text is queued. `:NBrowserSelectHintMode` prompts for a hint label and
-option choice. `:NBrowserFocusHintMode` prompts for a hint label and focuses
-the matching element. `:NBrowserToggleHintMode` prompts for a checkbox/radio
-hint label. Lua mappings can call `require("nvim-browser").hint_mode()`,
+the text is queued. `:NBrowserSelectHintMode` opens Neovim pickers for hinted
+`<select>` elements and their enabled options when option metadata is available,
+falling back to typed hint and option prompts for older metadata. Disabled
+options are not submitted. `:NBrowserFocusHintMode` prompts for a hint label
+and focuses the matching element. `:NBrowserToggleHintMode` prompts for a
+checkbox/radio hint label. Lua mappings can call `require("nvim-browser").hint_mode()`,
 `require("nvim-browser").pick_hint({ action = "focus" })`,
 `require("nvim-browser").type_hint_mode(nil, { submit = true })`, or
 `require("nvim-browser").select_hint_mode()` /
