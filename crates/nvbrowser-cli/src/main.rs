@@ -387,6 +387,8 @@ enum ServeRequest {
         id: u64,
         x: f64,
         y: f64,
+        #[serde(default = "default_click_count")]
+        click_count: u32,
     },
     DragPoint {
         id: u64,
@@ -610,6 +612,10 @@ fn parse_serve_request(line: &str) -> Result<ServeRequest, serde_json::Error> {
 
 fn default_capture() -> bool {
     true
+}
+
+fn default_click_count() -> u32 {
+    1
 }
 
 fn canonicalize_upload_paths(paths: Vec<PathBuf>) -> Result<Vec<PathBuf>, RendererError> {
@@ -1070,13 +1076,17 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload(true).map(Some)
             }
-            ServeRequest::ClickPoint { x, y, .. } => {
-                self.renderer.click_point(ClickPointRequest::new(
-                    self.session.id(),
-                    self.session.active_page_id(),
-                    x,
-                    y,
-                ))?;
+            ServeRequest::ClickPoint {
+                x, y, click_count, ..
+            } => {
+                self.renderer
+                    .click_point(ClickPointRequest::with_click_count(
+                        self.session.id(),
+                        self.session.active_page_id(),
+                        x,
+                        y,
+                        click_count.max(1),
+                    ))?;
                 self.settle_after_interaction()?;
                 self.capture_payload(true).map(Some)
             }
@@ -2053,7 +2063,7 @@ mod tests {
         selected_hints: Vec<(u32, String)>,
         uploaded_hints: Vec<(u32, Vec<PathBuf>)>,
         toggled_hints: Vec<u32>,
-        clicked_points: Vec<(f64, f64)>,
+        clicked_points: Vec<(f64, f64, u32)>,
         right_clicked_points: Vec<(f64, f64)>,
         hovered_points: Vec<(f64, f64)>,
         wheeled_points: Vec<(f64, f64, f64, f64)>,
@@ -2508,7 +2518,8 @@ mod tests {
                     "click failed",
                 ));
             }
-            self.clicked_points.push((request.x, request.y));
+            self.clicked_points
+                .push((request.x, request.y, request.click_count));
             Ok(InputResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
@@ -2957,6 +2968,19 @@ mod tests {
                 id: 6,
                 x: 120.5,
                 y: 240.25,
+                click_count: 1,
+            }
+        );
+        assert_eq!(
+            parse_serve_request(
+                r##"{"type":"click_point","id":7,"x":120.5,"y":240.25,"click_count":2}"##
+            )
+            .expect("double click point request should parse"),
+            ServeRequest::ClickPoint {
+                id: 7,
+                x: 120.5,
+                y: 240.25,
+                click_count: 2,
             }
         );
         assert_eq!(
@@ -4011,6 +4035,7 @@ mod tests {
             id: 2,
             x: 5.0,
             y: 6.0,
+            click_count: 2,
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
@@ -4043,6 +4068,7 @@ mod tests {
                 "hints"
             ]
         );
+        assert_eq!(runtime.renderer.clicked_points, vec![(5.0, 6.0, 2)]);
     }
 
     #[test]
@@ -4077,6 +4103,7 @@ mod tests {
             id: 2,
             x: 5.0,
             y: 6.0,
+            click_count: 1,
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
@@ -5035,11 +5062,12 @@ mod tests {
             id: 2,
             x: 120.5,
             y: 240.25,
+            click_count: 1,
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_some());
-        assert_eq!(runtime.renderer.clicked_points, vec![(120.5, 240.25)]);
+        assert_eq!(runtime.renderer.clicked_points, vec![(120.5, 240.25, 1)]);
         assert_eq!(runtime.renderer.captures, 2);
         assert_eq!(
             runtime.renderer.operations,
@@ -5474,7 +5502,7 @@ mod tests {
 
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_some());
-        assert_eq!(runtime.renderer.clicked_points, vec![(120.5, 240.25)]);
+        assert_eq!(runtime.renderer.clicked_points, vec![(120.5, 240.25, 1)]);
         assert_eq!(runtime.renderer.text_inputs, vec!["hello"]);
         assert_eq!(runtime.renderer.key_presses, vec!["Enter"]);
         assert_eq!(runtime.renderer.captures, 2);
@@ -5589,6 +5617,7 @@ mod tests {
             id: 2,
             x: 5.0,
             y: 6.0,
+            click_count: 1,
         });
 
         assert_eq!(

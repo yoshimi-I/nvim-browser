@@ -62,10 +62,15 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Neovim owns the preview buffer, split/window lifecycle, keymaps, footer,
   buffer names, hint overlays, and request lifecycle.
 - Browser previews should stay cursor-addressable where possible. ANSI and Kitty
-  Unicode previews support cursor-to-viewport clicks, right-clicks, and hint
-  overlays.
-- The bottom preview row is reserved for status. Clicks and right-clicks in the
-  footer must not be converted into browser viewport coordinates.
+  Unicode previews support cursor-to-viewport clicks, double-clicks,
+  right-clicks, and hint overlays.
+- The bottom preview row is reserved for status. Clicks, double-clicks, and
+  right-clicks in the footer must not be converted into browser viewport
+  coordinates.
+- Point interactions must target the same rendered browser frame the user can
+  see. If the active preview geometry no longer matches the last rendered frame,
+  Neovim should refresh instead of sending click, double-click, hover, type,
+  wheel, or drag coordinates to Chromium.
 - `:NBrowserTextMode` is the default path for form typing from a focused browser
   preview. It should feel closer to browser input than a command prompt.
 - Interaction latency matters. Text mode printable/editing input should avoid
@@ -80,9 +85,10 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Runs persistent Chromium/CDP browser sessions over a JSONL `serve` protocol.
 - Supports navigation, reload, stop, back/forward, browser-like preview scroll
   motions, repeatable find next/previous, focused input, key presses, selector
-  focus, point clicks, native CDP right-clicks for page `contextmenu` handlers,
-  CDP mouse-move hovers, native CDP mouse-wheel input at preview coordinates,
-  native CDP drag selection and region yanking from preview-cell regions, hints,
+  focus, point clicks, native CDP double-clicks, native CDP right-clicks for
+  page `contextmenu` handlers, CDP mouse-move hovers, native CDP mouse-wheel
+  input at preview coordinates, native CDP drag selection and region yanking
+  from preview-cell regions, hints,
   hinted focus for search/input workflows, hinted right-clicks, hinted
   `<select>` option selection with Neovim pickers when option metadata is
   available, hinted `<input type="file">` uploads through CDP

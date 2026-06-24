@@ -379,6 +379,8 @@ one exists and otherwise opens a new browser preview.
 available for ANSI and Kitty Unicode browser previews. Active browser previews
 reserve the bottom preview row for a compact status footer, so cursor clicks in
 that footer are not sent to the browser page.
+`:NBrowserDoubleClickHere` uses the same mapping and sends a native Chromium
+left-button double-click at the preview cursor.
 `:NBrowserRightClickHere` uses the same cursor-to-viewport mapping and sends a
 native Chromium right-click, so page `contextmenu` handlers can run inside the
 preview.
@@ -586,10 +588,11 @@ register into the focused element, `y` yank the browser selection into the
 selected register, `Y` yank the active browser URL into the selected register,
 `<CR>` Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
 Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` address
-prompt, arrow keys, `gc` click the browser viewport at the cursor, `gr`
-right-click at the cursor, `gh` hover the browser viewport at the cursor,
-`<Esc>` stop a pending load, left click to click the browser viewport, right
-click to send a native browser right-click, scroll wheel to send a native
+prompt, arrow keys, `gc` click the browser viewport at the cursor, `gd`
+double-click at the cursor, `gr` right-click at the cursor, `gh` hover the
+browser viewport at the cursor, `<Esc>` stop a pending load, left click to click
+the browser viewport, double left click to send a native browser double-click,
+right click to send a native browser right-click, scroll wheel to send a native
 browser wheel event at the mouse position, and `q` close.
 Disable or remap them with
 `preview_keymaps = { enabled = false }` or `preview_keymaps.mappings`.

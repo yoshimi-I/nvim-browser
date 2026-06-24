@@ -54,6 +54,10 @@ assert(
   "preview-local keymaps should include a left-click mouse mapping"
 )
 assert(
+  configured.preview_keymaps.mappings.double_click == "<2-LeftMouse>",
+  "preview-local keymaps should include a double-click mouse mapping"
+)
+assert(
   configured.preview_keymaps.mappings.wheel_down == "<ScrollWheelDown>",
   "preview-local keymaps should include a wheel-down mouse mapping"
 )
@@ -183,6 +187,10 @@ assert(remapped.preview_keymaps.mappings.close == "q", "preview-local partial re
 assert(
   remapped.preview_keymaps.mappings.left_click == "<LeftMouse>",
   "preview-local partial remaps should retain mouse defaults"
+)
+assert(
+  remapped.preview_keymaps.mappings.double_click == "<2-LeftMouse>",
+  "preview-local partial remaps should retain double-click mouse defaults"
 )
 assert(
   remapped.preview_keymaps.mappings.type_hint_mode == "t",

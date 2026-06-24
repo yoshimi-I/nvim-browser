@@ -47,6 +47,7 @@ local hovered_here = false
 local hovered_hint = nil
 local right_clicked = nil
 local right_clicked_here = false
+local double_clicked_here = false
 local right_clicked_hint = nil
 local page_scroll_direction = nil
 local scrolled_top_count = 0
@@ -77,6 +78,10 @@ local browser = {
   end,
   right_click_here = function()
     right_clicked_here = true
+    return true
+  end,
+  double_click_here = function()
+    double_clicked_here = true
     return true
   end,
   select_region = function(start_row, start_col, end_row, end_col)
@@ -1304,6 +1309,9 @@ vim.api.nvim_buf_delete(visual_buffer, { force = true })
 
 vim.cmd("NBrowserRightClickHere")
 assert(right_clicked_here == true, "NBrowserRightClickHere should call right_click_here")
+
+vim.cmd("NBrowserDoubleClickHere")
+assert(double_clicked_here == true, "NBrowserDoubleClickHere should call double_click_here")
 
 vim.cmd("NBrowserHoverHint m")
 assert(hovered_hint == "m", "NBrowserHoverHint should pass the label to hover_hint")

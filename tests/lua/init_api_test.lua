@@ -7,9 +7,12 @@ local terminal = require("nvim-browser.terminal")
 
 browser.setup({ session = { persist = false } })
 
+assert(type(browser.click_point) == "function", "click_point API should exist")
 assert(type(browser.click_hint) == "function", "click_hint API should exist")
 assert(type(browser.right_click_point) == "function", "right_click_point API should exist")
 assert(type(browser.right_click_here) == "function", "right_click_here API should exist")
+assert(type(browser.double_click_here) == "function", "double_click_here API should exist")
+assert(type(browser.double_click_mouse) == "function", "double_click_mouse API should exist")
 assert(type(browser.right_click_mouse) == "function", "right_click_mouse API should exist")
 assert(type(browser.right_click_hint) == "function", "right_click_hint API should exist")
 assert(type(browser.follow_hint) == "function", "follow_hint API should exist")
@@ -1298,8 +1301,11 @@ local original_type_hint = browser.type_hint
 local original_select_hint = browser.select_hint
 local original_upload_hint = browser.upload_hint
 local original_yank_hint_url = browser.yank_hint_url
+local original_terminal_click_point = terminal.click_point
 local original_terminal_right_click_point = terminal.right_click_point
 local original_terminal_right_click_here = terminal.right_click_here
+_G.nvim_browser_original_terminal_double_click_here = terminal.double_click_here
+_G.nvim_browser_original_terminal_double_click_mouse = terminal.double_click_mouse
 local original_terminal_right_click_mouse = terminal.right_click_mouse
 local original_terminal_right_click_hint = terminal.right_click_hint
 local original_terminal_screenshot = terminal.screenshot
@@ -1852,6 +1858,23 @@ local mousepos = { winid = 10, line = 3, column = 8 }
 assert(browser.click_mouse(mousepos) == "clicked", "click_mouse should delegate to terminal mouse click semantics")
 assert(clicked_mouse == mousepos, "click_mouse should pass explicit mouse position to terminal")
 
+_G.nvim_browser_clicked_point = nil
+terminal.click_point = function(x, y, opts)
+  _G.nvim_browser_clicked_point = { x = x, y = y, opts = opts }
+  return "point"
+end
+_G.nvim_browser_click_point_opts = { click_count = 2 }
+assert(
+  browser.click_point(12, 24, _G.nvim_browser_click_point_opts) == "point",
+  "click_point should delegate to terminal"
+)
+assert(_G.nvim_browser_clicked_point.x == 12, "click_point should pass the x coordinate")
+assert(_G.nvim_browser_clicked_point.y == 24, "click_point should pass the y coordinate")
+assert(
+  _G.nvim_browser_clicked_point.opts == _G.nvim_browser_click_point_opts,
+  "click_point should pass options through to terminal"
+)
+
 local right_clicked_point = nil
 terminal.right_click_point = function(x, y)
   right_clicked_point = { x = x, y = y }
@@ -1865,6 +1888,19 @@ terminal.right_click_here = function()
   return "right-here"
 end
 assert(browser.right_click_here() == "right-here", "right_click_here should delegate to terminal")
+
+terminal.double_click_here = function()
+  return "double-here"
+end
+assert(browser.double_click_here() == "double-here", "double_click_here should delegate to terminal")
+
+_G.nvim_browser_double_clicked_mouse = nil
+terminal.double_click_mouse = function(explicit_mousepos)
+  _G.nvim_browser_double_clicked_mouse = explicit_mousepos
+  return "double-mouse"
+end
+assert(browser.double_click_mouse(mousepos) == "double-mouse", "double_click_mouse should delegate to terminal")
+assert(_G.nvim_browser_double_clicked_mouse == mousepos, "double_click_mouse should pass explicit mouse position to terminal")
 
 local right_clicked_mouse = nil
 terminal.right_click_mouse = function(explicit_mousepos)
@@ -2681,8 +2717,11 @@ end
 assert(browser.focus_hint("i") == false, "focus_hint should propagate terminal failure")
 
 browser.click_hint = original_click_hint
+terminal.click_point = original_terminal_click_point
 terminal.right_click_point = original_terminal_right_click_point
 terminal.right_click_here = original_terminal_right_click_here
+terminal.double_click_here = _G.nvim_browser_original_terminal_double_click_here
+terminal.double_click_mouse = _G.nvim_browser_original_terminal_double_click_mouse
 terminal.right_click_mouse = original_terminal_right_click_mouse
 terminal.right_click_hint = original_terminal_right_click_hint
 browser.follow_hint = original_follow_hint

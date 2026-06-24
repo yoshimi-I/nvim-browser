@@ -1140,14 +1140,20 @@ local expected_mouse_point = terminal.viewport_point_for_cell(6, 25, { columns =
 assert(terminal.click_mouse({ winid = image_win, line = 6, column = 25 }) == true, "mouse click should send a browser click")
 local mouse_click_seen = false
 local mouse_click_request_id = nil
+_G.nvim_browser_mouse_click_request = nil
 for _, request in ipairs(footer_click_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "click_point" and decoded.x == expected_mouse_point.x and decoded.y == expected_mouse_point.y then
     mouse_click_seen = true
     mouse_click_request_id = decoded.id
+    _G.nvim_browser_mouse_click_request = decoded
   end
 end
 assert(mouse_click_seen, "mouse click should map preview cells to viewport pixels")
+assert(
+  _G.nvim_browser_mouse_click_request.click_count == nil,
+  "single mouse clicks should omit click_count for protocol compatibility"
+)
 assert(terminal.state().pending_operation ~= nil, "mouse click should mark the browser click as pending")
 assert(terminal.state().pending_operation.label == "click", "mouse click pending footer should use a click label")
 assert(#terminal.state().element_hints == 0, "mouse click should clear stale hints while a capture is pending")
@@ -1160,6 +1166,42 @@ terminal._test.apply_serve_response({
   runtime = interactive_runtime(450, 165),
 })
 assert(terminal.state().pending_operation == nil, "matching click response should clear pending click state")
+
+footer_click_requests = {}
+assert(
+  terminal.double_click_mouse({ winid = image_win, line = 6, column = 25 }) == true,
+  "mouse double-click should send a browser double-click"
+)
+_G.nvim_browser_mouse_double_click_seen = false
+_G.nvim_browser_mouse_double_click_request_id = nil
+for _, request in ipairs(footer_click_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if
+    ok
+    and decoded.type == "click_point"
+    and decoded.x == expected_mouse_point.x
+    and decoded.y == expected_mouse_point.y
+    and decoded.click_count == 2
+  then
+    _G.nvim_browser_mouse_double_click_seen = true
+    _G.nvim_browser_mouse_double_click_request_id = decoded.id
+  end
+end
+assert(
+  _G.nvim_browser_mouse_double_click_seen,
+  "mouse double-click should map preview cells to viewport pixels with click_count=2"
+)
+assert(terminal.state().pending_operation ~= nil, "mouse double-click should mark the browser click as pending")
+assert(terminal.state().pending_operation.label == "click", "mouse double-click pending footer should use a click label")
+terminal._test.apply_serve_response({
+  id = _G.nvim_browser_mouse_double_click_request_id,
+  status = "ok",
+  payload = "double-clicked frame",
+  url = "https://example.com/double-clicked",
+  title = "Double Clicked",
+  runtime = interactive_runtime(450, 165),
+})
+assert(terminal.state().pending_operation == nil, "matching double-click response should clear pending click state")
 
 footer_click_requests = {}
 expected_drag_start = terminal.viewport_drag_point_for_cell(6, 10, { columns = 50, rows = 11, width = 450, height = 165 }, "start")
@@ -1383,6 +1425,18 @@ assert(cursor_right_click_seen, "cursor right click should map preview cells to 
 
 footer_click_requests = {}
 vim.api.nvim_win_set_cursor(image_win, { 6, 24 })
+assert(terminal.double_click_here() == true, "cursor double-click should send a browser double-click")
+_G.nvim_browser_cursor_double_click_seen = false
+for _, request in ipairs(footer_click_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "click_point" and decoded.click_count == 2 then
+    _G.nvim_browser_cursor_double_click_seen = true
+  end
+end
+assert(_G.nvim_browser_cursor_double_click_seen, "cursor double-click should use click_point with click_count=2")
+
+footer_click_requests = {}
+vim.api.nvim_win_set_cursor(image_win, { 6, 24 })
 local expected_cursor_hover_point = terminal.viewport_point_for_cell(6, vim.api.nvim_win_call(image_win, function()
   return vim.fn.virtcol(".")
 end), { columns = 50, rows = 11, width = 450, height = 165 })
@@ -1459,11 +1513,13 @@ terminal.configure({
   },
 })
 assert(terminal.click_here() == false, "stale rendered frame geometry should block cursor click")
+assert(terminal.double_click_here() == false, "stale rendered frame geometry should block cursor double-click")
 assert(terminal.hover_here() == false, "stale rendered frame geometry should block cursor hover")
 assert(terminal.type_here("stale text") == false, "stale rendered frame geometry should block cursor typing")
 assert(terminal.select_region(6, 10, 6, 25) == false, "stale rendered frame geometry should block region selection")
 assert(terminal.yank_region("b", 6, 10, 6, 25) == false, "stale rendered frame geometry should block region yank")
 assert(terminal.click_mouse({ winid = image_win, line = 6, column = 25 }) == false, "stale rendered frame geometry should block mouse click")
+assert(terminal.double_click_mouse({ winid = image_win, line = 6, column = 25 }) == false, "stale rendered frame geometry should block mouse double-click")
 assert(terminal.wheel_mouse(120, 0, { winid = image_win, line = 6, column = 25 }) == false, "stale rendered frame geometry should block mouse wheel")
 local stale_resize_seen = false
 local stale_point_seen = false
@@ -1494,6 +1550,8 @@ terminal._test.apply_serve_response({
   },
 })
 assert(terminal.click_here() == true, "matching refreshed frame geometry should allow cursor click again")
+terminal._test.set_pending_operation(nil)
+assert(terminal.double_click_here() == true, "matching refreshed frame geometry should allow cursor double-click again")
 
 footer_click_requests = {}
 terminal._test.apply_serve_response({
@@ -1521,6 +1579,7 @@ terminal.configure({
 })
 footer_click_requests = {}
 assert(terminal.click_here() == false, "cursor click beyond rendered columns should be ignored")
+assert(terminal.double_click_here() == false, "cursor double-click beyond rendered columns should be ignored")
 assert(terminal.hover_here() == false, "cursor hover beyond rendered columns should be ignored")
 assert(terminal.type_here("outside") == false, "cursor typing beyond rendered columns should be ignored")
 assert(terminal.select_region(6, 10, 6, 51) == false, "region selection beyond rendered columns should be ignored")
@@ -1528,22 +1587,26 @@ assert(#footer_click_requests == 0, "out-of-column cursor actions should not rea
 
 footer_click_requests = {}
 assert(terminal.click_mouse({ winid = image_win, line = 6, column = 51 }) == false, "mouse click beyond rendered columns should be ignored")
+assert(terminal.double_click_mouse({ winid = image_win, line = 6, column = 51 }) == false, "mouse double-click beyond rendered columns should be ignored")
 assert(terminal.wheel_mouse(120, 0, { winid = image_win, line = 6, column = 51 }) == false, "mouse wheel beyond rendered columns should be ignored")
 assert(#footer_click_requests == 0, "out-of-column mouse clicks should not reach the serve backend")
 
 footer_click_requests = {}
 assert(terminal.click_mouse({ winid = image_win, line = 12, column = 25 }) == false, "mouse click on footer should be ignored")
+assert(terminal.double_click_mouse({ winid = image_win, line = 12, column = 25 }) == false, "mouse double-click on footer should be ignored")
 assert(terminal.wheel_mouse(120, 0, { winid = image_win, line = 12, column = 25 }) == false, "mouse wheel on footer should be ignored")
 assert(terminal.select_region(6, 10, 12, 25) == false, "region selection ending on footer should be ignored")
 assert(#footer_click_requests == 0, "footer mouse clicks should not reach the serve backend")
 
 footer_click_requests = {}
 assert(terminal.click_mouse({ winid = second_bufnr, line = 6, column = 25 }) == false, "mouse click from another window should be ignored")
+assert(terminal.double_click_mouse({ winid = second_bufnr, line = 6, column = 25 }) == false, "mouse double-click from another window should be ignored")
 assert(terminal.wheel_mouse(120, 0, { winid = second_bufnr, line = 6, column = 25 }) == false, "mouse wheel from another window should be ignored")
 assert(#footer_click_requests == 0, "wrong-window mouse clicks should not reach the serve backend")
 
 vim.api.nvim_win_set_cursor(image_win, { 12, 0 })
 assert(terminal.click_here() == false, "clicking the footer row should not send a browser click")
+assert(terminal.double_click_here() == false, "double-clicking the footer row should not send a browser click")
 assert(terminal.hover_here() == false, "hovering the footer row should not send a browser hover")
 assert(terminal.type_here("footer text") == false, "typing on the footer row should not send browser input")
 assert(#footer_click_requests == 0, "footer clicks should not reach the serve backend")

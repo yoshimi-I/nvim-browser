@@ -576,6 +576,7 @@ impl Renderer for ChromiumRenderer {
             point.x,
             point.y,
             MouseDispatchButton::Right,
+            1,
         )
         .map_err(|error| render_context_error("hint right click failed", error))
         {
@@ -720,8 +721,9 @@ impl Renderer for ChromiumRenderer {
 
     fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError> {
         self.mark_interaction_start();
-        if let Err(error) = dispatch_mouse_click(&self.tab, request.x, request.y)
-            .map_err(|error| render_context_error("point click failed", error))
+        if let Err(error) =
+            dispatch_mouse_click_with_count(&self.tab, request.x, request.y, request.click_count)
+                .map_err(|error| render_context_error("point click failed", error))
         {
             self.recover_popup_opening_mouse_dispatch_error(error)?;
         }
@@ -756,6 +758,7 @@ impl Renderer for ChromiumRenderer {
             request.x,
             request.y,
             MouseDispatchButton::Right,
+            1,
         )
         .map_err(|error| render_context_error("point right click failed", error))
         {
@@ -2617,6 +2620,7 @@ impl MouseDispatchButton {
 fn mouse_dispatch_options(
     event_type: &Input::DispatchMouseEventTypeOption,
     button: MouseDispatchButton,
+    click_count: u32,
 ) -> MouseDispatchOptions {
     let is_press_or_release = matches!(
         event_type,
@@ -2630,12 +2634,21 @@ fn mouse_dispatch_options(
         } else {
             0
         }),
-        click_count: is_press_or_release.then_some(1),
+        click_count: is_press_or_release.then_some(click_count.max(1)),
     }
 }
 
 fn dispatch_mouse_click(tab: &Arc<Tab>, x: f64, y: f64) -> Result<(), RendererError> {
-    dispatch_mouse_click_with_button(tab, x, y, MouseDispatchButton::Left)
+    dispatch_mouse_click_with_count(tab, x, y, 1)
+}
+
+fn dispatch_mouse_click_with_count(
+    tab: &Arc<Tab>,
+    x: f64,
+    y: f64,
+    click_count: u32,
+) -> Result<(), RendererError> {
+    dispatch_mouse_click_with_button(tab, x, y, MouseDispatchButton::Left, click_count)
 }
 
 fn dispatch_mouse_click_with_button(
@@ -2643,6 +2656,7 @@ fn dispatch_mouse_click_with_button(
     x: f64,
     y: f64,
     button: MouseDispatchButton,
+    click_count: u32,
 ) -> Result<(), RendererError> {
     dispatch_mouse_event(
         tab,
@@ -2650,6 +2664,7 @@ fn dispatch_mouse_click_with_button(
         x,
         y,
         button,
+        click_count,
     )?;
     dispatch_mouse_event(
         tab,
@@ -2657,6 +2672,7 @@ fn dispatch_mouse_click_with_button(
         x,
         y,
         button,
+        click_count,
     )?;
     dispatch_mouse_event(
         tab,
@@ -2664,6 +2680,7 @@ fn dispatch_mouse_click_with_button(
         x,
         y,
         button,
+        click_count,
     )
 }
 
@@ -2680,6 +2697,7 @@ fn dispatch_mouse_drag(
         start_x,
         start_y,
         MouseDispatchButton::Left,
+        1,
     )?;
     dispatch_mouse_event(
         tab,
@@ -2687,6 +2705,7 @@ fn dispatch_mouse_drag(
         start_x,
         start_y,
         MouseDispatchButton::Left,
+        1,
     )?;
     for step in 1..=4 {
         let ratio = step as f64 / 4.0;
@@ -2700,6 +2719,7 @@ fn dispatch_mouse_drag(
         end_x,
         end_y,
         MouseDispatchButton::Left,
+        1,
     )
 }
 
@@ -2741,8 +2761,9 @@ fn dispatch_mouse_event(
     x: f64,
     y: f64,
     button: MouseDispatchButton,
+    click_count: u32,
 ) -> Result<(), RendererError> {
-    let options = mouse_dispatch_options(&event_type, button);
+    let options = mouse_dispatch_options(&event_type, button, click_count);
     tab.call_method(Input::DispatchMouseEvent {
         Type: event_type,
         x,
@@ -3891,14 +3912,17 @@ mod tests {
         let moved = mouse_dispatch_options(
             &Input::DispatchMouseEventTypeOption::MouseMoved,
             MouseDispatchButton::Right,
+            1,
         );
         let pressed = mouse_dispatch_options(
             &Input::DispatchMouseEventTypeOption::MousePressed,
             MouseDispatchButton::Right,
+            1,
         );
         let released = mouse_dispatch_options(
             &Input::DispatchMouseEventTypeOption::MouseReleased,
             MouseDispatchButton::Right,
+            1,
         );
 
         assert_eq!(moved.button, None);
@@ -3910,6 +3934,29 @@ mod tests {
         assert_eq!(released.button, Some(Input::MouseButton::Right));
         assert_eq!(released.buttons, Some(2));
         assert_eq!(released.click_count, Some(1));
+    }
+
+    #[test]
+    fn mouse_dispatch_options_preserve_double_click_count() {
+        let moved = mouse_dispatch_options(
+            &Input::DispatchMouseEventTypeOption::MouseMoved,
+            MouseDispatchButton::Left,
+            2,
+        );
+        let pressed = mouse_dispatch_options(
+            &Input::DispatchMouseEventTypeOption::MousePressed,
+            MouseDispatchButton::Left,
+            2,
+        );
+        let released = mouse_dispatch_options(
+            &Input::DispatchMouseEventTypeOption::MouseReleased,
+            MouseDispatchButton::Left,
+            2,
+        );
+
+        assert_eq!(moved.click_count, None);
+        assert_eq!(pressed.click_count, Some(2));
+        assert_eq!(released.click_count, Some(2));
     }
 
     #[test]

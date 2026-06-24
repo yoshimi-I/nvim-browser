@@ -691,6 +691,12 @@ function M.register(browser, opts)
     end
   end, {})
 
+  vim.api.nvim_create_user_command("NBrowserDoubleClickHere", function()
+    if not browser.double_click_here() then
+      vim.api.nvim_echo({ { "nvim-browser: cursor double-click requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+    end
+  end, {})
+
   vim.api.nvim_create_user_command("NBrowserRightClickHere", function()
     if not browser.right_click_here() then
       vim.api.nvim_echo({ { "nvim-browser: cursor right click requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})

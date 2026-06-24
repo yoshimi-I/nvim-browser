@@ -130,6 +130,9 @@ local browser = {
   click_mouse = function()
     table.insert(calls, "click_mouse")
   end,
+  double_click_mouse = function()
+    table.insert(calls, "double_click_mouse")
+  end,
   right_click_mouse = function()
     table.insert(calls, "right_click_mouse")
   end,
@@ -139,6 +142,9 @@ local browser = {
   end,
   click_here = function()
     table.insert(calls, "click_here")
+  end,
+  double_click_here = function()
+    table.insert(calls, "double_click_here")
   end,
   right_click_here = function()
     table.insert(calls, "right_click_here")
@@ -357,9 +363,11 @@ assert_buffer_mapping(first_bufnr, "<Down>", "buffer-local controls should insta
 assert_buffer_mapping(first_bufnr, "<Left>", "buffer-local controls should install ArrowLeft forwarding")
 assert_buffer_mapping(first_bufnr, "<Right>", "buffer-local controls should install ArrowRight forwarding")
 assert_buffer_mapping(first_bufnr, "gc", "buffer-local controls should install cursor click mapping")
+assert_buffer_mapping(first_bufnr, "gd", "buffer-local controls should install cursor double-click mapping")
 assert_buffer_mapping(first_bufnr, "gh", "buffer-local controls should install cursor hover mapping")
 assert_buffer_mapping(first_bufnr, "q", "buffer-local controls should install close mapping")
 assert_buffer_mapping(first_bufnr, "<LeftMouse>", "buffer-local controls should install left-click mouse mapping")
+assert_buffer_mapping(first_bufnr, "<2-LeftMouse>", "buffer-local controls should install double-click mouse mapping")
 assert_buffer_mapping(first_bufnr, "<ScrollWheelDown>", "buffer-local controls should install wheel-down mapping")
 assert_buffer_mapping(first_bufnr, "<ScrollWheelUp>", "buffer-local controls should install wheel-up mapping")
 assert_buffer_mapping(first_bufnr, "<Esc>", "buffer-local controls should install stop mapping")
@@ -409,10 +417,12 @@ trigger_buffer(first_bufnr, "<Down>")
 trigger_buffer(first_bufnr, "<Left>")
 trigger_buffer(first_bufnr, "<Right>")
 trigger_buffer(first_bufnr, "gc")
+trigger_buffer(first_bufnr, "gd")
 trigger_buffer(first_bufnr, "gr")
 trigger_buffer(first_bufnr, "gh")
 trigger_buffer(first_bufnr, "q")
 trigger_buffer(first_bufnr, "<LeftMouse>")
+trigger_buffer(first_bufnr, "<2-LeftMouse>")
 trigger_buffer(first_bufnr, "<RightMouse>")
 trigger_buffer(first_bufnr, "<ScrollWheelDown>")
 trigger_buffer(first_bufnr, "<ScrollWheelUp>")
@@ -424,7 +434,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,actions,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,submit_focused,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,address,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,right_click_here,hover_here,close,click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,actions,find:forward:local,find_next,find_previous,transient_hints,type_hints:type:buffer text,type_hints:submit:buffer text,submit_focused,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,address,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,double_click_here,right_click_here,hover_here,close,click_mouse,double_click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
 
@@ -478,6 +488,7 @@ keymaps.setup_buffer(browser, first_bufnr, {
     zoom_out = false,
     zoom_reset = "z0",
     click_here = "cc",
+    double_click_here = "dc",
     input_text_mode = "I",
     paste_register = "P",
     yank_selection = "yy",
@@ -499,6 +510,7 @@ assert_buffer_mapping(first_bufnr, "zi", "custom buffer-local zoom-in mapping sh
 assert_no_buffer_mapping(first_bufnr, "-", "false buffer-local zoom-out mapping should disable default")
 assert_buffer_mapping(first_bufnr, "z0", "custom buffer-local zoom-reset mapping should be installed")
 assert_buffer_mapping(first_bufnr, "cc", "custom buffer-local cursor click mapping should be installed")
+assert_buffer_mapping(first_bufnr, "dc", "custom buffer-local cursor double-click mapping should be installed")
 assert_buffer_mapping(first_bufnr, "I", "custom buffer-local focused input mapping should be installed")
 assert_buffer_mapping(first_bufnr, "??", "custom buffer-local actions mapping should be installed")
 assert_buffer_mapping(first_bufnr, "P", "custom buffer-local paste mapping should be installed")
@@ -509,6 +521,7 @@ assert_no_buffer_mapping(first_bufnr, "gl", "remapped address prompt shortcut sh
 assert_buffer_mapping(first_bufnr, "ga", "custom address prompt shortcut should be installed")
 assert_no_buffer_mapping(first_bufnr, "<CR>", "false buffer-local browser key mappings should disable defaults")
 assert_buffer_mapping(first_bufnr, "<LeftMouse>", "mouse mappings should remain enabled by default after reinstall")
+assert_buffer_mapping(first_bufnr, "<2-LeftMouse>", "double-click mouse mapping should remain enabled by default after reinstall")
 assert_buffer_mapping(first_bufnr, "<Esc>", "stop mapping should remain enabled by default after reinstall")
 trigger_buffer(first_bufnr, "ga")
 assert(calls[#calls] == "address", "custom address prompt shortcut should call browser.address")

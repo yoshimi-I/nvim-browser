@@ -1437,8 +1437,8 @@ function M.focus_selector(selector)
   return terminal.focus_selector(selector)
 end
 
-function M.click_point(x, y)
-  return terminal.click_point(x, y)
+function M.click_point(x, y, opts)
+  return terminal.click_point(x, y, opts)
 end
 
 function M.drag_point(start_x, start_y, end_x, end_y)
@@ -1494,6 +1494,10 @@ function M.click_here()
   return terminal.click_here()
 end
 
+function M.double_click_here()
+  return terminal.double_click_here()
+end
+
 function M.right_click_here()
   return terminal.right_click_here()
 end
@@ -1508,6 +1512,10 @@ end
 
 function M.click_mouse(mousepos)
   return terminal.click_mouse(mousepos)
+end
+
+function M.double_click_mouse(mousepos)
+  return terminal.double_click_mouse(mousepos)
 end
 
 function M.right_click_mouse(mousepos)

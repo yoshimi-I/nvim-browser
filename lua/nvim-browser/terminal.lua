@@ -3205,18 +3205,24 @@ function M.focus_selector(selector)
   })
 end
 
-function M.click_point(x, y)
+function M.click_point(x, y, opts)
   x = tonumber(x)
   y = tonumber(y)
   if x == nil or y == nil then
     return false
   end
+  opts = opts or {}
+  local click_count = math.floor(tonumber(opts.click_count) or 1)
   request_resize()
-  return send_pending_request({
+  local request = {
     type = "click_point",
     x = x,
     y = y,
-  }, state.current_url or state.last_target or "click", "click")
+  }
+  if click_count > 1 then
+    request.click_count = click_count
+  end
+  return send_pending_request(request, state.current_url or state.last_target or "click", "click")
 end
 
 function M.drag_point(start_x, start_y, end_x, end_y)
@@ -3474,6 +3480,30 @@ function M.click_here()
   return M.click_point(point.x, point.y)
 end
 
+function M.double_click_here()
+  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+    return false
+  end
+
+  local cursor = vim.api.nvim_win_get_cursor(state.winid)
+  local geometry = current_preview_geometry()
+  if cursor[1] > geometry.rows then
+    return false
+  end
+  local column = vim.api.nvim_win_call(state.winid, function()
+    return vim.fn.virtcol(".")
+  end)
+  if column > geometry.columns then
+    return false
+  end
+  geometry = current_rendered_frame_geometry()
+  if geometry == nil then
+    return false
+  end
+  local point = M.viewport_point_for_cell(cursor[1], column, geometry)
+  return M.click_point(point.x, point.y, { click_count = 2 })
+end
+
 local function active_target_is_calibration_fixture()
   local target = state.current_url or state.last_target
   return type(target) == "string" and target:match("data/html/calibrate%.html$") ~= nil
@@ -3714,6 +3744,34 @@ function M.click_mouse(mousepos)
 
   local point = M.viewport_point_for_cell(row, column, geometry)
   return M.click_point(point.x, point.y)
+end
+
+function M.double_click_mouse(mousepos)
+  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+    return false
+  end
+  mousepos = mousepos or vim.fn.getmousepos()
+  if type(mousepos) ~= "table" or mousepos.winid ~= state.winid then
+    return false
+  end
+
+  local row = tonumber(mousepos.line)
+  local column = tonumber(mousepos.column)
+  if row == nil or column == nil or row <= 0 or column <= 0 then
+    return false
+  end
+
+  local geometry = current_preview_geometry()
+  if not cell_within_geometry(row, column, geometry) then
+    return false
+  end
+  geometry = current_rendered_frame_geometry()
+  if geometry == nil then
+    return false
+  end
+
+  local point = M.viewport_point_for_cell(row, column, geometry)
+  return M.click_point(point.x, point.y, { click_count = 2 })
 end
 
 function M.right_click_mouse(mousepos)

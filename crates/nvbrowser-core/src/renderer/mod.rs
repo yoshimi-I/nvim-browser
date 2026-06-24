@@ -660,6 +660,7 @@ pub struct ClickPointRequest {
     pub page_id: PageId,
     pub x: f64,
     pub y: f64,
+    pub click_count: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -845,6 +846,23 @@ impl ClickPointRequest {
             page_id,
             x,
             y,
+            click_count: 1,
+        }
+    }
+
+    pub const fn with_click_count(
+        session_id: SessionId,
+        page_id: PageId,
+        x: f64,
+        y: f64,
+        click_count: u32,
+    ) -> Self {
+        Self {
+            session_id,
+            page_id,
+            x,
+            y,
+            click_count,
         }
     }
 }
