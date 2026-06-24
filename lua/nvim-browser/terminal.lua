@@ -804,6 +804,32 @@ local function download_is_completed(download)
   return type(download) == "table" and download.status == "completed"
 end
 
+local function downloads_from_response(response)
+  local downloads = {}
+  if type(response) ~= "table" then
+    return downloads
+  end
+  if type(response.downloads) == "table" then
+    for _, download in ipairs(response.downloads) do
+      if download_is_completed(download) then
+        table.insert(downloads, download)
+      end
+    end
+  end
+  if #downloads == 0 and download_is_completed(response.download) then
+    table.insert(downloads, response.download)
+  end
+  return downloads
+end
+
+local function latest_download_from_response(response)
+  local downloads = downloads_from_response(response)
+  if #downloads > 0 then
+    return downloads[#downloads]
+  end
+  return nil
+end
+
 local function copy_download_history()
   local downloads = {}
   for _, download in ipairs(state.download_history) do
@@ -813,7 +839,8 @@ local function copy_download_history()
 end
 
 local function record_completed_download(response)
-  if type(response) ~= "table" or not download_is_completed(response.download) then
+  local downloads = downloads_from_response(response)
+  if #downloads == 0 then
     return
   end
   local id = response.id
@@ -823,7 +850,9 @@ local function record_completed_download(response)
     end
     state.download_recorded_response_ids[id] = true
   end
-  table.insert(state.download_history, copy_download(response.download))
+  for _, download in ipairs(downloads) do
+    table.insert(state.download_history, copy_download(download))
+  end
 end
 
 local function clear_navigation_admission(id)
@@ -888,6 +917,12 @@ local function apply_serve_response_metadata(response)
   if response.download ~= nil and response.download ~= vim.NIL then
     state.latest_download = response.download
     record_completed_download(response)
+  else
+    local latest_download = latest_download_from_response(response)
+    if latest_download ~= nil then
+      state.latest_download = latest_download
+      record_completed_download(response)
+    end
   end
   if response.status == "ok" and response.payload ~= nil then
     state.rendered_frame_geometry = rendered_frame_geometry_from_runtime(response.runtime)

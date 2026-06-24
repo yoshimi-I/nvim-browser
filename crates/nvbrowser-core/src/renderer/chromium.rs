@@ -915,9 +915,12 @@ impl Renderer for ChromiumRenderer {
         self.current_url = Some(url.clone());
         self.current_title = title.clone();
         let settled = InteractionSettleResult::new(url, title);
-        Ok(self
-            .collect_completed_download(interaction_started)
-            .map_or(settled.clone(), |download| settled.with_download(download)))
+        let downloads = self.collect_completed_downloads(interaction_started);
+        Ok(if downloads.is_empty() {
+            settled
+        } else {
+            settled.with_downloads(downloads)
+        })
     }
 
     fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
@@ -931,16 +934,16 @@ impl ChromiumRenderer {
         self.last_interaction_started = Some(SystemTime::now());
     }
 
-    fn collect_completed_download(
+    fn collect_completed_downloads(
         &mut self,
         interaction_started: SystemTime,
-    ) -> Option<DownloadInfo> {
+    ) -> Vec<DownloadInfo> {
         let (Some(download_dir), Some(download_events)) =
             (self.download_dir.as_ref(), self.download_events.as_mut())
         else {
-            return None;
+            return Vec::new();
         };
-        let mut completed = None;
+        let mut completed = Vec::new();
         let mut saw_download_event = false;
         while let Ok(event) = download_events.rx.try_recv() {
             match event {
@@ -954,7 +957,7 @@ impl ChromiumRenderer {
                 DownloadEvent::Completed { guid } => {
                     saw_download_event = true;
                     let suggested_filename = download_events.filenames.remove(&guid);
-                    completed = Some(
+                    completed.push(
                         detect_new_completed_download(
                             download_dir,
                             &mut download_events.known_paths,
@@ -972,33 +975,35 @@ impl ChromiumRenderer {
                 }
             }
         }
-        if completed.is_some() {
+        if !completed.is_empty() {
             return completed;
         }
 
-        if let Some(download) = detect_new_completed_download(
+        let downloads = detect_new_completed_downloads(
             download_dir,
             &mut download_events.known_paths,
             interaction_started,
-        ) {
-            return Some(download);
+        );
+        if !downloads.is_empty() {
+            return downloads;
         }
 
         if !saw_download_event && !has_active_chromium_download(download_dir, interaction_started) {
-            return None;
+            return Vec::new();
         }
 
         let deadline = std::time::Instant::now() + Duration::from_millis(1500);
         loop {
-            if let Some(download) = detect_new_completed_download(
+            let downloads = detect_new_completed_downloads(
                 download_dir,
                 &mut download_events.known_paths,
                 interaction_started,
-            ) {
-                return Some(download);
+            );
+            if !downloads.is_empty() {
+                return downloads;
             }
             if std::time::Instant::now() >= deadline {
-                return None;
+                return Vec::new();
             }
             std::thread::sleep(Duration::from_millis(50));
         }
@@ -2441,6 +2446,18 @@ fn detect_new_completed_download(
     Some(DownloadInfo::completed(path, suggested_filename))
 }
 
+fn detect_new_completed_downloads(
+    download_dir: &Path,
+    known_paths: &mut HashSet<PathBuf>,
+    since: SystemTime,
+) -> Vec<DownloadInfo> {
+    let mut downloads = Vec::new();
+    while let Some(download) = detect_new_completed_download(download_dir, known_paths, since) {
+        downloads.push(download);
+    }
+    downloads
+}
+
 fn has_active_chromium_download(download_dir: &Path, since: SystemTime) -> bool {
     std::fs::read_dir(download_dir)
         .ok()
@@ -3210,6 +3227,64 @@ mod tests {
                 .is_none(),
             "reported downloads should become known"
         );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn detects_multiple_new_completed_download_files_in_order() {
+        let directory = std::env::temp_dir().join(format!(
+            "nvbrowser-download-detect-many-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("tempdir should be created");
+        let mut known_paths = list_completed_download_paths(&directory);
+        let interaction_started = SystemTime::now();
+
+        let first_path = directory.join("a-report.txt");
+        let second_path = directory.join("b-report.txt");
+        std::fs::write(&second_path, "download 2").expect("second fixture should be written");
+        std::fs::write(&first_path, "download 1").expect("first fixture should be written");
+
+        let downloads =
+            detect_new_completed_downloads(&directory, &mut known_paths, interaction_started);
+
+        assert_eq!(downloads.len(), 2);
+        assert_eq!(downloads[0].path, first_path);
+        assert_eq!(downloads[1].path, second_path);
+        assert!(
+            detect_new_completed_downloads(&directory, &mut known_paths, interaction_started)
+                .is_empty(),
+            "reported downloads should become known"
+        );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn single_download_detection_marks_only_one_candidate_known() {
+        let directory = std::env::temp_dir().join(format!(
+            "nvbrowser-download-detect-single-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("tempdir should be created");
+        let mut known_paths = list_completed_download_paths(&directory);
+        let interaction_started = SystemTime::now();
+
+        let first_path = directory.join("a-report.txt");
+        let second_path = directory.join("b-report.txt");
+        std::fs::write(&first_path, "download 1").expect("first fixture should be written");
+        std::fs::write(&second_path, "download 2").expect("second fixture should be written");
+
+        let first =
+            detect_new_completed_download(&directory, &mut known_paths, interaction_started)
+                .expect("first completed download should be reported");
+        let second =
+            detect_new_completed_download(&directory, &mut known_paths, interaction_started)
+                .expect("second completed download should remain available");
+
+        assert_eq!(first.path, first_path);
+        assert_eq!(second.path, second_path);
         let _ = std::fs::remove_dir_all(directory);
     }
 

@@ -395,6 +395,8 @@ pub struct InteractionSettleResult {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub download: Option<DownloadInfo>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub downloads: Vec<DownloadInfo>,
 }
 
 impl InteractionSettleResult {
@@ -403,11 +405,21 @@ impl InteractionSettleResult {
             url: url.into(),
             title,
             download: None,
+            downloads: Vec::new(),
         }
     }
 
     pub fn with_download(mut self, download: DownloadInfo) -> Self {
-        self.download = Some(download);
+        self.download = Some(download.clone());
+        self.downloads.push(download);
+        self
+    }
+
+    pub fn with_downloads(mut self, downloads: Vec<DownloadInfo>) -> Self {
+        if let Some(download) = downloads.last() {
+            self.download = Some(download.clone());
+        }
+        self.downloads.extend(downloads);
         self
     }
 }

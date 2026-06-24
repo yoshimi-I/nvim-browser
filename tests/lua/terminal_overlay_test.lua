@@ -3863,8 +3863,21 @@ terminal._test.apply_serve_response({
     suggested_filename = "before-exit.txt",
     status = "completed",
   },
+  downloads = {
+    {
+      path = "/tmp/nvbrowser-downloads/before-exit.txt",
+      suggested_filename = "before-exit.txt",
+      status = "completed",
+    },
+    {
+      path = "/tmp/nvbrowser-downloads/before-exit-2.txt",
+      suggested_filename = "before-exit-2.txt",
+      status = "completed",
+    },
+  },
 })
-assert(#terminal.downloads() > 0, "test setup should have download history before serve job exit")
+assert(#terminal.downloads() == 2, "multi-download responses should record all completed downloads without duplicating the compatibility download")
+assert(terminal.downloads()[2].suggested_filename == "before-exit-2.txt", "multi-download responses should preserve download order")
 sent_requests = {}
 assert(terminal.zoom_in() == true, "test setup should apply zoom before serve job exit")
 local pre_exit_zoom_request = last_request_of_type("zoom")

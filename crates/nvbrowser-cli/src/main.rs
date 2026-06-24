@@ -514,6 +514,8 @@ struct ServeResponse {
     match_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     download: Option<ServeDownloadInfo>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    downloads: Vec<ServeDownloadInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
@@ -778,7 +780,7 @@ struct ServeRuntime<R: Renderer> {
     rows: u32,
     output: ImageOutput,
     _markdown_preview: Option<MarkdownPreviewFile>,
-    pending_download: Option<DownloadInfo>,
+    pending_downloads: Vec<DownloadInfo>,
 }
 
 struct CapturePayload {
@@ -792,6 +794,7 @@ struct CapturePayload {
     found: Option<bool>,
     match_count: Option<u32>,
     download: Option<DownloadInfo>,
+    downloads: Vec<DownloadInfo>,
 }
 
 impl<R: Renderer> ServeRuntime<R> {
@@ -803,7 +806,7 @@ impl<R: Renderer> ServeRuntime<R> {
             rows: options.rows,
             output: options.output,
             _markdown_preview: options.markdown_preview,
-            pending_download: None,
+            pending_downloads: Vec::new(),
         }
     }
 
@@ -822,6 +825,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     found,
                     match_count,
                     download,
+                    downloads,
                 ) = capture
                     .map(|capture| {
                         (
@@ -835,6 +839,7 @@ impl<R: Renderer> ServeRuntime<R> {
                             capture.found,
                             capture.match_count,
                             capture.download,
+                            capture.downloads,
                         )
                     })
                     .unwrap_or((
@@ -848,7 +853,9 @@ impl<R: Renderer> ServeRuntime<R> {
                         None,
                         None,
                         None,
+                        Vec::new(),
                     ));
+                let download = download.or_else(|| downloads.last().cloned());
                 ServeResponse {
                     id,
                     status: ServeStatus::Ok,
@@ -865,6 +872,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     found,
                     match_count,
                     download: download.map(ServeDownloadInfo::from),
+                    downloads: downloads.into_iter().map(ServeDownloadInfo::from).collect(),
                     error: None,
                 }
             }
@@ -884,6 +892,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 found: None,
                 match_count: None,
                 download: None,
+                downloads: Vec::new(),
                 error: Some(error.to_string()),
             },
         }
@@ -892,7 +901,7 @@ impl<R: Renderer> ServeRuntime<R> {
     fn runtime_info(&self) -> ServeRuntimeInfo {
         let viewport = self.session.active_page().viewport();
         ServeRuntimeInfo {
-            protocol_version: 16,
+            protocol_version: 17,
             transport: "stdio-jsonl",
             renderer: "chromium-cdp",
             output: self.output,
@@ -1261,6 +1270,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     found: None,
                     match_count: None,
                     download: None,
+                    downloads: Vec::new(),
                 }))
             }
             ServeRequest::SelectionText { .. } => {
@@ -1279,6 +1289,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     found: None,
                     match_count: None,
                     download: None,
+                    downloads: Vec::new(),
                 }))
             }
             ServeRequest::Screenshot { path, .. } => {
@@ -1349,7 +1360,8 @@ impl<R: Renderer> ServeRuntime<R> {
             hint_error,
             found: None,
             match_count: None,
-            download: self.pending_download.take(),
+            download: None,
+            downloads: std::mem::take(&mut self.pending_downloads),
         })
     }
 
@@ -1390,7 +1402,8 @@ impl<R: Renderer> ServeRuntime<R> {
             hint_error: None,
             found: None,
             match_count: None,
-            download: self.pending_download.take(),
+            download: None,
+            downloads: std::mem::take(&mut self.pending_downloads),
         })
     }
 
@@ -1413,9 +1426,7 @@ impl<R: Renderer> ServeRuntime<R> {
 
     fn settle_after_interaction(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let settled = self.renderer.settle_after_interaction()?;
-        if settled.download.is_some() {
-            self.pending_download = settled.download;
-        }
+        self.pending_downloads.extend(settled.downloads);
         self.session
             .navigate_active_page_with_title(settled.url, settled.title);
         self.session.finish_active_page_load();
@@ -1591,6 +1602,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         found: None,
                         match_count: None,
                         download: None,
+                        downloads: Vec::new(),
                         error: Some(error.to_string()),
                     })
                 )?;
@@ -1996,6 +2008,7 @@ mod tests {
         next_frame_url: Option<String>,
         next_frame_title: Option<String>,
         next_download: Option<DownloadInfo>,
+        next_downloads: Vec<DownloadInfo>,
         hints: Vec<ElementHint>,
         focused: Option<FocusedElement>,
         shutdown: bool,
@@ -2044,6 +2057,7 @@ mod tests {
                 next_frame_url: None,
                 next_frame_title: None,
                 next_download: None,
+                next_downloads: Vec::new(),
                 hints: Vec::new(),
                 focused: None,
                 shutdown: false,
@@ -2509,10 +2523,15 @@ mod tests {
             });
             self.url = Some(url.clone());
             let result = InteractionSettleResult::new(url.clone(), Some(url));
-            Ok(self
-                .next_download
-                .take()
-                .map_or(result.clone(), |download| result.with_download(download)))
+            let mut downloads = std::mem::take(&mut self.next_downloads);
+            if let Some(download) = self.next_download.take() {
+                downloads.push(download);
+            }
+            Ok(if downloads.is_empty() {
+                result
+            } else {
+                result.with_downloads(downloads)
+            })
         }
 
         fn shutdown(&mut self) -> Result<ShutdownResult, RendererError> {
@@ -3042,6 +3061,7 @@ mod tests {
             found: None,
             match_count: None,
             download: None,
+            downloads: Vec::new(),
             error: None,
         };
 
@@ -3082,6 +3102,7 @@ mod tests {
             found: None,
             match_count: None,
             download: None,
+            downloads: Vec::new(),
             error: None,
         };
 
@@ -3109,6 +3130,7 @@ mod tests {
             found: Some(true),
             match_count: Some(3),
             download: None,
+            downloads: Vec::new(),
             error: None,
         };
 
@@ -3139,12 +3161,16 @@ mod tests {
                 PathBuf::from("/tmp/downloads/report.pdf"),
                 Some("report.pdf".to_string()),
             ))),
+            downloads: vec![ServeDownloadInfo::from(DownloadInfo::completed(
+                PathBuf::from("/tmp/downloads/report.pdf"),
+                Some("report.pdf".to_string()),
+            ))],
             error: None,
         };
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":19,"status":"ok","payload":"frame","url":"https://example.com","title":"Example","download":{"path":"/tmp/downloads/report.pdf","suggested_filename":"report.pdf","status":"completed"}}"#
+            r#"{"id":19,"status":"ok","payload":"frame","url":"https://example.com","title":"Example","download":{"path":"/tmp/downloads/report.pdf","suggested_filename":"report.pdf","status":"completed"},"downloads":[{"path":"/tmp/downloads/report.pdf","suggested_filename":"report.pdf","status":"completed"}]}"#
         );
     }
 
@@ -3173,6 +3199,7 @@ mod tests {
             found: None,
             match_count: None,
             download: None,
+            downloads: Vec::new(),
             error: None,
         };
 
@@ -3207,6 +3234,7 @@ mod tests {
             found: None,
             match_count: None,
             download: None,
+            downloads: Vec::new(),
             error: None,
         };
 
@@ -3234,6 +3262,7 @@ mod tests {
             found: None,
             match_count: None,
             download: None,
+            downloads: Vec::new(),
             error: None,
         };
 
@@ -3268,6 +3297,7 @@ mod tests {
             found: None,
             match_count: None,
             download: None,
+            downloads: Vec::new(),
             error: None,
         };
 
@@ -3295,6 +3325,7 @@ mod tests {
             found: None,
             match_count: None,
             download: None,
+            downloads: Vec::new(),
             error: None,
         };
 
@@ -3310,7 +3341,7 @@ mod tests {
             id: 15,
             status: ServeStatus::Ok,
             runtime: Some(ServeRuntimeInfo {
-                protocol_version: 16,
+                protocol_version: 17,
                 transport: "stdio-jsonl",
                 renderer: "chromium-cdp",
                 output: ImageOutput::KittyUnicode,
@@ -3336,12 +3367,13 @@ mod tests {
             found: None,
             match_count: None,
             download: None,
+            downloads: Vec::new(),
             error: None,
         };
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":16,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":17,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -3370,7 +3402,7 @@ mod tests {
         let runtime_info = ok
             .runtime
             .expect("ok responses should include runtime metadata");
-        assert_eq!(runtime_info.protocol_version, 16);
+        assert_eq!(runtime_info.protocol_version, 17);
         assert_eq!(runtime_info.transport, "stdio-jsonl");
         assert_eq!(runtime_info.renderer, "chromium-cdp");
         assert_eq!(runtime_info.output, ImageOutput::Ansi);
@@ -3800,6 +3832,13 @@ mod tests {
                 PathBuf::from("/tmp/downloads/report.pdf"),
                 Some("report.pdf".to_string()),
             )))
+        );
+        assert_eq!(
+            response.downloads,
+            vec![ServeDownloadInfo::from(DownloadInfo::completed(
+                PathBuf::from("/tmp/downloads/report.pdf"),
+                Some("report.pdf".to_string()),
+            ))]
         );
         assert_eq!(
             runtime.renderer.operations,
@@ -5192,6 +5231,66 @@ mod tests {
                 "settle",
                 "capture",
                 "hints"
+            ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_reports_multiple_downloads_after_interaction() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        runtime.renderer.next_downloads = vec![
+            DownloadInfo::completed(
+                PathBuf::from("/tmp/downloads/a.txt"),
+                Some("a.txt".to_string()),
+            ),
+            DownloadInfo::completed(
+                PathBuf::from("/tmp/downloads/b.txt"),
+                Some("b.txt".to_string()),
+            ),
+        ];
+
+        let response = runtime.handle(ServeRequest::ClickPoint {
+            id: 2,
+            x: 5.0,
+            y: 6.0,
+        });
+
+        assert_eq!(
+            response.download,
+            Some(ServeDownloadInfo::from(DownloadInfo::completed(
+                PathBuf::from("/tmp/downloads/b.txt"),
+                Some("b.txt".to_string()),
+            )))
+        );
+        assert_eq!(
+            response.downloads,
+            vec![
+                ServeDownloadInfo::from(DownloadInfo::completed(
+                    PathBuf::from("/tmp/downloads/a.txt"),
+                    Some("a.txt".to_string()),
+                )),
+                ServeDownloadInfo::from(DownloadInfo::completed(
+                    PathBuf::from("/tmp/downloads/b.txt"),
+                    Some("b.txt".to_string()),
+                )),
             ]
         );
     }

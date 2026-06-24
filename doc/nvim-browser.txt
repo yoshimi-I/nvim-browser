@@ -73,10 +73,10 @@ require("nvim-browser").setup({
 <
 The backend also accepts NVBROWSER_DOWNLOAD_DIR or --download-dir. Completed
 downloads are reported in the preview footer and :NBrowserStatus as
-"download=filename". The current POC reports one completed download per
-interaction response and keeps a 1-based, session-local list available via
-:NBrowserDownloads and :NBrowserOpenDownload; it does not provide progress UI,
-cancellation, or filename prompts.
+"download=filename". The serve protocol can report multiple completed
+downloads from one interaction response and keeps a 1-based, session-local
+list available via :NBrowserDownloads and :NBrowserOpenDownload; it does not
+provide progress UI, cancellation, or filename prompts.
 
 If the terminal font cell size makes previews look stretched or click targets
 feel offset, tune the viewport cell pixels:

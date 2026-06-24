@@ -172,10 +172,10 @@ require("nvim-browser").setup({
 
 The same setting is available to the backend as `NVBROWSER_DOWNLOAD_DIR` or
 `--download-dir`. Completed downloads are reported in the preview footer and
-`:NBrowserStatus` as `download=filename`. The current POC reports one completed
-download per interaction response and keeps a session-local list available via
-`:NBrowserDownloads` with 1-based indexes; it does not provide progress UI,
-cancellation, or filename prompts.
+`:NBrowserStatus` as `download=filename`. The serve protocol can report
+multiple completed downloads from one interaction response and keeps a
+session-local list available via `:NBrowserDownloads` with 1-based indexes; it
+does not provide progress UI, cancellation, or filename prompts.
 
 Active browser previews refresh lightweight page state every 1500ms by default
 so URL, title, scroll, focus, and download metadata stay current without
