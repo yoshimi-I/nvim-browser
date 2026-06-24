@@ -52,6 +52,10 @@ assert(has_line(zellij_auto, "image target output: ansi"), "auto image targets u
 assert(contains_line(zellij_auto, "terminal: unknown"), "doctor should report detected terminal")
 assert(contains_line(zellij_auto, "multiplexer: zellij"), "doctor should report detected multiplexer")
 assert(contains_line(zellij_auto, "graphics reason: Zellij"), "doctor should explain auto graphics selection")
+assert(
+  has_line(zellij_auto, "ok: zellij ansi fallback keeps browser previews cursor-addressable"),
+  "doctor should explain that Zellij auto fallback remains usable for cursor-addressable browser previews"
+)
 assert(contains_line(zellij_auto, "warning: ZELLIJ detected"), "auto graphics under Zellij should explain ANSI fallback")
 assert(contains_line(zellij_auto, "warning: binary is not executable"), "missing binary should warn")
 

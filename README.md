@@ -93,7 +93,10 @@ With `graphics = "auto"`, nvim-browser resolves graphics from the terminal
 environment. Ghostty, Kitty, and WezTerm use `kitty-unicode` for browser frames;
 the standalone `nvbrowser show-image` CLI uses `kitty` for raster images.
 Zellij falls back to ANSI because Kitty graphics passthrough is unreliable
-there. tmux keeps Kitty output and relies on tmux passthrough wrapping. Unknown
+there. Lua backend tests cover the `ZELLIJ=1` auto resolution for browser
+sessions and image targets, and the opt-in Chromium E2E suite covers that ANSI
+browser surface with frame rendering, hints, text input, clicks, and page text.
+tmux keeps Kitty output and relies on tmux passthrough wrapping. Unknown
 terminals use ANSI as the safe fallback. Override with `graphics = "ansi"`,
 `"kitty"`, or `"kitty-unicode"` when needed.
 

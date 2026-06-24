@@ -353,6 +353,9 @@ function M.run(config, terminal_state)
   append_tmux_passthrough_diagnostics(report, config, graphics_resolution, browser_output)
 
   if vim.env.ZELLIJ ~= nil and (config.graphics == nil or config.graphics == "auto") then
+    if browser_output == "ansi" then
+      add_item(report, "ok", "zellij ansi fallback keeps browser previews cursor-addressable")
+    end
     add_item(report, "warning", "ZELLIJ detected; auto browser graphics uses ansi because terminal graphics may not pass through the multiplexer")
   end
 

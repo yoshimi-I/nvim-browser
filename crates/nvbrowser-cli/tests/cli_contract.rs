@@ -801,6 +801,133 @@ fn opt_in_e2e_serve_loop_drives_real_chromium_over_jsonl() {
 }
 
 #[test]
+fn opt_in_e2e_zellij_ansi_fallback_drives_real_chromium() {
+    if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
+        return;
+    }
+
+    let directory = tempdir().expect("tempdir should be created");
+    let fixture_path = directory.path().join("zellij-fallback.html");
+    std::fs::write(
+        &fixture_path,
+        r##"<!doctype html>
+<html>
+  <head><title>Zellij ANSI Fallback</title></head>
+  <body>
+    <main>
+      <label>Search <input aria-label="Search" oninput="document.getElementById('out').textContent=this.value"></label>
+      <button onclick="document.getElementById('out').textContent='clicked through ansi fallback'">Go</button>
+      <p id="out">empty</p>
+    </main>
+  </body>
+</html>"##,
+    )
+    .expect("html fixture should be written");
+    let fixture_url = file_url(&fixture_path);
+
+    let mut command = StdCommand::new(assert_cmd::cargo::cargo_bin("nvbrowser"));
+    command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--columns",
+            "40",
+            "--rows",
+            "12",
+            "--width",
+            "400",
+            "--height",
+            "240",
+            "--url",
+            &fixture_url,
+        ])
+        .env("ZELLIJ", "1")
+        .env_remove("TMUX")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    if std::env::var_os("NVBROWSER_CHROME").is_none() {
+        if let Some(chrome) = default_e2e_chrome() {
+            command.env("NVBROWSER_CHROME", chrome);
+        }
+    }
+
+    let mut serve = ServeProcess::spawn(command);
+    let initial = serve.read_json();
+    assert_eq!(initial["status"], "ok", "initial navigation should succeed");
+    assert_eq!(initial["title"], "Zellij ANSI Fallback");
+    assert_eq!(initial["runtime"]["renderer"], "chromium-cdp");
+    assert_eq!(initial["runtime"]["transport"], "stdio-jsonl");
+    assert_eq!(initial["runtime"]["output"], "ansi");
+    assert!(
+        initial["runtime"]["protocol_version"].as_u64().is_some(),
+        "runtime metadata should include a numeric protocol version"
+    );
+    assert_eq!(initial["runtime"]["cells"]["columns"], 40);
+    assert_eq!(initial["runtime"]["cells"]["rows"], 12);
+    assert_eq!(initial["runtime"]["viewport"]["width"], 400);
+    assert_eq!(initial["runtime"]["viewport"]["height"], 240);
+    assert_eq!(
+        initial["runtime"]["viewport"]["device_scale_factor"].as_f64(),
+        Some(1.0)
+    );
+    assert_ansi_payload_is_mux_safe(&initial);
+
+    let hints = initial["hints"]
+        .as_array()
+        .expect("initial response should include hints");
+    let input_hint_id = hints
+        .iter()
+        .find(|hint| hint["kind"] == "input" && hint["label"] == "Search")
+        .and_then(|hint| hint["id"].as_u64())
+        .expect("input hint should be present");
+    let button_hint_id = hints
+        .iter()
+        .find(|hint| hint["kind"] == "button" && hint["label"] == "Go")
+        .and_then(|hint| hint["id"].as_u64())
+        .expect("button hint should be present");
+
+    let typed = serve.request(serde_json::json!({
+        "id": 1,
+        "type": "type_hint",
+        "hint_id": input_hint_id,
+        "text": "typed through ansi fallback",
+        "submit": false
+    }));
+    assert_eq!(typed["status"], "ok", "type_hint should succeed");
+    assert_eq!(typed["runtime"]["output"], "ansi");
+    assert_ansi_payload_is_mux_safe(&typed);
+    let typed_text = serve.request(serde_json::json!({ "id": 2, "type": "page_text" }));
+    assert!(
+        typed_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("typed through ansi fallback")),
+        "page_text should observe text input through ANSI fallback; response={typed_text:?}"
+    );
+
+    let clicked = serve.request(serde_json::json!({
+        "id": 3,
+        "type": "click_hint",
+        "hint_id": button_hint_id
+    }));
+    assert_eq!(clicked["status"], "ok", "click_hint should succeed");
+    assert_eq!(clicked["runtime"]["output"], "ansi");
+    assert_ansi_payload_is_mux_safe(&clicked);
+    let clicked_text = serve.request(serde_json::json!({ "id": 4, "type": "page_text" }));
+    assert!(
+        clicked_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("clicked through ansi fallback")),
+        "page_text should observe clicks through ANSI fallback; response={clicked_text:?}"
+    );
+
+    let quit = serve.request(serde_json::json!({ "id": 5, "type": "quit" }));
+    assert_eq!(quit["status"], "ok");
+    serve.wait_success();
+}
+
+#[test]
 fn opt_in_e2e_serve_loop_selects_text_with_drag_point() {
     if std::env::var("NVBROWSER_E2E").ok().as_deref() != Some("1") {
         return;
@@ -2484,6 +2611,28 @@ fn assert_serve_startup_error_jsonl(output: Vec<u8>) {
             .as_str()
             .is_some_and(|error| error.contains("Chrome") || error.contains("CDP")),
         "startup error should mention Chrome/CDP backend; response={json:?}"
+    );
+}
+
+fn assert_ansi_payload_is_mux_safe(response: &Value) {
+    let payload = response["payload"]
+        .as_str()
+        .unwrap_or_else(|| panic!("response should include an ANSI frame payload: {response:?}"));
+    assert!(
+        !payload.is_empty(),
+        "ANSI frame payload should not be empty; response={response:?}"
+    );
+    assert!(
+        payload.contains("\u{1b}["),
+        "ANSI frame payload should include normal terminal SGR escapes; response={response:?}"
+    );
+    assert!(
+        !payload.contains("\u{1b}_G"),
+        "ANSI fallback payload must not include raw Kitty graphics escapes; response={response:?}"
+    );
+    assert!(
+        !payload.contains("\u{1b}Ptmux;"),
+        "ANSI fallback payload must not include tmux passthrough wrappers; response={response:?}"
     );
 }
 

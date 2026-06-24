@@ -38,6 +38,11 @@ be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   display path outside problematic multiplexers.
 - Zellij currently blocks the desired Kitty graphics path in practice, so
   `graphics = "auto"` intentionally falls back to ANSI when `ZELLIJ` is set.
+  The ANSI fallback is treated as a real browser path, not a dead-end degraded
+  mode: Lua backend tests cover the `ZELLIJ=1` auto command resolution, opt-in
+  Chromium E2E covers rendering, hints, text input, clicks, and page text on the
+  ANSI browser surface, and Doctor reports that the fallback stays
+  cursor-addressable.
 - tmux gets escape passthrough wrapping and is detected explicitly; users still
   need passthrough-capable tmux configuration for high-fidelity graphics.
   Doctor probes `tmux show -gqv allow-passthrough` and reports `ok` for `on`

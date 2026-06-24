@@ -445,6 +445,18 @@ assert(vim.deep_equal(zellij_auto_image_command, {
   vim.uri_from_fname("/tmp/image.png"),
 }), "auto raster image browser previews under Zellij should use ANSI output")
 
+local zellij_auto_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
+  graphics = "auto",
+})
+assert(vim.deep_equal(zellij_auto_url_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  "https://example.com",
+}), "auto web URLs under Zellij should use ANSI browser output")
+
 vim.env.ZELLIJ = nil
 vim.env.TERM_PROGRAM = "ghostty"
 vim.env.TERM = "xterm-ghostty"
