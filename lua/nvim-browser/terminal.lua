@@ -666,6 +666,56 @@ local function has_url_scheme(value)
   return type(value) == "string" and value:match("^%a[%w+.-]*:") ~= nil
 end
 
+local function normalize_reader_path(path)
+  if type(path) ~= "string" or path == "" then
+    return "/"
+  end
+  local absolute = path:sub(1, 1) == "/"
+  local trailing_slash = path:sub(-1) == "/" or path:match("/%.$") ~= nil or path:match("/%.%.$") ~= nil
+  local segments = {}
+  local index = 1
+  while index <= #path do
+    local next_slash = path:find("/", index, true)
+    local segment
+    if next_slash == nil then
+      segment = path:sub(index)
+      index = #path + 1
+    else
+      segment = path:sub(index, next_slash - 1)
+      index = next_slash + 1
+    end
+    if segment == ".." then
+      if #segments > 0 then
+        table.remove(segments)
+      end
+    elseif segment == "." then
+      -- skip explicit current-directory segments
+    elseif segment ~= "" or #segments > 0 then
+      table.insert(segments, segment)
+    end
+  end
+  local normalized = table.concat(segments, "/")
+  if absolute then
+    normalized = "/" .. normalized
+  end
+  if normalized == "" then
+    normalized = absolute and "/" or "."
+  end
+  if trailing_slash and normalized ~= "/" then
+    normalized = normalized .. "/"
+  end
+  return normalized
+end
+
+local function normalize_reader_reference(reference)
+  local path, suffix = tostring(reference):match("^([^?#]*)([?#].*)$")
+  if path == nil then
+    path = tostring(reference)
+    suffix = ""
+  end
+  return normalize_reader_path(path) .. suffix
+end
+
 local function reader_resolve_url(target, base)
   if target == nil or target == "" then
     return nil
@@ -691,7 +741,7 @@ local function reader_resolve_url(target, base)
     if directory == "" then
       directory = "/"
     end
-    return scheme .. authority .. directory .. target
+    return scheme .. authority .. normalize_reader_reference(directory .. target)
   end
   local file_path = base:match("^file://([^#?]*)")
   if file_path == nil then
@@ -704,7 +754,7 @@ local function reader_resolve_url(target, base)
   if directory == "" then
     directory = "/"
   end
-  return "file://" .. directory .. target
+  return "file://" .. normalize_reader_reference(directory .. target)
 end
 
 local function warn_reader_follow(message)

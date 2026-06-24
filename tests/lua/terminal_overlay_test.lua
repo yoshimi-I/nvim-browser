@@ -521,7 +521,7 @@ terminal._test.handle_reader_response({
   text = {
     title = "Reader Base",
     url = "https://example.com/base/current.html",
-    text = "# Reader Base\n\n[Docs](/docs)\n\n[Next](guide/page.html)\n\n[Section](#intro)\n\n[Search](?q=x)",
+    text = "# Reader Base\n\n[Docs](/docs)\n\n[Next](guide/page.html)\n\n[Parent](../up/page.html)\n\n[Double](assets//app.js)\n\n[DotFragment](..#intro)\n\n[DotQuery](.?q=x)\n\n[Section](#intro)\n\n[Search](?q=x)",
   },
 })
 vim.api.nvim_set_current_buf(terminal.state().reader_bufnr)
@@ -535,8 +535,16 @@ assert(terminal.reader_follow() == "https://example.com/docs", "reader follow sh
 vim.api.nvim_win_set_cursor(0, { 7, 1 })
 assert(terminal.reader_follow() == "https://example.com/base/guide/page.html", "reader follow should resolve relative links from the current page directory")
 vim.api.nvim_win_set_cursor(0, { 9, 1 })
-assert(terminal.reader_follow() == "https://example.com/base/current.html#intro", "reader follow should resolve fragments from the current page")
+assert(terminal.reader_follow() == "https://example.com/up/page.html", "reader follow should normalize parent segments in relative links")
 vim.api.nvim_win_set_cursor(0, { 11, 1 })
+assert(terminal.reader_follow() == "https://example.com/base/assets//app.js", "reader follow should preserve double slashes inside relative paths")
+vim.api.nvim_win_set_cursor(0, { 13, 1 })
+assert(terminal.reader_follow() == "https://example.com/#intro", "reader follow should normalize parent path segments before fragments")
+vim.api.nvim_win_set_cursor(0, { 15, 1 })
+assert(terminal.reader_follow() == "https://example.com/base/?q=x", "reader follow should normalize current-directory path segments before queries")
+vim.api.nvim_win_set_cursor(0, { 17, 1 })
+assert(terminal.reader_follow() == "https://example.com/base/current.html#intro", "reader follow should resolve fragments from the current page")
+vim.api.nvim_win_set_cursor(0, { 19, 1 })
 assert(terminal.reader_follow() == "https://example.com/base/current.html?q=x", "reader follow should resolve query-only links from the current page")
 terminal._test.apply_serve_response({
   id = 223,
@@ -552,9 +560,13 @@ assert(
 vim.fn.chansend = original_chansend_for_reader
 assert(reader_requests[1].request.url == "https://example.com/docs", "root-relative follow should send the resolved URL")
 assert(reader_requests[2].request.url == "https://example.com/base/guide/page.html", "relative follow should send the resolved URL")
-assert(reader_requests[3].request.url == "https://example.com/base/current.html#intro", "fragment follow should send the resolved URL")
-assert(reader_requests[4].request.url == "https://example.com/base/current.html?q=x", "query-only follow should send the resolved URL")
-assert(reader_requests[5].request.url == "https://example.com/base/guide/page.html", "old reader buffers should keep using their snapshot URL as base")
+assert(reader_requests[3].request.url == "https://example.com/up/page.html", "parent-relative follow should send the normalized URL")
+assert(reader_requests[4].request.url == "https://example.com/base/assets//app.js", "double-slash relative follow should preserve the URL path")
+assert(reader_requests[5].request.url == "https://example.com/#intro", "dot-segment fragment follow should send the normalized URL")
+assert(reader_requests[6].request.url == "https://example.com/base/?q=x", "dot-segment query follow should send the normalized URL")
+assert(reader_requests[7].request.url == "https://example.com/base/current.html#intro", "fragment follow should send the resolved URL")
+assert(reader_requests[8].request.url == "https://example.com/base/current.html?q=x", "query-only follow should send the resolved URL")
+assert(reader_requests[9].request.url == "https://example.com/base/guide/page.html", "old reader buffers should keep using their snapshot URL as base")
 
 terminal._test.apply_serve_response({
   id = 224,
@@ -567,7 +579,7 @@ terminal._test.handle_reader_response({
   text = {
     title = "Local Reader",
     url = "file:///tmp/site/index.html",
-    text = "# Local Reader\n\n[Next](guide/page.html)\n\n[Docs](/docs)\n\n[Section](#intro)\n\n[Search](?q=x)",
+    text = "# Local Reader\n\n[Next](guide/page.html)\n\n[Parent](../docs/page.html)\n\n[Double](assets//app.js)\n\n[DotFragment](..#intro)\n\n[DotQuery](.?q=x)\n\n[Docs](/docs)\n\n[Section](#intro)\n\n[Search](?q=x)",
   },
 })
 vim.api.nvim_set_current_buf(terminal.state().reader_bufnr)
@@ -579,10 +591,18 @@ end
 vim.api.nvim_win_set_cursor(0, { 5, 1 })
 assert(terminal.reader_follow() == "file:///tmp/site/guide/page.html", "reader follow should resolve relative file links from the reader snapshot")
 vim.api.nvim_win_set_cursor(0, { 7, 1 })
-assert(terminal.reader_follow() == "file:///docs", "reader follow should resolve root-relative file links")
+assert(terminal.reader_follow() == "file:///tmp/docs/page.html", "reader follow should normalize parent segments in file links")
 vim.api.nvim_win_set_cursor(0, { 9, 1 })
-assert(terminal.reader_follow() == "file:///tmp/site/index.html#intro", "reader follow should resolve file fragments")
+assert(terminal.reader_follow() == "file:///tmp/site/assets//app.js", "reader follow should preserve double slashes inside relative file paths")
 vim.api.nvim_win_set_cursor(0, { 11, 1 })
+assert(terminal.reader_follow() == "file:///tmp/#intro", "reader follow should normalize file parent path segments before fragments")
+vim.api.nvim_win_set_cursor(0, { 13, 1 })
+assert(terminal.reader_follow() == "file:///tmp/site/?q=x", "reader follow should normalize file current-directory path segments before queries")
+vim.api.nvim_win_set_cursor(0, { 15, 1 })
+assert(terminal.reader_follow() == "file:///docs", "reader follow should resolve root-relative file links")
+vim.api.nvim_win_set_cursor(0, { 17, 1 })
+assert(terminal.reader_follow() == "file:///tmp/site/index.html#intro", "reader follow should resolve file fragments")
+vim.api.nvim_win_set_cursor(0, { 19, 1 })
 assert(terminal.reader_follow() == "file:///tmp/site/index.html?q=x", "reader follow should resolve file query-only links")
 vim.fn.chansend = original_chansend_for_reader
 
