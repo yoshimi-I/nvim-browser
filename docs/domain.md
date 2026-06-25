@@ -72,6 +72,10 @@ can be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - The action picker should expose common cursor-addressable browser input
   directly so users can discover click, double-click, right-click, hover, and
   type-at-cursor without memorizing separate commands.
+- Cursor-local URL follow is intentionally href navigation, not a browser click.
+  It should inspect the link under the preview cursor and open that href in the
+  same preview, including target-blank links, without relying on page click
+  handlers or popup adoption.
 - The bottom preview row is reserved for status. Clicks, double-clicks, and
   right-clicks in the footer must not be converted into browser viewport
   coordinates.

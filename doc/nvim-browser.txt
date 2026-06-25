@@ -68,6 +68,7 @@ Example lazy.nvim setup:
     "NBrowserYankUrl",
     "NBrowserYankHintUrl",
     "NBrowserYankPointUrl",
+    "NBrowserFollowPointUrl",
     "NBrowserScreenshot",
     "NBrowserInputMode",
     "NBrowserTextMode",
@@ -327,8 +328,8 @@ COMMANDS                                           *nvim-browser-commands*
 	Open a compact picker for common browser actions such as opening,
 	previewing, inspecting, resuming, bookmarking, address, reload, back,
 	forward, find, hints, text mode, cursor click/double-click/right-click/hover/wheel/type,
-	downloads, screenshot, reader, status, zoom, doctor, and close. Focused
-	preview buffers map ? to this picker by default.
+	cursor link follow, downloads, screenshot, reader, status, zoom, doctor,
+	and close. Focused preview buffers map ? to this picker by default.
 
 							*:NBrowserBack*
 :NBrowserBack
@@ -532,6 +533,15 @@ COMMANDS                                           *nvim-browser-commands*
 	Inspect the live DOM element under the preview cursor and echo its tag,
 	label, link URL, and target when available. This requires an ANSI or Kitty
 	Unicode cursor-addressable browser preview.
+
+							*:NBrowserFollowPointUrl*
+:NBrowserFollowPointUrl
+	Navigate the active browser preview to the link URL under the preview
+	cursor without sending a page click. This uses the same live DOM inspection
+	path as |:NBrowserPointInfo|, opens the inspected href in the same preview
+	even for target="_blank" links, and does not run click handlers or SPA link
+	interception. It requires an ANSI or Kitty Unicode cursor-addressable
+	browser preview.
 
 							*:NBrowserWheelDownHere*
 :NBrowserWheelDownHere [pixels]

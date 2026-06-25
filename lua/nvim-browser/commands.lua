@@ -52,6 +52,7 @@ local command_names = {
   "NBrowserYankUrl",
   "NBrowserYankHintUrl",
   "NBrowserYankPointUrl",
+  "NBrowserFollowPointUrl",
   "NBrowserScreenshot",
   "NBrowserInputMode",
   "NBrowserTextMode",
@@ -333,6 +334,10 @@ function M.register(browser, opts)
 
   local function warn_point_url_yank_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: cursor URL yank requires an active cursor-addressable browser preview and a link under the cursor", "WarningMsg" } }, false, {})
+  end
+
+  local function warn_point_url_follow_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: cursor link follow requires an active cursor-addressable browser preview and a link under the cursor", "WarningMsg" } }, false, {})
   end
 
   local function warn_point_info_unavailable()
@@ -709,6 +714,12 @@ function M.register(browser, opts)
   end, {
     nargs = "?",
   })
+
+  vim.api.nvim_create_user_command("NBrowserFollowPointUrl", function()
+    if not browser.follow_point_url_here or not browser.follow_point_url_here() then
+      warn_point_url_follow_unavailable()
+    end
+  end, {})
 
   vim.api.nvim_create_user_command("NBrowserScreenshot", function(opts)
     local path = opts.args ~= nil and opts.args ~= "" and opts.args or nil

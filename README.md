@@ -110,6 +110,7 @@ With lazy.nvim:
     "NBrowserYankUrl",
     "NBrowserYankHintUrl",
     "NBrowserYankPointUrl",
+    "NBrowserFollowPointUrl",
     "NBrowserScreenshot",
     "NBrowserInputMode",
     "NBrowserTextMode",
@@ -467,6 +468,7 @@ Then run:
 :NBrowserYankUrl +
 :NBrowserYankHintUrl a +
 :NBrowserYankPointUrl +
+:NBrowserFollowPointUrl
 :NBrowserScreenshot /tmp/page.png
 :NBrowserKey Enter
 :NBrowserKey A ctrl
@@ -552,8 +554,12 @@ not available.
 `:NBrowserPointInfo` asks Chromium for the DOM element under the preview cursor
 and echoes the tag, label, link URL, and target when available.
 `:NBrowserYankPointUrl [register]` uses the same point inspection path and
-writes the link URL under the preview cursor into a Neovim register. Both
-commands require an ANSI or Kitty Unicode cursor-addressable browser preview.
+writes the link URL under the preview cursor into a Neovim register.
+`:NBrowserFollowPointUrl` navigates the active browser preview to the link URL
+under the preview cursor without sending a page click. It opens the inspected
+`href` in the same preview, including links marked `target="_blank"`, and does
+not run click handlers or SPA link interception. These commands require an ANSI
+or Kitty Unicode cursor-addressable browser preview.
 `:NBrowserWheelDownHere [pixels]` and `:NBrowserWheelUpHere [pixels]` send
 native Chromium mouse-wheel input at the preview cursor. The default delta is
 120 pixels. Use them for nested scroll containers without moving focus out of
@@ -673,8 +679,8 @@ directly with `require("nvim-browser").address("example.com")`.
 `:NBrowserActions` opens a compact picker for common browser actions such as
 opening, previewing, inspecting, resuming, bookmarking, address, reload, history
 movement, find, hints, text mode, cursor click/double-click/right-click/hover/wheel/type,
-downloads, screenshot, reader, status, zoom, doctor, and close. Preview buffers
-map `?` to this picker by default.
+cursor link follow, downloads, screenshot, reader, status, zoom, doctor, and
+close. Preview buffers map `?` to this picker by default.
 
 `:NBrowserZoom {scale}` sets an exact page scale, for example `1.25` for
 125%, while `:NBrowserZoomIn`, `:NBrowserZoomOut`, and `:NBrowserZoomReset`
@@ -717,6 +723,8 @@ register without recapturing the page. `:NBrowserYankHintUrl {id-or-label}
 `:NBrowserYankPointUrl [register]` inspects the live DOM at the preview cursor
 and writes the link URL under that point. It requires an ANSI or Kitty Unicode
 cursor-addressable browser preview.
+`:NBrowserFollowPointUrl` uses the same live DOM inspection path and opens the
+link URL under the preview cursor in the active preview without sending a click.
 `:NBrowserScreenshot [path]` captures the active browser session viewport to a
 PNG file without replacing the Neovim preview frame. Without a path, it writes a
 timestamped PNG under Neovim's cache directory.

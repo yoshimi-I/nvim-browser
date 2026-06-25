@@ -46,6 +46,7 @@ assert(type(browser.yank_region) == "function", "browser region yank API should 
 assert(type(browser.yank_current_url) == "function", "current URL yank API should exist")
 assert(type(browser.yank_hint_url) == "function", "hint URL yank API should exist")
 assert(type(browser.yank_point_url_here) == "function", "cursor URL yank API should exist")
+assert(type(browser.follow_point_url_here) == "function", "cursor link follow API should exist")
 assert(type(browser.point_info_here) == "function", "cursor point info API should exist")
 assert(type(browser.yank_page_text) == "function", "page text yank API should exist")
 assert(type(browser.screenshot) == "function", "active browser screenshot API should exist")
@@ -821,6 +822,7 @@ local function with_action_stubs(fn)
     double_click_here = browser.double_click_here,
     right_click_here = browser.right_click_here,
     hover_here = browser.hover_here,
+    follow_point_url_here = browser.follow_point_url_here,
     wheel_here = browser.wheel_here,
     type_here = browser.type_here,
   }
@@ -970,6 +972,10 @@ local function with_action_stubs(fn)
     table.insert(action_calls, "hover_here")
     return true
   end
+  browser.follow_point_url_here = function()
+    table.insert(action_calls, "follow_point_url_here")
+    return true
+  end
   browser.wheel_here = function(delta_y, delta_x)
     table.insert(action_calls, "wheel_here:" .. tostring(delta_y) .. ":" .. tostring(delta_x))
     return true
@@ -1024,6 +1030,7 @@ with_action_stubs(function()
 	    "Double-click cursor",
 	    "Right-click cursor",
 	    "Hover cursor",
+	    "Follow link at cursor",
 	    "Wheel down at cursor",
 	    "Wheel up at cursor",
 	    "Type at cursor",
@@ -2737,6 +2744,14 @@ terminal.yank_point_url_here = function(register)
 end
 assert(browser.yank_point_url_here("*") == "point-url-yanked", "yank_point_url_here should delegate to terminal")
 assert(_G.nvim_browser_yanked_point_url_register == "*", "yank_point_url_here should pass explicit registers to terminal")
+
+_G.nvim_browser_followed_point_url = false
+terminal.follow_point_url_here = function()
+  _G.nvim_browser_followed_point_url = true
+  return "point-url-followed"
+end
+assert(browser.follow_point_url_here() == "point-url-followed", "follow_point_url_here should delegate to terminal")
+assert(_G.nvim_browser_followed_point_url == true, "follow_point_url_here should invoke terminal cursor follow")
 
 _G.nvim_browser_point_info_callback = nil
 terminal.point_info_here = function(callback)

@@ -32,6 +32,7 @@ for _, name in ipairs({
   "NBrowserJumpHintMode",
   "NBrowserPointInfo",
   "NBrowserYankPointUrl",
+  "NBrowserFollowPointUrl",
 }) do
   assert(vim.tbl_contains(lazy_command_names, name), "full lazy command list should include " .. name)
 end
@@ -84,6 +85,7 @@ local yanked_register = nil
 local yanked_current_url_register = nil
 local yanked_hint_url = nil
 local yanked_point_url_register = nil
+local followed_point_url = false
 local point_info_called = false
 local yanked_page_text_register = nil
 local screenshot_path = nil
@@ -287,6 +289,13 @@ local browser = {
       return false
     end
     yanked_point_url_register = register or '"'
+    return true
+  end,
+  follow_point_url_here = function()
+    if followed_point_url == "fail" then
+      return false
+    end
+    followed_point_url = true
     return true
   end,
   point_info_here = function(on_response)
@@ -1264,6 +1273,17 @@ assert(
   "NBrowserYankPointUrl should warn when cursor URL yank fails"
 )
 assert(yanked_point_url_register == nil, "NBrowserYankPointUrl should not yank invalid register names")
+
+followed_point_url = false
+vim.cmd("NBrowserFollowPointUrl")
+assert(followed_point_url == true, "NBrowserFollowPointUrl should follow the URL under the cursor")
+
+followed_point_url = "fail"
+vim.cmd("NBrowserFollowPointUrl")
+assert(
+  warnings[#warnings] == "nvim-browser: cursor link follow requires an active cursor-addressable browser preview and a link under the cursor",
+  "NBrowserFollowPointUrl should warn when cursor link follow fails"
+)
 
 point_info_called = false
 vim.cmd("NBrowserPointInfo")

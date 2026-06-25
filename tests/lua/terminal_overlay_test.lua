@@ -4268,6 +4268,53 @@ end), "cursor URL yank should warn when no href is under the cursor")
 assert(vim.fn.getreg("b") == "preserve-empty-point-url", "cursor URL yank should not overwrite registers without href")
 assert(terminal.yank_point_url_here("bb") == false, "cursor URL yank should reject invalid register names")
 
+sent_requests = {}
+assert(terminal.follow_point_url_here() == true, "cursor link follow should inspect the browser point first")
+_G.nvim_browser_point_follow_request = last_request_of_type("point_info")
+assert(_G.nvim_browser_point_follow_request ~= nil, "cursor link follow should use point_info before navigation")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_point_follow_request.id,
+  status = "ok",
+  point = {
+    tag = "a",
+    label = "Docs",
+    href = "https://example.com/docs",
+    target = "_blank",
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return last_request_of_type("navigate") ~= nil
+end), "cursor link follow should navigate to the inspected href")
+_G.nvim_browser_point_follow_navigate = last_request_of_type("navigate")
+assert(_G.nvim_browser_point_follow_navigate.url == "https://example.com/docs", "cursor link follow should navigate to the href")
+assert(last_request_of_type("click_point") == nil, "cursor link follow should not click the inspected point")
+assert(terminal.state().last_target == "https://example.com/docs", "cursor link follow should update the terminal target")
+terminal._test.apply_serve_response({
+  id = _G.nvim_browser_point_follow_navigate.id,
+  status = "ok",
+  url = "https://example.com/docs",
+})
+assert(terminal.state().pending_operation == nil, "cursor link follow navigation response should clear the pending operation before the next inspection")
+
+sent_requests = {}
+_G.nvim_browser_warning_count_before_empty_point_follow = #warnings
+assert(terminal.follow_point_url_here() == true, "cursor link follow should inspect before detecting missing href")
+_G.nvim_browser_empty_point_follow_request = last_request_of_type("point_info")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_empty_point_follow_request.id,
+  status = "ok",
+  point = {
+    tag = "button",
+    label = "Search",
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return #warnings > _G.nvim_browser_warning_count_before_empty_point_follow
+end), "cursor link follow should warn when no href is under the cursor")
+assert(last_request_of_type("navigate") == nil, "cursor link follow should not navigate without href")
+terminal._test.clear_frame_refresh()
+terminal._test.set_latest_applied_response_id(2)
+
 vim.fn.setreg("b", "preserve-missing-hint")
 assert(terminal.yank_hint_url("missing", "b") == false, "hint URL yank should reject missing hints")
 assert(vim.fn.getreg("b") == "preserve-missing-hint", "missing hints should not mutate registers")
@@ -4393,6 +4440,7 @@ assert(not vim.wait(200, function()
   return terminal.state().current_title == "Early Late Page"
 end), "stopped operation responses should be ignored even before stop_loading ack")
 assert(#terminal.downloads() == 0, "stopped operation responses before stop_loading ack should not record downloads")
+terminal._test.set_latest_applied_response_id(_G.nvim_browser_stop_loading_request.id - 1)
 serve_stdout(nil, { vim.json.encode({
   id = _G.nvim_browser_stop_loading_request.id,
   status = "ok",
@@ -4413,7 +4461,12 @@ end), "graceful stop ack should clear the pending browser operation")
 assert(#jobstop_calls == 0, "successful stop_loading should not terminate the serve job")
 assert(terminal.state().mode == "serve", "successful stop_loading should keep the serve session active")
 assert(terminal.state().serve_output == "ansi", "successful stop_loading should keep serve output metadata")
-assert(terminal._test.preview_footer_line(120):match("^stopped | https://example%.com/docs"), "stop should leave a stopped footer message")
+_G.nvim_browser_stop_footer_after_ack = terminal._test.preview_footer_line(120)
+assert(
+  _G.nvim_browser_stop_footer_after_ack:match("^stopped |")
+    and _G.nvim_browser_stop_footer_after_ack:find("https://example.com/docs", 1, true),
+  "stop should leave a stopped footer message"
+)
 assert(terminal.state().stopped_operation ~= nil, "stop should keep stopped operation metadata for the footer")
 _G.nvim_browser_cancelled_response = vim.json.encode({
   id = _G.nvim_browser_stop_pending_request_id,

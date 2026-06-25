@@ -1757,6 +1757,12 @@ local function action_items(opts, report_error)
       end,
     },
     {
+      label = "Follow link at cursor",
+      run = function()
+        return M.follow_point_url_here()
+      end,
+    },
+    {
       label = "Wheel down at cursor",
       run = function()
         return M.wheel_here(120, 0)
@@ -2036,6 +2042,10 @@ end
 
 function M.yank_point_url_here(register)
   return terminal.yank_point_url_here(register or '"')
+end
+
+function M.follow_point_url_here()
+  return terminal.follow_point_url_here()
 end
 
 local function screenshot_slug(value)

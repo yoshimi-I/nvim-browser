@@ -2914,6 +2914,7 @@ function M.open(command)
           return
         end
         state.quiet_request_ids[response.id] = nil
+        local is_navigation_control_response = state.navigation_control_request_ids[response.id] == true
         state.navigation_control_request_ids[response.id] = nil
         local is_protocol_error = response.id == 0 and response.status == "error"
         if is_protocol_error and state.live_refresh_request_id ~= nil then
@@ -2935,7 +2936,8 @@ function M.open(command)
           return
         end
 
-        local should_adaptively_capture = response.status == "ok"
+        local should_adaptively_capture = not is_navigation_control_response
+          and response.status == "ok"
           and page_state_needs_capture(response)
           and (
             state.live_refresh_request_id ~= response.id
@@ -3420,6 +3422,10 @@ end
 local function mark_pending_operation_stopped(pending, reason)
   state.canceled_request_ids[pending.id] = true
   clear_navigation_admission(pending.id)
+  stop_adaptive_capture_timer()
+  if state.live_refresh_request_type == "capture" then
+    clear_in_flight_capture()
+  end
   state.stopped_operation = {
     id = pending.id,
     target = pending.target,
@@ -4159,6 +4165,23 @@ function M.yank_point_url_here(register)
     local ok = pcall(vim.fn.setreg, register, tostring(href), "v")
     if not ok then
       vim.api.nvim_echo({ { "nvim-browser: cursor URL yank failed or no link is under the browser cursor", "WarningMsg" } }, false, {})
+    end
+  end)
+end
+
+function M.follow_point_url_here()
+  return M.point_info_here(function(response)
+    if response.status ~= "ok" or type(response.point) ~= "table" then
+      vim.api.nvim_echo({ { "nvim-browser: cursor link follow failed or no link is under the browser cursor", "WarningMsg" } }, false, {})
+      return
+    end
+    local href = response.point.href
+    if href == nil or href == vim.NIL or href == "" then
+      vim.api.nvim_echo({ { "nvim-browser: cursor link follow failed or no link is under the browser cursor", "WarningMsg" } }, false, {})
+      return
+    end
+    if not M.navigate(tostring(href)) then
+      vim.api.nvim_echo({ { "nvim-browser: cursor link follow failed or no link is under the browser cursor", "WarningMsg" } }, false, {})
     end
   end)
 end
@@ -5085,6 +5108,11 @@ M._test = {
   clear_pending_operation = clear_pending_operation,
   clear_in_flight_capture = function()
     clear_in_flight_capture()
+  end,
+  clear_frame_refresh = function()
+    state.live_refresh_request_id = nil
+    state.live_refresh_request_type = nil
+    stop_adaptive_capture_timer()
   end,
   kitty_cleanup_escape = kitty_cleanup_escape,
   terminal_escape = terminal_escape,
