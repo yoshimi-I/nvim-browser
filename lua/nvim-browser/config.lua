@@ -60,6 +60,7 @@ M.options = {
     enabled = true,
     interval_ms = 1500,
   },
+  auto_refresh_on_write = true,
   keymaps = {
     enabled = false,
     prefix = "<leader>b",

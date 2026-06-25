@@ -209,6 +209,10 @@ so URL, title, scroll, focus, and download metadata stay current without
 constant screenshots. When that lightweight state shows the page changed while
 idle, nvim-browser debounces one full-frame capture so the visible preview does
 not stay stale. Use `:NBrowserRefresh` when you want a fresh frame immediately.
+When the active preview is a Markdown or raster-image wrapper, saving that same
+local source buffer in Neovim also refreshes the wrapper by default. Disable
+that editor-driven preview update with
+`require("nvim-browser").setup({ auto_refresh_on_write = false })`.
 Navigation-like operations and explicit frame captures are guarded by a
 Neovim-side watchdog based on `navigation_timeout_ms`; if Chromium/CDP stalls,
 the preview hard-stops the serve job, ignores late output from that generation,

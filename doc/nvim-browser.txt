@@ -53,6 +53,13 @@ keeps Kitty output and relies on tmux passthrough wrapping. Unknown terminals
 use ANSI as the safe fallback. Override with graphics="ansi", "kitty", or
 "kitty-unicode" when needed.
 
+Markdown and raster-image wrapper previews refresh when the matching local
+source buffer is saved. Disable this with: >
+require("nvim-browser").setup({
+  auto_refresh_on_write = false,
+})
+<
+
 To keep cookies, localStorage, and login state across launched Chromium
 sessions, opt in to a dedicated profile directory. nvim-browser never defaults
 to your normal Chrome profile:

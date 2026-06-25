@@ -3171,6 +3171,85 @@ assert(configured_terminal_opts.live_refresh.enabled == false, "setup should pas
 assert(configured_terminal_opts.live_refresh.interval_ms == 2500, "setup should pass live refresh interval to terminal")
 terminal.configure = original_terminal_configure
 
+_G.nvim_browser_original_terminal_state_for_auto_refresh = terminal.state
+_G.nvim_browser_original_terminal_refresh_for_auto_refresh = terminal.refresh
+_G.nvim_browser_auto_refresh_markdown_path = vim.fn.tempname() .. ".md"
+_G.nvim_browser_auto_refresh_image_path = vim.fn.tempname() .. ".png"
+_G.nvim_browser_auto_refresh_other_path = vim.fn.tempname() .. ".md"
+vim.fn.writefile({ "# Auto refresh" }, _G.nvim_browser_auto_refresh_markdown_path)
+vim.fn.writefile({ "image" }, _G.nvim_browser_auto_refresh_image_path)
+vim.fn.writefile({ "# Other" }, _G.nvim_browser_auto_refresh_other_path)
+_G.nvim_browser_auto_refresh_markdown_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_name(_G.nvim_browser_auto_refresh_markdown_buf, _G.nvim_browser_auto_refresh_markdown_path)
+_G.nvim_browser_auto_refresh_image_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_name(_G.nvim_browser_auto_refresh_image_buf, _G.nvim_browser_auto_refresh_image_path)
+_G.nvim_browser_auto_refresh_other_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_name(_G.nvim_browser_auto_refresh_other_buf, _G.nvim_browser_auto_refresh_other_path)
+_G.nvim_browser_auto_refresh_count = 0
+terminal.refresh = function()
+  _G.nvim_browser_auto_refresh_count = _G.nvim_browser_auto_refresh_count + 1
+  return true
+end
+browser.setup({ auto_refresh_on_write = true, session = { persist = false } })
+terminal.state = function()
+  return {
+    mode = "serve",
+    job_id = 1357,
+    has_buffer = true,
+    current_url = vim.uri_from_fname(_G.nvim_browser_auto_refresh_markdown_path),
+    browser_url = "file:///tmp/nvbrowser-markdown-wrapper.html",
+  }
+end
+vim.api.nvim_exec_autocmds("BufWritePost", { buffer = _G.nvim_browser_auto_refresh_markdown_buf, modeline = false })
+assert(_G.nvim_browser_auto_refresh_count == 1, "saving the active Markdown source should refresh the preview")
+vim.api.nvim_exec_autocmds("BufWritePost", { buffer = _G.nvim_browser_auto_refresh_other_buf, modeline = false })
+assert(_G.nvim_browser_auto_refresh_count == 1, "saving an unrelated buffer should not refresh the preview")
+terminal.state = function()
+  return {
+    mode = "serve",
+    job_id = 1357,
+    has_buffer = true,
+    current_url = vim.uri_from_fname(_G.nvim_browser_auto_refresh_image_path),
+    browser_url = "file:///tmp/nvbrowser-image-wrapper.html",
+  }
+end
+vim.api.nvim_exec_autocmds("BufWritePost", { buffer = _G.nvim_browser_auto_refresh_image_buf, modeline = false })
+assert(_G.nvim_browser_auto_refresh_count == 2, "saving the active image source should refresh the preview")
+terminal.state = function()
+  return {
+    mode = "serve",
+    job_id = 1357,
+    has_buffer = true,
+    current_url = "https://example.com",
+  }
+end
+vim.api.nvim_exec_autocmds("BufWritePost", { buffer = _G.nvim_browser_auto_refresh_markdown_buf, modeline = false })
+assert(_G.nvim_browser_auto_refresh_count == 2, "saving a local file should not refresh direct web pages")
+terminal.state = function()
+  return {
+    mode = "serve",
+    job_id = nil,
+    has_buffer = false,
+    current_url = vim.uri_from_fname(_G.nvim_browser_auto_refresh_markdown_path),
+  }
+end
+vim.api.nvim_exec_autocmds("BufWritePost", { buffer = _G.nvim_browser_auto_refresh_markdown_buf, modeline = false })
+assert(_G.nvim_browser_auto_refresh_count == 2, "saving should not refresh when no serve session is active")
+browser.setup({ auto_refresh_on_write = false, session = { persist = false } })
+terminal.state = function()
+  return {
+    mode = "serve",
+    job_id = 1357,
+    has_buffer = true,
+    current_url = vim.uri_from_fname(_G.nvim_browser_auto_refresh_markdown_path),
+  }
+end
+vim.api.nvim_exec_autocmds("BufWritePost", { buffer = _G.nvim_browser_auto_refresh_markdown_buf, modeline = false })
+assert(_G.nvim_browser_auto_refresh_count == 2, "disabled auto-refresh-on-write should not refresh matching previews")
+terminal.state = _G.nvim_browser_original_terminal_state_for_auto_refresh
+terminal.refresh = _G.nvim_browser_original_terminal_refresh_for_auto_refresh
+browser.setup({ auto_refresh_on_write = true, session = { persist = false } })
+
 browser.open = original_open
 browser.navigate = original_navigate
 

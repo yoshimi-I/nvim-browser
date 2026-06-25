@@ -394,6 +394,69 @@ local function guided_calibration_matches_viewport(sample)
     and tonumber(sample.cell_height_px) == tonumber(viewport.cell_height_px)
 end
 
+local function is_auto_refresh_preview_path(path)
+  local extension = vim.fn.fnamemodify(path or "", ":e"):lower()
+  return extension == "md"
+    or extension == "markdown"
+    or extension == "png"
+    or extension == "jpg"
+    or extension == "jpeg"
+    or extension == "gif"
+    or extension == "webp"
+end
+
+local function normalize_local_file_path(path)
+  if path == nil or path == "" then
+    return nil
+  end
+  path = vim.fn.fnamemodify(path, ":p")
+  local uv = vim.uv or vim.loop
+  local realpath = uv and uv.fs_realpath(path) or nil
+  return realpath or path
+end
+
+local function source_path_from_file_url(url)
+  if type(url) ~= "string" or not url:match("^file://") then
+    return nil
+  end
+  local ok, path = pcall(vim.uri_to_fname, url)
+  if not ok or path == nil or path == "" then
+    return nil
+  end
+  return normalize_local_file_path(path)
+end
+
+local function setup_auto_refresh_on_write()
+  local group = vim.api.nvim_create_augroup("NBrowserAutoRefreshOnWrite", { clear = true })
+  if M.config.auto_refresh_on_write == false then
+    return
+  end
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    group = group,
+    callback = function(args)
+      local written_path = args.file
+      if written_path == nil or written_path == "" then
+        written_path = vim.api.nvim_buf_get_name(args.buf)
+      end
+      if written_path == nil or written_path == "" then
+        return
+      end
+      written_path = normalize_local_file_path(written_path)
+      if not is_auto_refresh_preview_path(written_path) then
+        return
+      end
+      local terminal_state = terminal.state()
+      if terminal_state.mode ~= "serve" or terminal_state.job_id == nil or terminal_state.has_buffer ~= true then
+        return
+      end
+      if source_path_from_file_url(terminal_state.current_url) ~= written_path then
+        return
+      end
+      terminal.refresh()
+    end,
+  })
+end
+
 function M.setup(opts)
   opts = opts or {}
   local explicit_viewport = type(opts.viewport) == "table"
@@ -437,6 +500,7 @@ function M.setup(opts)
     M.config.guided_calibration = nil
   end
   keymaps.setup(M, M.config.keymaps or {})
+  setup_auto_refresh_on_write()
 end
 
 local function resolve_target(target)
