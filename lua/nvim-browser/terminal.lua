@@ -3933,20 +3933,27 @@ function M.wheel_mouse(delta_y, delta_x, mousepos)
   return M.wheel_point(point.x, point.y, delta_y, delta_x)
 end
 
+local function add_hint_dom_epoch_precondition(request)
+  if state.rendered_frame_dom_epoch ~= nil then
+    request.dom_epoch = state.rendered_frame_dom_epoch
+  end
+  return request
+end
+
 local function send_click_hint_request(hint)
   cancel_in_flight_capture()
-  return send_pending_request({
+  return send_pending_request(add_hint_dom_epoch_precondition({
     type = "click_hint",
     hint_id = hint.id,
-  }, state.current_url or state.last_target or "click", "click")
+  }), state.current_url or state.last_target or "click", "click")
 end
 
 local function send_right_click_hint_request(hint)
   cancel_in_flight_capture()
-  return send_pending_request({
+  return send_pending_request(add_hint_dom_epoch_precondition({
     type = "right_click_hint",
     hint_id = hint.id,
-  }, state.current_url or state.last_target or "right-click", "right-click")
+  }), state.current_url or state.last_target or "right-click", "right-click")
 end
 
 local function hint_opens_new_target(hint)
@@ -4010,10 +4017,10 @@ function M.hover_hint(id)
   local hint = find_hint(state.element_hints, id)
   if hint ~= nil then
     cancel_in_flight_capture()
-    return send_pending_request({
+    return send_pending_request(add_hint_dom_epoch_precondition({
       type = "hover_hint",
       hint_id = hint.id,
-    }, state.current_url or state.last_target or "hover", "hover")
+    }), state.current_url or state.last_target or "hover", "hover")
   end
   return false
 end
@@ -4030,10 +4037,10 @@ function M.focus_hint(id)
     return false
   end
   cancel_in_flight_capture()
-  return send_pending_request({
+  return send_pending_request(add_hint_dom_epoch_precondition({
     type = "focus_hint",
     hint_id = hint.id,
-  }, state.current_url or state.last_target or "focus", "focus")
+  }), state.current_url or state.last_target or "focus", "focus")
 end
 
 function M.follow_hint(id)
@@ -4100,6 +4107,7 @@ function M.type_hint(id, text, opts)
     text = text,
     submit = opts.submit == true,
   }
+  add_hint_dom_epoch_precondition(request)
   local label = opts.submit == true and "submit" or "typing"
   cancel_in_flight_capture()
   return send_pending_request(request, state.current_url or state.last_target or label, label)
@@ -4120,11 +4128,11 @@ function M.select_hint(id, choice)
     return false
   end
   cancel_in_flight_capture()
-  return send_pending_request({
+  return send_pending_request(add_hint_dom_epoch_precondition({
     type = "select_hint",
     hint_id = hint.id,
     choice = choice,
-  }, state.current_url or state.last_target or "select", "select")
+  }), state.current_url or state.last_target or "select", "select")
 end
 
 function M.upload_hint(id, paths)
@@ -4152,11 +4160,11 @@ function M.upload_hint(id, paths)
     return false
   end
   cancel_in_flight_capture()
-  return send_pending_request({
+  return send_pending_request(add_hint_dom_epoch_precondition({
     type = "upload_hint",
     hint_id = hint.id,
     paths = normalized,
-  }, state.current_url or state.last_target or "upload", "upload")
+  }), state.current_url or state.last_target or "upload", "upload")
 end
 
 function M.toggle_hint(id)
@@ -4171,10 +4179,10 @@ function M.toggle_hint(id)
     return false
   end
   cancel_in_flight_capture()
-  return send_pending_request({
+  return send_pending_request(add_hint_dom_epoch_precondition({
     type = "toggle_hint",
     hint_id = hint.id,
-  }, state.current_url or state.last_target or "toggle", "toggle")
+  }), state.current_url or state.last_target or "toggle", "toggle")
 end
 
 function M.toggle()

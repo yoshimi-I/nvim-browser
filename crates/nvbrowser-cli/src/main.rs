@@ -27,7 +27,7 @@ use nvbrowser_core::{
 };
 use serde::{Deserialize, Serialize};
 
-const SERVE_PROTOCOL_VERSION: u32 = 21;
+const SERVE_PROTOCOL_VERSION: u32 = 22;
 
 #[derive(Debug, Parser)]
 #[command(name = "nvbrowser")]
@@ -426,32 +426,46 @@ enum ServeRequest {
     ClickHint {
         id: u64,
         hint_id: u32,
+        #[serde(default)]
+        dom_epoch: Option<u64>,
     },
     RightClickHint {
         id: u64,
         hint_id: u32,
+        #[serde(default)]
+        dom_epoch: Option<u64>,
     },
     FocusHint {
         id: u64,
         hint_id: u32,
+        #[serde(default)]
+        dom_epoch: Option<u64>,
     },
     HoverHint {
         id: u64,
         hint_id: u32,
+        #[serde(default)]
+        dom_epoch: Option<u64>,
     },
     SelectHint {
         id: u64,
         hint_id: u32,
         choice: String,
+        #[serde(default)]
+        dom_epoch: Option<u64>,
     },
     UploadHint {
         id: u64,
         hint_id: u32,
         paths: Vec<PathBuf>,
+        #[serde(default)]
+        dom_epoch: Option<u64>,
     },
     ToggleHint {
         id: u64,
         hint_id: u32,
+        #[serde(default)]
+        dom_epoch: Option<u64>,
     },
     SubmitFocused {
         id: u64,
@@ -468,6 +482,8 @@ enum ServeRequest {
         hint_id: u32,
         text: String,
         submit: bool,
+        #[serde(default)]
+        dom_epoch: Option<u64>,
     },
     FindText {
         id: u64,
@@ -998,6 +1014,27 @@ impl<R: Renderer> ServeRuntime<R> {
             .flatten()
     }
 
+    fn ensure_hint_dom_epoch_current(
+        &mut self,
+        expected: Option<u64>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(expected) = expected else {
+            return Ok(());
+        };
+        let current = self.renderer.dom_epoch(DomEpochRequest::new(
+            self.session.id(),
+            self.session.active_page_id(),
+        ))?;
+        if current == Some(expected) {
+            return Ok(());
+        }
+        Err(RendererError::new(
+            RendererErrorKind::InvalidState,
+            "hint is stale; refresh hints before acting",
+        )
+        .into())
+    }
+
     fn try_handle(
         &mut self,
         request: ServeRequest,
@@ -1184,7 +1221,10 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload(false).map(Some)
             }
-            ServeRequest::ClickHint { hint_id, .. } => {
+            ServeRequest::ClickHint {
+                hint_id, dom_epoch, ..
+            } => {
+                self.ensure_hint_dom_epoch_current(dom_epoch)?;
                 self.renderer.click_hint(ClickHintRequest::new(
                     self.session.id(),
                     self.session.active_page_id(),
@@ -1193,7 +1233,10 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload(true).map(Some)
             }
-            ServeRequest::RightClickHint { hint_id, .. } => {
+            ServeRequest::RightClickHint {
+                hint_id, dom_epoch, ..
+            } => {
+                self.ensure_hint_dom_epoch_current(dom_epoch)?;
                 self.renderer.right_click_hint(RightClickHintRequest::new(
                     self.session.id(),
                     self.session.active_page_id(),
@@ -1202,7 +1245,10 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload(true).map(Some)
             }
-            ServeRequest::FocusHint { hint_id, .. } => {
+            ServeRequest::FocusHint {
+                hint_id, dom_epoch, ..
+            } => {
+                self.ensure_hint_dom_epoch_current(dom_epoch)?;
                 self.renderer.focus_hint(FocusHintRequest::new(
                     self.session.id(),
                     self.session.active_page_id(),
@@ -1211,7 +1257,10 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload(true).map(Some)
             }
-            ServeRequest::HoverHint { hint_id, .. } => {
+            ServeRequest::HoverHint {
+                hint_id, dom_epoch, ..
+            } => {
+                self.ensure_hint_dom_epoch_current(dom_epoch)?;
                 self.renderer.hover_hint(HoverHintRequest::new(
                     self.session.id(),
                     self.session.active_page_id(),
@@ -1221,8 +1270,12 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.capture_payload(false).map(Some)
             }
             ServeRequest::SelectHint {
-                hint_id, choice, ..
+                hint_id,
+                choice,
+                dom_epoch,
+                ..
             } => {
+                self.ensure_hint_dom_epoch_current(dom_epoch)?;
                 self.renderer.select_hint(SelectHintRequest::new(
                     self.session.id(),
                     self.session.active_page_id(),
@@ -1232,7 +1285,13 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload(true).map(Some)
             }
-            ServeRequest::UploadHint { hint_id, paths, .. } => {
+            ServeRequest::UploadHint {
+                hint_id,
+                paths,
+                dom_epoch,
+                ..
+            } => {
+                self.ensure_hint_dom_epoch_current(dom_epoch)?;
                 let paths = canonicalize_upload_paths(paths)?;
                 self.renderer.upload_hint(UploadHintRequest::new(
                     self.session.id(),
@@ -1243,7 +1302,10 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload(true).map(Some)
             }
-            ServeRequest::ToggleHint { hint_id, .. } => {
+            ServeRequest::ToggleHint {
+                hint_id, dom_epoch, ..
+            } => {
+                self.ensure_hint_dom_epoch_current(dom_epoch)?;
                 self.renderer.toggle_hint(ToggleHintRequest::new(
                     self.session.id(),
                     self.session.active_page_id(),
@@ -1310,8 +1372,10 @@ impl<R: Renderer> ServeRuntime<R> {
                 hint_id,
                 text,
                 submit,
+                dom_epoch,
                 ..
             } => {
+                self.ensure_hint_dom_epoch_current(dom_epoch)?;
                 self.renderer.focus_hint(FocusHintRequest::new(
                     self.session.id(),
                     self.session.active_page_id(),
@@ -3101,22 +3165,38 @@ mod tests {
         assert_eq!(
             parse_serve_request(r##"{"type":"click_hint","id":9,"hint_id":2}"##)
                 .expect("click hint request should parse"),
-            ServeRequest::ClickHint { id: 9, hint_id: 2 }
+            ServeRequest::ClickHint {
+                id: 9,
+                hint_id: 2,
+                dom_epoch: None,
+            }
         );
         assert_eq!(
             parse_serve_request(r##"{"type":"right_click_hint","id":17,"hint_id":2}"##)
                 .expect("right click hint request should parse"),
-            ServeRequest::RightClickHint { id: 17, hint_id: 2 }
+            ServeRequest::RightClickHint {
+                id: 17,
+                hint_id: 2,
+                dom_epoch: None,
+            }
         );
         assert_eq!(
             parse_serve_request(r##"{"type":"hover_hint","id":10,"hint_id":3}"##)
                 .expect("hover hint request should parse"),
-            ServeRequest::HoverHint { id: 10, hint_id: 3 }
+            ServeRequest::HoverHint {
+                id: 10,
+                hint_id: 3,
+                dom_epoch: None,
+            }
         );
         assert_eq!(
             parse_serve_request(r##"{"type":"focus_hint","id":13,"hint_id":5}"##)
                 .expect("focus hint request should parse"),
-            ServeRequest::FocusHint { id: 13, hint_id: 5 }
+            ServeRequest::FocusHint {
+                id: 13,
+                hint_id: 5,
+                dom_epoch: None,
+            }
         );
         assert_eq!(
             parse_serve_request(
@@ -3127,12 +3207,17 @@ mod tests {
                 id: 11,
                 hint_id: 4,
                 choice: "Canada".to_string(),
+                dom_epoch: None,
             }
         );
         assert_eq!(
             parse_serve_request(r##"{"type":"toggle_hint","id":12,"hint_id":7}"##)
                 .expect("toggle hint request should parse"),
-            ServeRequest::ToggleHint { id: 12, hint_id: 7 }
+            ServeRequest::ToggleHint {
+                id: 12,
+                hint_id: 7,
+                dom_epoch: None,
+            }
         );
         assert_eq!(
             parse_serve_request(
@@ -3146,6 +3231,7 @@ mod tests {
                     PathBuf::from("/tmp/example.txt"),
                     PathBuf::from("/tmp/file with spaces.txt"),
                 ],
+                dom_epoch: None,
             }
         );
         assert_eq!(
@@ -3180,6 +3266,23 @@ mod tests {
                 hint_id: 2,
                 text: "hello \"world\"".to_string(),
                 submit: true,
+                dom_epoch: None,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_serve_request_accepts_hint_dom_epoch_precondition() {
+        assert_eq!(
+            parse_serve_request(
+                r##"{"type":"select_hint","id":1,"hint_id":4,"choice":"Canada","dom_epoch":99}"##
+            )
+            .expect("select hint request with dom epoch should parse"),
+            ServeRequest::SelectHint {
+                id: 1,
+                hint_id: 4,
+                choice: "Canada".to_string(),
+                dom_epoch: Some(99),
             }
         );
     }
@@ -3715,7 +3818,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":21,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":22,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -5513,7 +5616,11 @@ mod tests {
             id: 1,
             url: "https://example.com".to_string(),
         });
-        let response = runtime.handle(ServeRequest::HoverHint { id: 2, hint_id: 2 });
+        let response = runtime.handle(ServeRequest::HoverHint {
+            id: 2,
+            hint_id: 2,
+            dom_epoch: None,
+        });
 
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_some());
@@ -5560,6 +5667,7 @@ mod tests {
         let response = runtime.handle(ServeRequest::HoverHint {
             id: 2,
             hint_id: 404,
+            dom_epoch: None,
         });
 
         assert_eq!(response.status, ServeStatus::Error);
@@ -5925,7 +6033,11 @@ mod tests {
             id: 1,
             url: "https://example.com".to_string(),
         });
-        let response = runtime.handle(ServeRequest::ClickHint { id: 2, hint_id: 2 });
+        let response = runtime.handle(ServeRequest::ClickHint {
+            id: 2,
+            hint_id: 2,
+            dom_epoch: None,
+        });
 
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_some());
@@ -5943,6 +6055,227 @@ mod tests {
                 "hints"
             ]
         );
+    }
+
+    #[test]
+    fn serve_runtime_rejects_stale_click_hint_before_dispatch() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        runtime.renderer.next_dom_epoch = Some(42);
+        let response = runtime.handle(ServeRequest::ClickHint {
+            id: 2,
+            hint_id: 7,
+            dom_epoch: Some(41),
+        });
+
+        assert_eq!(response.status, ServeStatus::Error);
+        assert!(
+            response
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("hint is stale"),
+            "stale hint should produce a clear error"
+        );
+        assert!(runtime.renderer.clicked_hints.is_empty());
+        assert_eq!(runtime.renderer.operations, vec!["capture", "hints"]);
+        assert_eq!(runtime.renderer.captures, 1);
+    }
+
+    #[test]
+    fn serve_runtime_rejects_stale_hint_action_variants_before_dispatch() {
+        fn navigated_runtime() -> ServeRuntime<FakeRenderer> {
+            let mut runtime = ServeRuntime::new(
+                FakeRenderer::new(),
+                ServeOptions {
+                    output: ImageOutput::Ansi,
+                    columns: 1,
+                    rows: 1,
+                    viewport: Viewport::new(10, 10),
+                    initial_url: None,
+                    markdown_preview: None,
+                    cdp_ws_url: None,
+                    user_data_dir: None,
+                    download_dir: None,
+                    navigation_timeout_ms: None,
+                },
+            );
+            runtime.handle(ServeRequest::Navigate {
+                id: 1,
+                url: "https://example.com".to_string(),
+            });
+            runtime.renderer.next_dom_epoch = Some(42);
+            runtime
+        }
+
+        let cases = vec![
+            (
+                "right_click_hint",
+                ServeRequest::RightClickHint {
+                    id: 2,
+                    hint_id: 7,
+                    dom_epoch: Some(41),
+                },
+            ),
+            (
+                "focus_hint",
+                ServeRequest::FocusHint {
+                    id: 2,
+                    hint_id: 7,
+                    dom_epoch: Some(41),
+                },
+            ),
+            (
+                "hover_hint",
+                ServeRequest::HoverHint {
+                    id: 2,
+                    hint_id: 7,
+                    dom_epoch: Some(41),
+                },
+            ),
+            (
+                "select_hint",
+                ServeRequest::SelectHint {
+                    id: 2,
+                    hint_id: 7,
+                    choice: "Canada".to_string(),
+                    dom_epoch: Some(41),
+                },
+            ),
+            (
+                "toggle_hint",
+                ServeRequest::ToggleHint {
+                    id: 2,
+                    hint_id: 7,
+                    dom_epoch: Some(41),
+                },
+            ),
+            (
+                "upload_hint",
+                ServeRequest::UploadHint {
+                    id: 2,
+                    hint_id: 7,
+                    paths: vec![PathBuf::from("/tmp/nvbrowser-missing-stale-upload.txt")],
+                    dom_epoch: Some(41),
+                },
+            ),
+        ];
+
+        for (name, request) in cases {
+            let mut runtime = navigated_runtime();
+            let response = runtime.handle(request);
+
+            assert_eq!(response.status, ServeStatus::Error, "{name}");
+            assert!(
+                response
+                    .error
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("hint is stale"),
+                "{name} should produce the stale hint error"
+            );
+            assert_eq!(
+                runtime.renderer.operations,
+                vec!["capture", "hints"],
+                "{name} should not dispatch the hint action, settle, or capture"
+            );
+            assert_eq!(runtime.renderer.captures, 1, "{name}");
+        }
+    }
+
+    #[test]
+    fn serve_runtime_allows_click_hint_when_dom_epoch_matches() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        runtime.renderer.next_dom_epoch = Some(42);
+        let response = runtime.handle(ServeRequest::ClickHint {
+            id: 2,
+            hint_id: 7,
+            dom_epoch: Some(42),
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert_eq!(runtime.renderer.clicked_hints, vec![7]);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "click_hint",
+                "settle",
+                "capture",
+                "hints"
+            ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_preserves_legacy_click_hint_without_dom_epoch() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        runtime.renderer.next_dom_epoch = Some(42);
+        let response = runtime.handle(ServeRequest::ClickHint {
+            id: 2,
+            hint_id: 7,
+            dom_epoch: None,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert_eq!(runtime.renderer.clicked_hints, vec![7]);
     }
 
     #[test]
@@ -5967,7 +6300,11 @@ mod tests {
             id: 1,
             url: "https://example.com".to_string(),
         });
-        let response = runtime.handle(ServeRequest::RightClickHint { id: 2, hint_id: 2 });
+        let response = runtime.handle(ServeRequest::RightClickHint {
+            id: 2,
+            hint_id: 2,
+            dom_epoch: None,
+        });
 
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_some());
@@ -6015,6 +6352,7 @@ mod tests {
         let response = runtime.handle(ServeRequest::ClickHint {
             id: 2,
             hint_id: 404,
+            dom_epoch: None,
         });
 
         assert_eq!(response.status, ServeStatus::Error);
@@ -6054,6 +6392,7 @@ mod tests {
         let response = runtime.handle(ServeRequest::RightClickHint {
             id: 2,
             hint_id: 404,
+            dom_epoch: None,
         });
 
         assert_eq!(response.status, ServeStatus::Error);
@@ -6089,7 +6428,11 @@ mod tests {
             id: 1,
             url: "https://example.com".to_string(),
         });
-        let response = runtime.handle(ServeRequest::FocusHint { id: 2, hint_id: 3 });
+        let response = runtime.handle(ServeRequest::FocusHint {
+            id: 2,
+            hint_id: 3,
+            dom_epoch: None,
+        });
 
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_some());
@@ -6134,6 +6477,7 @@ mod tests {
         let response = runtime.handle(ServeRequest::FocusHint {
             id: 2,
             hint_id: 404,
+            dom_epoch: None,
         });
 
         assert_eq!(response.status, ServeStatus::Error);
@@ -6172,6 +6516,7 @@ mod tests {
             hint_id: 2,
             text: "hello".to_string(),
             submit: true,
+            dom_epoch: None,
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
@@ -6195,6 +6540,52 @@ mod tests {
                 "hints"
             ]
         );
+    }
+
+    #[test]
+    fn serve_runtime_rejects_stale_type_hint_before_focus_or_text() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        runtime.renderer.next_dom_epoch = Some(9);
+        let response = runtime.handle(ServeRequest::TypeHint {
+            id: 2,
+            hint_id: 3,
+            text: "hello".to_string(),
+            submit: true,
+            dom_epoch: Some(8),
+        });
+
+        assert_eq!(response.status, ServeStatus::Error);
+        assert!(
+            response
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("hint is stale"),
+            "stale hint should produce a clear error"
+        );
+        assert!(runtime.renderer.focused_hints.is_empty());
+        assert!(runtime.renderer.text_inputs.is_empty());
+        assert!(runtime.renderer.key_presses.is_empty());
+        assert_eq!(runtime.renderer.operations, vec!["capture", "hints"]);
     }
 
     #[test]
@@ -6226,6 +6617,7 @@ mod tests {
             hint_id: 404,
             text: "hello".to_string(),
             submit: true,
+            dom_epoch: None,
         });
 
         assert_eq!(response.status, ServeStatus::Error);
@@ -6266,6 +6658,7 @@ mod tests {
             id: 2,
             hint_id: 3,
             choice: "Canada".to_string(),
+            dom_epoch: None,
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
@@ -6315,6 +6708,7 @@ mod tests {
             id: 2,
             hint_id: 404,
             choice: "Canada".to_string(),
+            dom_epoch: None,
         });
 
         assert_eq!(response.status, ServeStatus::Error);
@@ -6351,7 +6745,11 @@ mod tests {
             id: 1,
             url: "https://example.com".to_string(),
         });
-        let response = runtime.handle(ServeRequest::ToggleHint { id: 2, hint_id: 3 });
+        let response = runtime.handle(ServeRequest::ToggleHint {
+            id: 2,
+            hint_id: 3,
+            dom_epoch: None,
+        });
 
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_some());
@@ -6396,6 +6794,7 @@ mod tests {
         let response = runtime.handle(ServeRequest::ToggleHint {
             id: 2,
             hint_id: 404,
+            dom_epoch: None,
         });
 
         assert_eq!(response.status, ServeStatus::Error);
@@ -6434,6 +6833,7 @@ mod tests {
             id: 2,
             hint_id: 8,
             paths: vec![file.path().to_path_buf()],
+            dom_epoch: None,
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
@@ -6483,6 +6883,7 @@ mod tests {
             id: 2,
             hint_id: 8,
             paths: vec![missing.clone()],
+            dom_epoch: None,
         });
 
         assert_eq!(response.status, ServeStatus::Error);

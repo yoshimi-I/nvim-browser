@@ -3492,6 +3492,7 @@ local hints_response = vim.json.encode({
   status = "ok",
   payload = "frame",
   url = "https://example.com",
+  dom_epoch = 77,
   hints = {
     {
       id = 1,
@@ -3674,7 +3675,7 @@ serve_stdout(nil, { vim.json.encode({
   url = "https://example.com/docs",
   title = "Stopped Page",
   runtime = {
-    protocol_version = 21,
+    protocol_version = 22,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",
@@ -3941,6 +3942,7 @@ local fallback_click_point_seen = false
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "click_hint" and decoded.hint_id == 2 then
+    assert(decoded.dom_epoch == 77, "follow fallback click_hint should send the rendered frame DOM epoch")
     fallback_click_hint_seen = true
   end
   if ok and decoded.type == "click_point" then
@@ -3981,6 +3983,7 @@ local direct_click_point_seen = false
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "click_hint" and decoded.hint_id == 2 then
+    assert(decoded.dom_epoch == 77, "click_hint should send the rendered frame DOM epoch")
     direct_click_hint_seen = true
   end
   if ok and decoded.type == "click_point" then
@@ -4032,6 +4035,7 @@ direct_right_click_point_seen = false
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "right_click_hint" and decoded.hint_id == 2 then
+    assert(decoded.dom_epoch == 77, "right_click_hint should send the rendered frame DOM epoch")
     direct_right_click_hint_seen = true
   end
   if ok and decoded.type == "right_click_point" then
@@ -4078,6 +4082,7 @@ local focus_point_seen = false
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "focus_hint" and decoded.hint_id == 2 then
+    assert(decoded.dom_epoch == 77, "focus_hint should send the rendered frame DOM epoch")
     focus_hint_seen = true
   end
   if ok and decoded.type == "focus_point" then
@@ -4113,6 +4118,7 @@ local type_point_seen = false
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "type_hint" and decoded.hint_id == 2 and decoded.text == "hello" and decoded.submit == true then
+    assert(decoded.dom_epoch == 77, "type_hint should send the rendered frame DOM epoch")
     type_hint_seen = true
   end
   if ok and decoded.type == "type_point" then
@@ -4167,6 +4173,7 @@ for _, request in ipairs(sent_requests) do
     and decoded.hint_id == 9
     and decoded.paths[1] == "/tmp/file with spaces.txt"
   then
+    assert(decoded.dom_epoch == 77, "upload_hint should send the rendered frame DOM epoch")
     upload_hint_seen = true
   end
   if ok and decoded.type == "type_point" then
@@ -4248,6 +4255,7 @@ local draft_type_point_seen = false
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "type_hint" and decoded.hint_id == 2 and decoded.text == "draft" and decoded.submit == false then
+    assert(decoded.dom_epoch == 77, "non-submit type_hint should send the rendered frame DOM epoch")
     draft_type_hint_seen = true
   end
   if ok and decoded.type == "type_point" then
@@ -4283,6 +4291,7 @@ local select_type_point_seen = false
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "select_hint" and decoded.hint_id == 2 and decoded.choice == "Canada" then
+    assert(decoded.dom_epoch == 77, "select_hint should send the rendered frame DOM epoch")
     select_hint_seen = true
   end
   if ok and decoded.type == "type_point" then
@@ -4323,6 +4332,7 @@ local toggle_type_point_seen = false
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "toggle_hint" and decoded.hint_id == 2 then
+    assert(decoded.dom_epoch == 77, "toggle_hint should send the rendered frame DOM epoch")
     toggle_hint_seen = true
   end
   if ok and decoded.type == "type_point" then
@@ -4361,6 +4371,7 @@ local hover_point_seen = false
 for _, request in ipairs(sent_requests) do
   local ok, decoded = pcall(vim.json.decode, request.payload)
   if ok and decoded.type == "hover_hint" and decoded.hint_id == 2 then
+    assert(decoded.dom_epoch == 77, "hover_hint should send the rendered frame DOM epoch")
     hover_hint_seen = true
   end
   if ok and decoded.type == "hover_point" then
