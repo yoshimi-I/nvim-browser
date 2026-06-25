@@ -3048,6 +3048,45 @@ assert(image_state.last_target == "/tmp/image.png", "serve image reuse should up
 assert(image_navigate_seen, "serve image reuse should send a navigate_image request for the image preview target")
 terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
 
+terminal._test.apply_serve_response({
+  id = 30001,
+  status = "ok",
+  payload = "image wrapper frame",
+  url = "file:///tmp/nvbrowser-image-image-wrapper.html",
+  display_url = "file:///tmp/image.png",
+  title = "image.png",
+})
+sent_requests = {}
+assert(terminal.refresh() == true, "image preview refresh should regenerate the wrapper source")
+_G.nvim_browser_image_refresh_request = last_request_of_type("navigate_image")
+assert(
+  _G.nvim_browser_image_refresh_request ~= nil
+    and _G.nvim_browser_image_refresh_request.path == "/tmp/image.png"
+    and _G.nvim_browser_image_refresh_request.fit == "contain",
+  "image preview refresh should send navigate_image with the original path and fit"
+)
+assert(last_request_of_type("capture") == nil, "image preview refresh should not recapture the stale wrapper")
+terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
+
+sent_requests = {}
+assert(
+  terminal.navigate("https://example.com/pending-from-image") == true,
+  "test setup should send a pending navigation from an image preview"
+)
+_G.nvim_browser_pending_from_image_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(_G.nvim_browser_pending_from_image_id ~= nil, "pending navigation from image preview should be tracked")
+sent_requests = {}
+assert(terminal.refresh() == true, "refresh during pending navigation should preserve existing refresh behavior")
+assert(
+  terminal.state().pending_operation and terminal.state().pending_operation.id == _G.nvim_browser_pending_from_image_id,
+  "image preview refresh should not replace a pending navigation"
+)
+assert(
+  last_request_of_type("navigate_image") == nil,
+  "image preview refresh should not regenerate the wrapper while another navigation is pending"
+)
+terminal._test.clear_pending_operation(_G.nvim_browser_pending_from_image_id)
+
 sent_requests = {}
 assert(terminal.navigate("https://example.com/older") == true, "test setup should send an older navigation")
 local older_navigation_id = terminal.state().pending_operation and terminal.state().pending_operation.id
@@ -3581,6 +3620,24 @@ assert(markdown_state.bufnr == served_bufnr, "serve Markdown reuse should keep t
 assert(markdown_state.job_id == first_state.job_id, "serve Markdown reuse should keep the same backend job")
 assert(markdown_state.last_target == "/tmp/README.md", "serve Markdown reuse should update the remembered target")
 assert(_G.nvim_browser_markdown_navigate_seen, "serve Markdown reuse should send a navigate_markdown request for the Markdown preview target")
+terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
+
+terminal._test.apply_serve_response({
+  id = 30002,
+  status = "ok",
+  payload = "markdown wrapper frame",
+  url = "file:///tmp/nvbrowser-README-wrapper.html",
+  display_url = "file:///tmp/README.md",
+  title = "README",
+})
+sent_requests = {}
+assert(terminal.refresh() == true, "Markdown preview refresh should regenerate the wrapper source")
+_G.nvim_browser_markdown_refresh_request = last_request_of_type("navigate_markdown")
+assert(
+  _G.nvim_browser_markdown_refresh_request ~= nil and _G.nvim_browser_markdown_refresh_request.path == "/tmp/README.md",
+  "Markdown preview refresh should send navigate_markdown with the original path"
+)
+assert(last_request_of_type("capture") == nil, "Markdown preview refresh should not recapture the stale wrapper")
 terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
 
 sent_requests = {}

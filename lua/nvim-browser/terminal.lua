@@ -2910,6 +2910,18 @@ function M.refresh()
   if state.mode ~= "serve" or state.job_id == nil then
     return restart_stopped_serve()
   end
+  local target = state.current_url or state.last_target
+  local wrapper_request = wrapper_navigation_request_for_url(target)
+  if wrapper_request ~= nil then
+    if state.pending_operation ~= nil then
+      return send_capture_request()
+    end
+    if state.live_refresh_request_id ~= nil then
+      return false
+    end
+    request_resize()
+    return send_pending_request(wrapper_request, target)
+  end
   return send_capture_request()
 end
 
