@@ -921,6 +921,7 @@ gc       click browser viewport at cursor
 gd       double-click browser viewport at cursor
 gr       right-click browser viewport at cursor
 gh       hover browser viewport at cursor
+gf       follow link URL under cursor in the active preview
 <Esc> stop pending load
 <LeftMouse>        click browser viewport
 <2-LeftMouse>      double-click browser viewport
@@ -943,6 +944,7 @@ require("nvim-browser").setup({
       click_here = "gc",
       double_click_here = "gd",
       right_click_here = "gr",
+      follow_point_url_here = "gf",
       left_click = false,
       double_click = "<2-LeftMouse>",
       right_click_mouse = "<RightMouse>",

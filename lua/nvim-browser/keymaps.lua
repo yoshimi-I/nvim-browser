@@ -297,6 +297,12 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.hover_here()
   end, "nvim-browser: hover cursor", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "follow_point_url_here", "gf"), function()
+    if browser.follow_point_url_here ~= nil then
+      browser.follow_point_url_here()
+    end
+  end, "nvim-browser: follow link at cursor", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "type_hint_mode", "t"), function()
     browser.type_hint_mode(input)
   end, "nvim-browser: type into hint", buffer_opts)

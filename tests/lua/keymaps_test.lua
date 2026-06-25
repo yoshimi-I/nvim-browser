@@ -156,6 +156,9 @@ local browser = {
   hover_here = function()
     table.insert(calls, "hover_here")
   end,
+  follow_point_url_here = function()
+    table.insert(calls, "follow_point_url_here")
+  end,
   stop = function()
     table.insert(calls, "stop")
   end,
@@ -370,6 +373,7 @@ assert_buffer_mapping(first_bufnr, "<Right>", "buffer-local controls should inst
 assert_buffer_mapping(first_bufnr, "gc", "buffer-local controls should install cursor click mapping")
 assert_buffer_mapping(first_bufnr, "gd", "buffer-local controls should install cursor double-click mapping")
 assert_buffer_mapping(first_bufnr, "gh", "buffer-local controls should install cursor hover mapping")
+assert_buffer_mapping(first_bufnr, "gf", "buffer-local controls should install cursor link follow mapping")
 assert_buffer_mapping(first_bufnr, "q", "buffer-local controls should install close mapping")
 assert_buffer_mapping(first_bufnr, "<LeftMouse>", "buffer-local controls should install left-click mouse mapping")
 assert_buffer_mapping(first_bufnr, "<2-LeftMouse>", "buffer-local controls should install double-click mouse mapping")
@@ -426,6 +430,7 @@ trigger_buffer(first_bufnr, "gc")
 trigger_buffer(first_bufnr, "gd")
 trigger_buffer(first_bufnr, "gr")
 trigger_buffer(first_bufnr, "gh")
+trigger_buffer(first_bufnr, "gf")
 trigger_buffer(first_bufnr, "q")
 trigger_buffer(first_bufnr, "<LeftMouse>")
 trigger_buffer(first_bufnr, "<2-LeftMouse>")
@@ -440,7 +445,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,actions,find:forward:local,find_next,find_previous,transient_hints,jump_hint:buffer text,type_hints:type:buffer text,type_hints:submit:buffer text,submit_focused,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,address,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,double_click_here,right_click_here,hover_here,close,click_mouse,double_click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,actions,find:forward:local,find_next,find_previous,transient_hints,jump_hint:buffer text,type_hints:type:buffer text,type_hints:submit:buffer text,submit_focused,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,address,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,double_click_here,right_click_here,hover_here,follow_point_url_here,close,click_mouse,double_click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
 
@@ -544,17 +549,23 @@ assert(calls[#calls] == "mouse-existing", "buffer-local mouse controls should no
 vim.keymap.set("n", "gc", function()
   table.insert(calls, "cursor-click-existing")
 end, { buffer = second_bufnr })
+vim.keymap.set("n", "gf", function()
+  table.insert(calls, "cursor-follow-existing")
+end, { buffer = second_bufnr })
 keymaps.setup_buffer(browser, second_bufnr, {
   enabled = true,
 })
 trigger_buffer(second_bufnr, "gc")
 assert(calls[#calls] == "cursor-click-existing", "buffer-local cursor click should not overwrite existing mappings")
+trigger_buffer(second_bufnr, "gf")
+assert(calls[#calls] == "cursor-follow-existing", "buffer-local cursor link follow should not overwrite existing mappings")
 
 local disabled_click_bufnr = vim.api.nvim_create_buf(false, true)
 keymaps.setup_buffer(browser, disabled_click_bufnr, {
   enabled = true,
   mappings = {
     click_here = false,
+    follow_point_url_here = false,
     actions = false,
   },
 })
@@ -565,6 +576,10 @@ assert(
 assert(
   buffer_mapping(disabled_click_bufnr, "?").buffer ~= 1,
   "false actions mapping should disable the default buffer-local mapping"
+)
+assert(
+  buffer_mapping(disabled_click_bufnr, "gf").buffer ~= 1,
+  "false cursor link follow mapping should disable the default buffer-local mapping"
 )
 
 keymaps.setup_buffer(browser, first_bufnr, {

@@ -789,12 +789,15 @@ selected register, `Y` yank the active browser URL into the selected register,
 Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` address
 prompt, arrow keys, `gc` click the browser viewport at the cursor, `gd`
 double-click at the cursor, `gr` right-click at the cursor, `gh` hover the
-browser viewport at the cursor, `<Esc>` stop a pending load, left click to click
-the browser viewport, double left click to send a native browser double-click,
-right click to send a native browser right-click, scroll wheel to send a native
-browser wheel event at the mouse position, and `q` close.
+browser viewport at the cursor, `gf` follow the link URL under the cursor in
+the active preview, `<Esc>` stop a pending load, left click to click the browser
+viewport, double left click to send a native browser double-click, right click
+to send a native browser right-click, scroll wheel to send a native browser
+wheel event at the mouse position, and `q` close.
 Disable or remap them with
-`preview_keymaps = { enabled = false }` or `preview_keymaps.mappings`.
+`preview_keymaps = { enabled = false }` or `preview_keymaps.mappings`. For
+example, keep preview keymaps enabled but preserve Vim's built-in `gf` with
+`preview_keymaps = { mappings = { follow_point_url_here = false } }`.
 
 Configure search with `require("nvim-browser").setup({ search_url = "https://www.google.com/search?q=%s" })`.
 The `%s` placeholder receives the encoded query; write literal percent signs as
