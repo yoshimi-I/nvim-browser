@@ -228,6 +228,81 @@ assert(
 )
 assert(contains_line(stale_session, "calibration: ok expected viewport=800x480"), "doctor should report matching runtime viewport calibration")
 assert(contains_line(stale_session, "warning: active session output differs"), "doctor should warn about stale active output")
+assert(has_line(stale_session, "frame health: ok"), "doctor should report healthy frame state for active clean sessions")
+
+local stale_frame_session = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+}, {
+  mode = "serve",
+  serve_output = "ansi",
+  status = "ok",
+  frame_health = {
+    stale = true,
+    refresh_pending = true,
+    reason = "dom_epoch",
+  },
+})
+assert(
+  has_line(stale_frame_session, "frame health: stale refresh pending reason=dom_epoch"),
+  "doctor should report stale and refresh-pending frame health"
+)
+
+local refreshing_frame_session = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+}, {
+  mode = "serve",
+  serve_output = "ansi",
+  status = "ok",
+  frame_health = {
+    stale = false,
+    refresh_pending = true,
+    reason = "capture_pending",
+  },
+})
+assert(
+  has_line(refreshing_frame_session, "frame health: refresh pending reason=capture_pending"),
+  "doctor should report refresh-pending frame health without stale state"
+)
+
+local preserved_exit_session = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+}, {
+  serve_exit = {
+    code = 3,
+    target = "https://example.com/restart",
+    restartable = true,
+  },
+})
+assert(
+  has_line(preserved_exit_session, "active session: exited code=3 target=https://example.com/restart restartable=true; run :NBrowserRefresh to restart"),
+  "doctor should report restartable preserved serve exits"
+)
+
+local malformed_preserved_exit_session = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "auto",
+  image_fit = "original",
+}, {
+  serve_exit = {
+    code = vim.NIL,
+    target = vim.NIL,
+    restartable = vim.NIL,
+  },
+})
+assert(
+  has_line(malformed_preserved_exit_session, "active session: exited code=unknown target=unknown restartable=false"),
+  "doctor should defensively report malformed preserved serve exits"
+)
 
 local mismatched_runtime = doctor.run({
   binary = "nvim",

@@ -20,12 +20,52 @@ local function add_item(report, level, message)
 end
 
 local function active_session_line(state)
+  local serve_exit = state and state.serve_exit or nil
+  if type(serve_exit) == "table" then
+    local code = serve_exit.code ~= nil and serve_exit.code ~= vim.NIL and tostring(serve_exit.code) or "unknown"
+    local target = serve_exit.target ~= nil and serve_exit.target ~= vim.NIL and tostring(serve_exit.target) or "unknown"
+    local restartable = serve_exit.restartable == true
+    local line = "active session: exited code="
+      .. code
+      .. " target="
+      .. target
+      .. " restartable="
+      .. tostring(restartable)
+    if restartable then
+      line = line .. "; run :NBrowserRefresh to restart"
+    end
+    return line
+  end
   if state == nil or state.mode == nil or state.mode == "idle" then
     return "active session: none"
   end
   local output = state.serve_output or "unknown"
   local status = state.status or "unknown"
   return "active session: " .. state.mode .. " output=" .. output .. " status=" .. status
+end
+
+local function frame_health_line(state)
+  if type(state) ~= "table" or type(state.frame_health) ~= "table" then
+    if state ~= nil and state.mode == "serve" then
+      return "frame health: ok"
+    end
+    return nil
+  end
+  local health = state.frame_health
+  local parts = {}
+  if health.stale == true then
+    table.insert(parts, "stale")
+  end
+  if health.refresh_pending == true then
+    table.insert(parts, "refresh pending")
+  end
+  if #parts == 0 then
+    table.insert(parts, "ok")
+  end
+  if health.reason ~= nil and health.reason ~= vim.NIL and health.reason ~= "" then
+    table.insert(parts, "reason=" .. tostring(health.reason))
+  end
+  return "frame health: " .. table.concat(parts, " ")
 end
 
 local function runtime_line(state)
@@ -467,6 +507,10 @@ function M.run(config, terminal_state)
   local runtime = runtime_line(terminal_state)
   if runtime ~= nil then
     table.insert(report.lines, runtime)
+  end
+  local frame_health = frame_health_line(terminal_state)
+  if frame_health ~= nil then
+    table.insert(report.lines, frame_health)
   end
   append_active_protocol_diagnostics(report, terminal_state)
   table.insert(report.lines, runtime_calibration(config, terminal_state, cell))
