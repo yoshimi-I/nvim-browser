@@ -644,6 +644,8 @@ hinted radio input. Checkbox/radio hints show `[checked]` or `[unchecked]` in
 clicks/focuses that point, and types text there. `:NBrowserSubmitHere {text}`
 does the same and presses Enter after the text is queued. These commands require
 an ANSI or Kitty Unicode browser preview and ignore the preview footer row.
+Focused preview buffers map `gI` and `gS` to prompt for these cursor-local
+type and submit actions.
 
 `:NBrowserTypeHintMode` prompts for a hint label and text, then types into the
 hinted element. `:NBrowserSubmitHintMode` does the same and presses Enter after
@@ -785,7 +787,8 @@ element, `o` select a hinted option, `c` toggle a hinted checkbox/radio, `i`
 type into the focused element with browser text mode, `p` paste the selected
 register into the focused element, `y` yank the browser selection into the
 selected register, `Y` yank the active browser URL into the selected register,
-`gY` yank the link URL under the cursor into the selected register, `<CR>`
+`gY` yank the link URL under the cursor into the selected register, `gI` type
+text at the cursor, `gS` type text at the cursor and submit, `<CR>`
 Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
 Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` address
 prompt, arrow keys, `gc` click the browser viewport at the cursor, `gd`

@@ -648,6 +648,8 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserSubmitHere {text}
 	Map the preview cursor to viewport pixels, click/focus that browser point,
 	type text there, press Enter, and capture a fresh frame.
+	Focused preview buffers map `gI` to prompt for :NBrowserTypeHere behavior
+	and `gS` to prompt for :NBrowserSubmitHere behavior.
 
 							*:NBrowserTypeHintMode*
 :NBrowserTypeHintMode
@@ -906,6 +908,8 @@ p  paste register into focused element
 y  yank browser selection into register; Visual y yanks the Visual preview region
 Y  yank active browser URL into register
 gY yank link URL under cursor into register
+gI type text at cursor
+gS type text at cursor and submit
 <CR>     press Enter
 <Tab>    press Tab
 <S-Tab>  press Shift-Tab
@@ -949,6 +953,8 @@ require("nvim-browser").setup({
       follow_point_url_here = "gf",
       yank_point_url_here = "gY",
       point_info_here = "gi",
+      type_here = "gI",
+      submit_here = "gS",
       left_click = false,
       double_click = "<2-LeftMouse>",
       right_click_mouse = "<RightMouse>",
