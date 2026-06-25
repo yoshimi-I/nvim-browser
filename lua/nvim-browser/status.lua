@@ -35,4 +35,21 @@ function M.download_list_label(download, index)
   return label
 end
 
+function M.frame_health_label(health)
+  if type(health) ~= "table" then
+    return nil
+  end
+  local parts = {}
+  if health.stale == true then
+    table.insert(parts, "frame=stale")
+  end
+  if health.refresh_pending == true then
+    table.insert(parts, "refreshing")
+  end
+  if #parts == 0 then
+    return nil
+  end
+  return table.concat(parts, " ")
+end
+
 return M

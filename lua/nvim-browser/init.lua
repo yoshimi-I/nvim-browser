@@ -1191,6 +1191,10 @@ local function action_status_message()
   if runtime ~= nil then
     table.insert(parts, runtime)
   end
+  local frame = M.frame_health and status_labels.frame_health_label(M.frame_health()) or nil
+  if frame ~= nil then
+    table.insert(parts, frame)
+  end
   local url = M.current_url()
   if url ~= nil and url ~= "" then
     table.insert(parts, url)
@@ -2549,6 +2553,10 @@ end
 
 function M.status_error()
   return terminal.state().status_error
+end
+
+function M.frame_health()
+  return terminal.state().frame_health
 end
 
 function M.hint_error()

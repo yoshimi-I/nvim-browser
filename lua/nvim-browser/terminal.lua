@@ -2118,6 +2118,31 @@ local function truncate_cells(value, width)
   return vim.fn.strcharpart(value, 0, width)
 end
 
+local function frame_health()
+  local stale = false
+  local refresh_pending = state.adaptive_capture_timer ~= nil or state.live_refresh_request_type == "capture"
+  local reason = nil
+  if
+    state.dom_epoch ~= nil
+    and state.rendered_frame_dom_epoch ~= nil
+    and state.dom_epoch ~= state.rendered_frame_dom_epoch
+  then
+    stale = true
+    reason = "dom_epoch"
+  elseif refresh_pending then
+    reason = "capture_pending"
+  end
+  return {
+    stale = stale,
+    refresh_pending = refresh_pending,
+    reason = reason,
+  }
+end
+
+local function frame_health_label(health)
+  return status_labels.frame_health_label(health or frame_health())
+end
+
 local function preview_footer_line(width)
   local parts = {}
   local pending = state.pending_operation
@@ -2135,6 +2160,12 @@ local function preview_footer_line(width)
   local stopped_label = state.stopped_operation ~= nil and (state.stopped_operation.reason or "stopped") or nil
   local exited_label = state.serve_exit ~= nil and "exited" or nil
   table.insert(parts, state.text_mode_active and "text" or stopped_label or exited_label or state.status or "idle")
+  if state.serve_exit == nil then
+    local health = frame_health_label()
+    if health ~= nil then
+      table.insert(parts, health)
+    end
+  end
 
   local title = state.current_title ~= nil and state.current_title ~= "" and state.current_title or nil
   local url = state.serve_exit ~= nil
@@ -2747,7 +2778,6 @@ function M.open(command)
         local has_hints = type(response.hints) == "table" and #response.hints > 0
         local has_hint_error = response.hint_error ~= nil and response.hint_error ~= vim.NIL and response.hint_error ~= ""
         if response.status == "ok" and not has_payload and not has_hints and not has_hint_error then
-          refresh_preview_footer(bufnr, valid_preview_geometry())
           if should_adaptively_capture then
             local newer_full_capture_in_flight = state.live_refresh_request_type == "capture"
               and state.live_refresh_request_id ~= nil
@@ -2764,6 +2794,7 @@ function M.open(command)
               schedule_adaptive_capture()
             end
           end
+          refresh_preview_footer(bufnr, valid_preview_geometry())
           return
         end
         local geometry = valid_preview_geometry()
@@ -4715,6 +4746,7 @@ function M.state()
     live_refresh_request_id = state.live_refresh_request_id,
     stopped_operation = state.stopped_operation,
     serve_exit = state.serve_exit,
+    frame_health = frame_health(),
     last_find_found = state.last_find_found,
     last_find_match_count = state.last_find_match_count,
     last_find_query = state.last_find_query,
@@ -4746,6 +4778,7 @@ M._test = {
   apply_payload_to_buffer = apply_payload_to_buffer,
   preview_footer_line = preview_footer_line,
   focused_element_label = focused_element_label,
+  frame_health_label = frame_health_label,
   append_preview_footer = append_preview_footer,
   set_pending_operation = function(value)
     state.pending_operation = value

@@ -1119,6 +1119,7 @@ function M.register(browser, opts)
     local focused = browser.focused_element and focused_element_label(browser.focused_element()) or nil
     local download = browser.latest_download and download_status_label(browser.latest_download()) or nil
     local dialog = browser.latest_dialog and dialog_status_label(browser.latest_dialog()) or nil
+    local frame = browser.frame_health and status_labels.frame_health_label(browser.frame_health()) or nil
     local message = status
     if title ~= nil and title ~= "" then
       message = message .. " " .. title
@@ -1140,6 +1141,9 @@ function M.register(browser, opts)
     end
     if runtime ~= nil then
       message = message .. " " .. runtime
+    end
+    if frame ~= nil then
+      message = message .. " " .. frame
     end
     if url ~= "" then
       message = message .. " " .. url

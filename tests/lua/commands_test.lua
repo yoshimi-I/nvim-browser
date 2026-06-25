@@ -413,6 +413,9 @@ local browser = {
   zoom_scale = function()
     return 1.25
   end,
+  frame_health = function()
+    return { stale = true, refresh_pending = true, reason = "dom_epoch" }
+  end,
   downloads = function()
     return {
       { path = "/tmp/downloads/report.pdf", suggested_filename = "report.pdf", status = "completed" },
@@ -766,6 +769,8 @@ assert(echoed:match("output=kitty%-unicode"), "NBrowserStatus should include run
 assert(echoed:match("viewport=800x600"), "NBrowserStatus should include runtime viewport when available")
 assert(echoed:match("cells=80x24"), "NBrowserStatus should include runtime cell size when available")
 assert(echoed:match("renderer=chromium%-cdp"), "NBrowserStatus should include runtime renderer when available")
+assert(echoed:find("frame=stale", 1, true), "NBrowserStatus should include stale frame health")
+assert(echoed:find("refreshing", 1, true), "NBrowserStatus should include pending frame refresh health")
 
 vim.cmd("NBrowserDownloads")
 assert(echoed:match("1%.%s+report%.pdf%s+/tmp/downloads/report%.pdf"), "NBrowserDownloads should list indexed download filenames and paths")

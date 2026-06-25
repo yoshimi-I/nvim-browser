@@ -5398,6 +5398,25 @@ assert(
   _G.nvim_browser_quiet_dom_epoch_adaptive_timer ~= _G.nvim_browser_quiet_adaptive_timer,
   "quiet DOM epoch changes without payload should schedule adaptive capture"
 )
+assert(terminal.state().frame_health.stale == true, "quiet DOM epoch changes should mark the rendered frame stale")
+assert(terminal.state().frame_health.refresh_pending == true, "quiet DOM epoch changes should mark the frame refresh pending")
+assert(terminal.state().frame_health.reason == "dom_epoch", "quiet DOM epoch changes should explain stale frame health")
+assert(
+  terminal._test.preview_footer_line(120):find("frame=stale", 1, true),
+  "quiet DOM epoch changes should show stale frame state in the footer"
+)
+assert(
+  terminal._test.preview_footer_line(120):find("refreshing", 1, true),
+  "quiet DOM epoch changes should show pending refresh state in the footer"
+)
+_G.nvim_browser_quiet_dom_epoch_footer = table.concat(
+  vim.api.nvim_buf_get_lines(terminal.state().bufnr, 0, -1, false),
+  "\n"
+)
+assert(
+  _G.nvim_browser_quiet_dom_epoch_footer:find("refreshing", 1, true),
+  "quiet DOM epoch changes should update the visible buffer footer with pending refresh state"
+)
 assert(#terminal.state().element_hints == 1, "quiet DOM epoch changes should leave stale hints visible until capture")
 vim.fn.setreg("b", "preserve-stale-dom")
 assert(terminal.yank_hint_url("a", "b") == false, "advanced DOM epoch should make old hint hrefs unavailable")
@@ -5410,6 +5429,7 @@ assert(vim.wait(1000, function()
   local capture = last_request_of_type("capture")
   return capture ~= nil and terminal.state().live_refresh_request_id == capture.id
 end), "quiet DOM epoch adaptive capture timer should send one tracked full-frame capture")
+assert(terminal.state().frame_health.refresh_pending == true, "in-flight adaptive capture should keep refresh pending visible")
 terminal._test.clear_in_flight_capture()
 
 serve_stdout(nil, { vim.json.encode({
@@ -5444,6 +5464,12 @@ serve_stdout(nil, { vim.json.encode({
 assert(vim.wait(200, function()
   return terminal.state().dom_epoch == 11 and terminal.state().rendered_frame_geometry ~= _G.nvim_browser_dom_epoch_stale_geometry
 end), "fresh DOM epoch capture should replace the stale rendered frame")
+assert(terminal.state().frame_health.stale == false, "fresh DOM epoch capture should clear stale frame health")
+assert(terminal.state().frame_health.refresh_pending == false, "fresh DOM epoch capture should clear pending refresh health")
+assert(
+  not terminal._test.preview_footer_line(120):find("frame=stale", 1, true),
+  "fresh DOM epoch capture should remove stale frame footer state"
+)
 sent_requests = {}
 assert(terminal.click_hint("a") == true, "captured DOM epoch frame should make fresh hints usable again")
 assert(last_request_of_type("click_hint") ~= nil, "fresh hints should send backend hint ids")
