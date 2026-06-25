@@ -182,7 +182,7 @@ function M.command_for(binary, action, target, opts)
     add_user_data_dir(command, opts)
     add_download_dir(command, opts)
     table.insert(command, "--markdown")
-    table.insert(command, target)
+    table.insert(command, vim.fn.fnamemodify(target, ":p"))
     return command
   end
 

@@ -66,8 +66,10 @@ browser frames into stable row-major image tiles. Tile payloads clear the full
 stable tile ID range before reusing IDs so frame replacement is deterministic
 when a large capture is followed by a smaller one.
 
-The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 20
-includes lightweight `page_state` requests for idle metadata refresh,
+The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 24
+includes URL, Markdown-wrapper, and raster-image-wrapper navigation requests so
+Neovim can reuse an active Chromium session when the target type changes. It
+also includes lightweight `page_state` requests for idle metadata refresh,
 multi-download reporting through a `downloads` array while preserving the
 single `download` compatibility field, and auto-handled JavaScript dialog
 reporting through `dialog`/`dialogs`. Responses can include `history`

@@ -84,8 +84,8 @@ can be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 
 - Opens URLs, Markdown files, HTML/SVG/PDF files, and raster images. PDF files
   use Chrome's built-in file viewer through the Chromium/CDP browser session
-  path; raster image files use a generated Chromium preview wrapper so
-  Neovim's image fit setting applies without leaving the browser session.
+  path; Markdown and raster image files use generated Chromium preview wrappers
+  that can be navigated inside an existing browser session.
 - Mermaid Markdown diagrams and KaTeX Markdown math use pinned `cdn.jsdelivr.net`
   assets and therefore require network access only when a Markdown file contains
   a Mermaid fence or inline/display math.

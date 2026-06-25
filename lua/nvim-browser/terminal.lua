@@ -380,7 +380,7 @@ local function command_target(command)
   end
   if command[2] == "serve" then
     for index, value in ipairs(command) do
-      if value == "--url" or value == "--image" then
+      if value == "--url" or value == "--image" or value == "--markdown" then
         return command[index + 1]
       end
     end
@@ -405,6 +405,18 @@ local function is_raster_image_path(target)
   return extension == "png" or extension == "jpg" or extension == "jpeg" or extension == "gif" or extension == "webp"
 end
 
+local function command_has_flag(command, flag)
+  if type(command) ~= "table" then
+    return false
+  end
+  for _, value in ipairs(command) do
+    if value == flag then
+      return true
+    end
+  end
+  return false
+end
+
 local function copy_command(command)
   if type(command) ~= "table" then
     return nil
@@ -421,14 +433,22 @@ local function command_with_target(command, target)
     return adjusted
   end
   local image_index = nil
+  local markdown_index = nil
   for index, value in ipairs(adjusted) do
     if value == "--url" then
       adjusted[index + 1] = target
       return adjusted
     end
+    if value == "--markdown" then
+      markdown_index = index
+    end
     if value == "--image" then
       image_index = index
     end
+  end
+  if markdown_index ~= nil and not target:match("^%a[%w+.-]*:") then
+    adjusted[markdown_index + 1] = target
+    return adjusted
   end
   if image_index ~= nil and is_raster_image_path(target) then
     adjusted[image_index + 1] = target
@@ -1253,6 +1273,7 @@ is_navigation_class_request = function(request)
     and (
       request.type == "navigate"
       or request.type == "navigate_image"
+      or request.type == "navigate_markdown"
       or request.type == "reload"
       or request.type == "back"
       or request.type == "forward"
@@ -1663,6 +1684,12 @@ local function reuse_active_serve_command(command)
       type = "navigate_image",
       path = image_target,
       fit = command_image_fit(command),
+    }, target)
+  end
+  if command_has_flag(command, "--markdown") then
+    return send_pending_request({
+      type = "navigate_markdown",
+      path = target,
     }, target)
   end
   return send_pending_request({

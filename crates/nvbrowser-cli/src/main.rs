@@ -27,7 +27,7 @@ use nvbrowser_core::{
 };
 use serde::{Deserialize, Serialize};
 
-const SERVE_PROTOCOL_VERSION: u32 = 23;
+const SERVE_PROTOCOL_VERSION: u32 = 24;
 
 #[derive(Debug, Parser)]
 #[command(name = "nvbrowser")]
@@ -350,6 +350,10 @@ enum ServeRequest {
         path: PathBuf,
         #[serde(default)]
         fit: Option<ImageFit>,
+    },
+    NavigateMarkdown {
+        id: u64,
+        path: PathBuf,
     },
     Capture {
         id: u64,
@@ -996,6 +1000,7 @@ struct ServeRuntime<R: Renderer> {
     output: ImageOutput,
     _markdown_preview: Option<MarkdownPreviewFile>,
     _image_preview: Option<ImagePreviewFile>,
+    _dynamic_markdown_previews: Vec<MarkdownPreviewFile>,
     _dynamic_image_previews: Vec<ImagePreviewFile>,
     pending_downloads: Vec<DownloadInfo>,
     pending_dialogs: Vec<DialogEvent>,
@@ -1028,6 +1033,7 @@ impl<R: Renderer> ServeRuntime<R> {
             output: options.output,
             _markdown_preview: options.markdown_preview,
             _image_preview: options.image_preview,
+            _dynamic_markdown_previews: Vec::new(),
             _dynamic_image_previews: Vec::new(),
             pending_downloads: Vec::new(),
             pending_dialogs: Vec::new(),
@@ -1216,6 +1222,20 @@ impl<R: Renderer> ServeRuntime<R> {
                     url,
                 ))?;
                 self._dynamic_image_previews.push(preview);
+                self.session
+                    .navigate_active_page_with_title(navigation.url, navigation.title);
+                self.session.finish_active_page_load();
+                self.capture_payload(true).map(Some)
+            }
+            ServeRequest::NavigateMarkdown { path, .. } => {
+                let preview = MarkdownPreviewFile::create(&path)?;
+                let url = preview.url();
+                let navigation = self.renderer.navigate(NavigateRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    url,
+                ))?;
+                self._dynamic_markdown_previews.push(preview);
                 self.session
                     .navigate_active_page_with_title(navigation.url, navigation.title);
                 self.session.finish_active_page_load();
@@ -1786,6 +1806,7 @@ impl ServeRequest {
         match self {
             ServeRequest::Navigate { id, .. }
             | ServeRequest::NavigateImage { id, .. }
+            | ServeRequest::NavigateMarkdown { id, .. }
             | ServeRequest::Capture { id }
             | ServeRequest::PageState { id }
             | ServeRequest::Scroll { id, .. }
@@ -3142,6 +3163,14 @@ mod tests {
                 fit: Some(ImageFit::Contain),
             }
         );
+        assert_eq!(
+            parse_serve_request(r#"{"type":"navigate_markdown","id":3,"path":"/tmp/README.md"}"#)
+                .expect("navigate_markdown request should parse"),
+            ServeRequest::NavigateMarkdown {
+                id: 3,
+                path: PathBuf::from("/tmp/README.md"),
+            }
+        );
 
         assert_eq!(
             parse_serve_request(
@@ -3286,6 +3315,41 @@ mod tests {
         assert!(navigated_url.starts_with("file://"));
         assert!(navigated_url.contains("nvbrowser-image-pixel-"));
         assert_eq!(runtime._dynamic_image_previews.len(), 1);
+    }
+
+    #[test]
+    fn serve_runtime_navigates_markdown_through_preview_wrapper() {
+        let directory = tempfile::tempdir().expect("tempdir should be created");
+        let markdown_path = directory.path().join("README.md");
+        std::fs::write(&markdown_path, "# Preview\n\nHello **browser**.")
+            .expect("markdown fixture should be written");
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                image_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        let response = runtime.handle(ServeRequest::NavigateMarkdown {
+            id: 8,
+            path: markdown_path,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        let navigated_url = runtime.renderer.url.expect("renderer should navigate");
+        assert!(navigated_url.starts_with("file://"));
+        assert!(navigated_url.contains("nvbrowser-README-"));
+        assert_eq!(runtime._dynamic_markdown_previews.len(), 1);
     }
 
     #[test]
@@ -4069,7 +4133,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":23,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":24,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 

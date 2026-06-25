@@ -3491,9 +3491,19 @@ sent_requests = {}
 local served_bufnr = second_state.bufnr
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--markdown", "/tmp/README.md" })
 local markdown_state = terminal.state()
-assert(#jobstart_calls == 1, "opening Markdown should start a replacement serve job so the backend can render HTML")
-assert(markdown_state.bufnr ~= served_bufnr, "Markdown serve replacement should use a fresh preview buffer")
-assert(fake_timers[1].stopped == true and fake_timers[1].closed == true, "serve replacement should stop the previous live refresh timer")
+_G.nvim_browser_markdown_navigate_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "navigate_markdown" and decoded.path == "/tmp/README.md" then
+    _G.nvim_browser_markdown_navigate_seen = true
+  end
+end
+assert(#jobstart_calls == 0, "opening Markdown in an active serve session should reuse the existing job")
+assert(markdown_state.bufnr == served_bufnr, "serve Markdown reuse should keep the same preview buffer")
+assert(markdown_state.job_id == first_state.job_id, "serve Markdown reuse should keep the same backend job")
+assert(markdown_state.last_target == "/tmp/README.md", "serve Markdown reuse should update the remembered target")
+assert(_G.nvim_browser_markdown_navigate_seen, "serve Markdown reuse should send a navigate_markdown request for the Markdown preview target")
+terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
 
 sent_requests = {}
 terminal.close()
@@ -3692,7 +3702,7 @@ serve_stdout(nil, { vim.json.encode({
   url = "https://example.com/docs",
   title = "Stopped Page",
   runtime = {
-    protocol_version = 23,
+    protocol_version = 24,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",
@@ -3790,6 +3800,17 @@ assert(#jobstart_calls == 1, "stopped image refresh should start one replacement
 assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == nil, "stopped image refresh should not restart as a raw URL")
 assert(_G.nvim_browser_command_option(jobstart_calls[1], "--image") == "/tmp/restart-image.png", "stopped image refresh should preserve the image wrapper target")
 assert(_G.nvim_browser_command_option(jobstart_calls[1], "--image-fit") == "contain", "stopped image refresh should preserve the image fit")
+
+terminal._test.clear_in_flight_capture()
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--markdown", "/tmp/restart.md" })
+assert(terminal.state().pending_operation ~= nil, "test setup should create a pending Markdown navigation")
+_G.nvim_browser_stop_with_backend_error()
+jobstart_calls = {}
+sent_requests = {}
+assert(terminal.refresh() == true, "refresh after stopped Markdown navigation should restart the serve session")
+assert(#jobstart_calls == 1, "stopped Markdown refresh should start one replacement serve job")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == nil, "stopped Markdown refresh should not restart as a raw URL")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--markdown") == "/tmp/restart.md", "stopped Markdown refresh should preserve the Markdown wrapper target")
 
 terminal._test.clear_in_flight_capture()
 assert(terminal.navigate("https://example.com/address-stopped") == true, "test setup should create a pending address navigation")
@@ -4896,7 +4917,7 @@ assert(terminal.start_text_mode({
   end)(),
 }) == true, "test setup should leave a quiet request without a response")
 jobstart_calls = {}
-terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--markdown", "/tmp/quiet-reset.md" })
+terminal.open({ "nvbrowser", "serve", "--output", "kitty", "--url", "https://example.com/quiet-reset" })
 sent_requests = {}
 assert(terminal.refresh() == true, "new serve session should be able to request capture")
 assert(last_request_of_type("capture") ~= nil, "manual refresh should request a full capture")

@@ -79,6 +79,18 @@ assert(vim.deep_equal(markdown_profile_command, {
   "/tmp/docs/README.md",
 }), "markdown commands should pass configured persistent profile directories")
 
+local relative_markdown_command = backend.command_for("nvbrowser", "open", "docs/README.md", {
+  graphics = "ansi",
+})
+assert(vim.deep_equal(relative_markdown_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--markdown",
+  vim.fn.fnamemodify("docs/README.md", ":p"),
+}), "relative markdown paths should be converted to absolute markdown paths")
+
 local url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
   graphics = "ansi",
 })
