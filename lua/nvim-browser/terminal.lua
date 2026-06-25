@@ -418,9 +418,8 @@ local function file_url_to_path(url)
   if type(url) ~= "string" or not url:match("^file://") then
     return nil
   end
-  if url:find("[#?]") ~= nil then
-    return nil
-  end
+  local display_url = url
+  url = url:gsub("[#?].*$", "")
   local authority = url:match("^file://([^/]*)")
   if authority ~= nil and authority ~= "" and authority:lower() ~= "localhost" then
     return nil
@@ -435,11 +434,11 @@ local function file_url_to_path(url)
   if path == "" then
     return nil
   end
-  return path
+  return path, display_url
 end
 
 local function wrapper_navigation_request_for_url(url)
-  local path = file_url_to_path(url)
+  local path, display_url = file_url_to_path(url)
   if path == nil then
     return nil
   end
@@ -447,6 +446,7 @@ local function wrapper_navigation_request_for_url(url)
     return {
       type = "navigate_markdown",
       path = path,
+      display_url = display_url,
     }
   end
   if is_raster_image_path(path) then
@@ -454,6 +454,7 @@ local function wrapper_navigation_request_for_url(url)
       type = "navigate_image",
       path = path,
       fit = command_image_fit(state.last_serve_command),
+      display_url = display_url,
     }
   end
   return nil

@@ -649,10 +649,18 @@ assert(terminal.reader_follow() == "file:///tmp/site/assets/pixel.png?size=1", "
 vim.fn.chansend = original_chansend_for_reader
 assert(reader_requests[1].request.type == "navigate_markdown", "localhost Markdown file URLs should use the Markdown preview wrapper")
 assert(reader_requests[1].request.path == "/tmp/localhost.md", "localhost Markdown file URLs should decode to the local filesystem path")
-assert(reader_requests[2].request.type == "navigate", "Markdown file URLs with fragments should keep normal navigation")
-assert(reader_requests[2].request.url == "file:///tmp/site/guide/notes.md#intro", "Markdown file fragments should remain in the navigated URL")
-assert(reader_requests[3].request.type == "navigate", "raster image file URLs with queries should keep normal navigation")
-assert(reader_requests[3].request.url == "file:///tmp/site/assets/pixel.png?size=1", "raster image file queries should remain in the navigated URL")
+assert(reader_requests[2].request.type == "navigate_markdown", "Markdown file URLs with fragments should use the Markdown preview wrapper")
+assert(reader_requests[2].request.path == "/tmp/site/guide/notes.md", "Markdown file fragments should send only the filesystem path to the wrapper")
+assert(
+  reader_requests[2].request.display_url == "file:///tmp/site/guide/notes.md#intro",
+  "Markdown file fragments should preserve the full user-facing display URL"
+)
+assert(reader_requests[3].request.type == "navigate_image", "raster image file URLs with queries should use the image preview wrapper")
+assert(reader_requests[3].request.path == "/tmp/site/assets/pixel.png", "raster image file queries should send only the filesystem path to the wrapper")
+assert(
+  reader_requests[3].request.display_url == "file:///tmp/site/assets/pixel.png?size=1",
+  "raster image file queries should preserve the full user-facing display URL"
+)
 
 terminal._test.handle_reader_response({
   status = "ok",
@@ -3069,6 +3077,18 @@ assert(last_request_of_type("capture") == nil, "image preview refresh should not
 terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
 
 sent_requests = {}
+assert(terminal.navigate("file:///tmp/query-image.png?size=1") == true, "active image file URL queries should navigate")
+_G.nvim_browser_image_query_request = last_request_of_type("navigate_image")
+assert(
+  _G.nvim_browser_image_query_request ~= nil
+    and _G.nvim_browser_image_query_request.path == "/tmp/query-image.png"
+    and _G.nvim_browser_image_query_request.fit == "contain"
+    and _G.nvim_browser_image_query_request.display_url == "file:///tmp/query-image.png?size=1",
+  "active image file URL queries should send navigate_image with path, fit, and display URL"
+)
+terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
+
+sent_requests = {}
 assert(
   terminal.navigate("https://example.com/pending-from-image") == true,
   "test setup should send a pending navigation from an image preview"
@@ -3641,6 +3661,35 @@ assert(last_request_of_type("capture") == nil, "Markdown preview refresh should 
 terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
 
 sent_requests = {}
+assert(terminal.navigate("file:///tmp/README.md#intro") == true, "active Markdown file fragments should navigate")
+_G.nvim_browser_markdown_fragment_request = last_request_of_type("navigate_markdown")
+assert(
+  _G.nvim_browser_markdown_fragment_request ~= nil
+    and _G.nvim_browser_markdown_fragment_request.path == "/tmp/README.md"
+    and _G.nvim_browser_markdown_fragment_request.display_url == "file:///tmp/README.md#intro",
+  "active Markdown file fragments should send navigate_markdown with path and display URL"
+)
+terminal._test.apply_serve_response({
+  id = terminal.state().pending_operation.id,
+  status = "ok",
+  payload = "markdown fragment wrapper frame",
+  url = "file:///tmp/nvbrowser-README-fragment-wrapper.html",
+  display_url = "file:///tmp/README.md#intro",
+  title = "README",
+})
+sent_requests = {}
+assert(terminal.refresh() == true, "Markdown fragment preview refresh should regenerate the wrapper source")
+_G.nvim_browser_markdown_fragment_refresh_request = last_request_of_type("navigate_markdown")
+assert(
+  _G.nvim_browser_markdown_fragment_refresh_request ~= nil
+    and _G.nvim_browser_markdown_fragment_refresh_request.path == "/tmp/README.md"
+    and _G.nvim_browser_markdown_fragment_refresh_request.display_url == "file:///tmp/README.md#intro",
+  "Markdown fragment refresh should preserve the display URL when regenerating the wrapper"
+)
+assert(last_request_of_type("capture") == nil, "Markdown fragment refresh should not recapture the stale wrapper")
+terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
+
+sent_requests = {}
 terminal.close()
 local closed_timer = fake_timers[#fake_timers]
 assert(closed_timer.stopped == true and closed_timer.closed == true, "close should stop the active live refresh timer")
@@ -3708,7 +3757,7 @@ terminal._test.apply_serve_response({
   display_url = "file:///tmp/README.md",
   title = "README",
   runtime = {
-    protocol_version = 25,
+    protocol_version = 26,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",
@@ -3877,7 +3926,7 @@ serve_stdout(nil, { vim.json.encode({
   url = "https://example.com/docs",
   title = "Stopped Page",
   runtime = {
-    protocol_version = 25,
+    protocol_version = 26,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",

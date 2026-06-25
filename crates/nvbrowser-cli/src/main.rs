@@ -27,7 +27,7 @@ use nvbrowser_core::{
 };
 use serde::{Deserialize, Serialize};
 
-const SERVE_PROTOCOL_VERSION: u32 = 25;
+const SERVE_PROTOCOL_VERSION: u32 = 26;
 
 #[derive(Debug, Parser)]
 #[command(name = "nvbrowser")]
@@ -350,10 +350,14 @@ enum ServeRequest {
         path: PathBuf,
         #[serde(default)]
         fit: Option<ImageFit>,
+        #[serde(default)]
+        display_url: Option<String>,
     },
     NavigateMarkdown {
         id: u64,
         path: PathBuf,
+        #[serde(default)]
+        display_url: Option<String>,
     },
     Capture {
         id: u64,
@@ -1277,9 +1281,14 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.session.finish_active_page_load();
                 self.capture_payload(true).map(Some)
             }
-            ServeRequest::NavigateImage { path, fit, .. } => {
+            ServeRequest::NavigateImage {
+                path,
+                fit,
+                display_url,
+                ..
+            } => {
                 let preview = ImagePreviewFile::create(&path, fit.unwrap_or(ImageFit::Original))?;
-                let display_url = preview.source_url().to_string();
+                let display_url = display_url.unwrap_or_else(|| preview.source_url().to_string());
                 let url = preview.url();
                 let navigation = self.renderer.navigate(NavigateRequest::new(
                     self.session.id(),
@@ -1294,9 +1303,11 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.session.finish_active_page_load();
                 self.capture_payload(true).map(Some)
             }
-            ServeRequest::NavigateMarkdown { path, .. } => {
+            ServeRequest::NavigateMarkdown {
+                path, display_url, ..
+            } => {
                 let preview = MarkdownPreviewFile::create(&path)?;
-                let display_url = preview.source_url().to_string();
+                let display_url = display_url.unwrap_or_else(|| preview.source_url().to_string());
                 let url = preview.url();
                 let navigation = self.renderer.navigate(NavigateRequest::new(
                     self.session.id(),
@@ -3246,14 +3257,18 @@ mod tests {
                 id: 2,
                 path: PathBuf::from("/tmp/image.png"),
                 fit: Some(ImageFit::Contain),
+                display_url: None,
             }
         );
         assert_eq!(
-            parse_serve_request(r#"{"type":"navigate_markdown","id":3,"path":"/tmp/README.md"}"#)
-                .expect("navigate_markdown request should parse"),
+            parse_serve_request(
+                r#"{"type":"navigate_markdown","id":3,"path":"/tmp/README.md","display_url":"file:///tmp/README.md#intro"}"#
+            )
+            .expect("navigate_markdown request should parse"),
             ServeRequest::NavigateMarkdown {
                 id: 3,
                 path: PathBuf::from("/tmp/README.md"),
+                display_url: Some("file:///tmp/README.md#intro".to_string()),
             }
         );
 
@@ -3372,7 +3387,6 @@ mod tests {
         let directory = tempfile::tempdir().expect("tempdir should be created");
         let image_path = directory.path().join("pixel.png");
         std::fs::write(&image_path, tiny_png()).expect("image fixture should be written");
-        let expected_display_url = path_to_file_url(absolute_or_existing_path(&image_path));
         let mut runtime = ServeRuntime::new(
             FakeRenderer::new(),
             ServeOptions {
@@ -3394,6 +3408,7 @@ mod tests {
             id: 7,
             path: image_path,
             fit: Some(ImageFit::Contain),
+            display_url: Some("file:///tmp/pixel.png?size=1".to_string()),
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
@@ -3403,7 +3418,7 @@ mod tests {
         assert_eq!(response.url.as_deref(), Some(navigated_url.as_str()));
         assert_eq!(
             response.display_url.as_deref(),
-            Some(expected_display_url.as_str())
+            Some("file:///tmp/pixel.png?size=1")
         );
         assert_eq!(runtime._dynamic_image_previews.len(), 1);
     }
@@ -3414,7 +3429,6 @@ mod tests {
         let markdown_path = directory.path().join("README.md");
         std::fs::write(&markdown_path, "# Preview\n\nHello **browser**.")
             .expect("markdown fixture should be written");
-        let expected_display_url = path_to_file_url(absolute_or_existing_path(&markdown_path));
         let mut runtime = ServeRuntime::new(
             FakeRenderer::new(),
             ServeOptions {
@@ -3435,6 +3449,7 @@ mod tests {
         let response = runtime.handle(ServeRequest::NavigateMarkdown {
             id: 8,
             path: markdown_path,
+            display_url: Some("file:///tmp/README.md#intro".to_string()),
         });
 
         assert_eq!(response.status, ServeStatus::Ok);
@@ -3444,7 +3459,7 @@ mod tests {
         assert_eq!(response.url.as_deref(), Some(navigated_url.as_str()));
         assert_eq!(
             response.display_url.as_deref(),
-            Some(expected_display_url.as_str())
+            Some("file:///tmp/README.md#intro")
         );
         assert_eq!(runtime._dynamic_markdown_previews.len(), 1);
     }
@@ -3519,6 +3534,7 @@ mod tests {
         let wrapper_response = runtime.handle(ServeRequest::NavigateMarkdown {
             id: 8,
             path: markdown_path,
+            display_url: None,
         });
         assert_eq!(wrapper_response.status, ServeStatus::Ok);
         let wrapper_url = wrapper_response
@@ -3565,6 +3581,7 @@ mod tests {
         let wrapper_response = runtime.handle(ServeRequest::NavigateMarkdown {
             id: 8,
             path: markdown_path,
+            display_url: None,
         });
         assert_eq!(wrapper_response.status, ServeStatus::Ok);
         assert!(
@@ -4415,7 +4432,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":25,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":26,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
