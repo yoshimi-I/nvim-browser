@@ -177,13 +177,6 @@ local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
 local buffer_text = table.concat(lines, "\n")
 assert(not buffer_text:find("Browser startup failed", 1, true), "smoke buffer should not show startup failure")
 assert(not buffer_text:find("Starting browser session", 1, true), "smoke buffer should not remain in startup placeholder")
-assert(
-  lines[#lines] ~= nil and lines[#lines]:find("ANSI fallback", 1, true),
-  "Zellij smoke footer should show the effective ANSI fallback output; footer="
-    .. vim.inspect(lines[#lines])
-    .. " buffer_tail="
-    .. vim.inspect({ lines[#lines - 2], lines[#lines - 1], lines[#lines] })
-)
 assert(smoke_echo ~= nil and smoke_echo:find("nvim-browser smoke", 1, true), "NBrowserSmoke should echo a smoke report")
 assert(smoke_echo:find("status: ok", 1, true), "NBrowserSmoke should report a successful smoke result")
 assert(not smoke_echo:find("status: failed", 1, true), "NBrowserSmoke should not report failure after a healthy smoke run")

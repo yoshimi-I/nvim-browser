@@ -6304,6 +6304,8 @@ end), "ANSI fallback serve frames should automatically request reader page text:
   .. "/"
   .. tostring(terminal.state().auto_reader_opened))
 _G.nvim_browser_fallback_reader_request = last_request_of_type("page_text")
+_G.nvim_browser_fallback_preview_win = terminal.state().winid
+_G.nvim_browser_fallback_preview_buf = terminal.state().bufnr
 serve_stdout(nil, { vim.json.encode({
   id = _G.nvim_browser_fallback_reader_request.id,
   status = "ok",
@@ -6320,6 +6322,11 @@ assert(vim.wait(1000, function()
     and vim.api.nvim_buf_is_valid(reader_bufnr)
     and nvim_browser_buffer_text(reader_bufnr):match("Readable fallback body") ~= nil
 end), "ANSI fallback page_text responses should open the reader buffer")
+assert(
+  vim.api.nvim_win_is_valid(_G.nvim_browser_fallback_preview_win)
+    and vim.api.nvim_win_get_buf(_G.nvim_browser_fallback_preview_win) == _G.nvim_browser_fallback_preview_buf,
+  "ANSI fallback reader auto-open should not replace the browser preview window"
+)
 
 sent_requests = {}
 terminal.close()
