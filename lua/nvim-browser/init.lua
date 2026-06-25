@@ -708,7 +708,9 @@ function M.preview()
 end
 
 local smoke_is_ready
+local smoke_reader_ready
 local smoke_focused_input_ready
+local smoke_output_label
 local smoke_report
 local emit_smoke_report
 
@@ -727,6 +729,7 @@ function M.smoke(opts)
     focus = false,
     input = false,
     submit = false,
+    reader = false,
   }
 
   state.smoke_target = smoke_fixture_url()
@@ -777,15 +780,33 @@ function M.smoke(opts)
         return
       end
       reason = "input: waiting for fresh hints"
-    else
+    elseif stage == "submitted" then
       ready, reason = smoke_is_ready("nvim-browser smoke submitted: " .. interaction_text)
       if ready then
         details.submit = true
         details.interaction = true
+        local terminal_state = terminal.state()
+        local output = smoke_output_label(M.runtime_metadata(), terminal_state)
+        local reader_options = (M.config and M.config.reader) or {}
+        if output == "ANSI fallback" and reader_options.auto_open_on_ansi_fallback ~= false then
+          stage = "reader"
+          vim.defer_fn(poll, interval_ms)
+          return
+        end
         emit_smoke_report(smoke_report("ok", nil, details), opts)
         return
       end
       reason = "submit: " .. tostring(reason)
+    elseif stage == "reader" then
+      ready, reason = smoke_reader_ready()
+      if ready then
+        details.reader = true
+        emit_smoke_report(smoke_report("ok", nil, details), opts)
+        return
+      end
+      reason = "reader: " .. tostring(reason)
+    else
+      reason = "unknown smoke stage: " .. tostring(stage)
     end
 
     last_reason = reason or last_reason
@@ -1195,7 +1216,7 @@ local function runtime_status_label(runtime)
   return table.concat(parts, " ")
 end
 
-local function smoke_output_label(runtime, terminal_state)
+smoke_output_label = function(runtime, terminal_state)
   runtime = type(runtime) == "table" and runtime or {}
   terminal_state = type(terminal_state) == "table" and terminal_state or {}
   return status_labels.runtime_output_label(runtime.output, runtime.output_label)
@@ -1247,6 +1268,9 @@ smoke_report = function(status, reason, details)
   if details.submit == true then
     table.insert(lines, "submit: ok")
   end
+  if details.reader == true then
+    table.insert(lines, "reader: ok")
+  end
   if reason ~= nil and reason ~= "" then
     table.insert(lines, "reason: " .. tostring(reason))
   end
@@ -1295,6 +1319,33 @@ smoke_is_ready = function(expected_title)
   end
   if health.stale ~= false or health.refresh_pending ~= false then
     return false, "frame not healthy"
+  end
+  return true, nil
+end
+
+local function smoke_reader_buffer_text(bufnr)
+  if bufnr == nil or not vim.api.nvim_buf_is_valid(bufnr) then
+    return nil
+  end
+  local ok, lines = pcall(vim.api.nvim_buf_get_lines, bufnr, 0, -1, false)
+  if not ok then
+    return nil
+  end
+  return table.concat(lines, "\n")
+end
+
+smoke_reader_ready = function()
+  local terminal_state = terminal.state()
+  local bufnr = terminal_state.reader_bufnr
+  local text = smoke_reader_buffer_text(bufnr)
+  if text == nil then
+    return false, "missing reader buffer"
+  end
+  if text:find("nvim%-browser smoke") == nil and text:find("deterministic local browser runtime fixture", 1, true) == nil then
+    return false, "reader missing smoke fixture text"
+  end
+  if terminal_state.winid ~= nil and not vim.api.nvim_win_is_valid(terminal_state.winid) then
+    return false, "preview window invalid"
   end
   return true, nil
 end

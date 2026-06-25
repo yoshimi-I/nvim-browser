@@ -140,6 +140,7 @@ local ready = vim.wait(35000, function()
     and smoke_echo:find("focus: ok", 1, true) ~= nil
     and smoke_echo:find("input: ok", 1, true) ~= nil
     and smoke_echo:find("submit: ok", 1, true) ~= nil
+    and smoke_echo:find("reader: ok", 1, true) ~= nil
 end, 50)
 
 if not ready then
@@ -185,6 +186,13 @@ assert(smoke_echo:find("interaction: ok", 1, true), "smoke report should show a 
 assert(smoke_echo:find("focus: ok", 1, true), "smoke report should show focused input")
 assert(smoke_echo:find("input: ok", 1, true), "smoke report should show typed text")
 assert(smoke_echo:find("submit: ok", 1, true), "smoke report should show submitted fixture state")
+assert(smoke_echo:find("reader: ok", 1, true), "smoke report should show ANSI fallback reader health")
+assert(state.reader_bufnr ~= nil and vim.api.nvim_buf_is_valid(state.reader_bufnr), "ANSI fallback smoke should open a reader buffer")
+local reader_text = table.concat(vim.api.nvim_buf_get_lines(state.reader_bufnr, 0, -1, false), "\n")
+assert(
+  reader_text:find("deterministic local browser runtime fixture", 1, true),
+  "ANSI fallback smoke reader should include smoke fixture text"
+)
 
 browser.close()
 vim.api.nvim_chan_send = original_nvim_chan_send

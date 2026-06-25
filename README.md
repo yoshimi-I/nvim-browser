@@ -373,7 +373,9 @@ NVBROWSER_NVIM_E2E=1 nvim --headless -u NONE -l tests/lua/nvim_smoke_e2e_test.lu
 
 The smoke opens the bundled deterministic HTML fixture through `:NBrowserSmoke`,
 verifies a healthy ANSI frame through plugin state, and checks that `ZELLIJ=1`
-plus explicit Kitty graphics resolves to the Zellij-safe ANSI path.
+plus explicit Kitty graphics resolves to the Zellij-safe ANSI path. When that
+fallback is active, the smoke also waits for the auto-opened Reader buffer and
+reports `reader: ok`.
 It is skipped unless `NVBROWSER_NVIM_E2E=1` is set, and it skips when a compatible
 `nvbrowser` binary or Chromium backend is unavailable.
 

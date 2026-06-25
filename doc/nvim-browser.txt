@@ -240,9 +240,10 @@ NVBROWSER_NVIM_E2E=1 nvim --headless -u NONE -l tests/lua/nvim_smoke_e2e_test.lu
 <
 The smoke opens a deterministic local HTML fixture through :NBrowserOpen,
 verifies a healthy ANSI frame through plugin state, and checks that ZELLIJ=1
-plus explicit Kitty graphics resolves to the Zellij-safe ANSI path. It is
-skipped unless NVBROWSER_NVIM_E2E=1 is set, and it skips when a compatible
-nvbrowser binary or Chromium backend is unavailable.
+plus explicit Kitty graphics resolves to the Zellij-safe ANSI path. When that
+fallback is active, the smoke also waits for the auto-opened Reader buffer and
+reports "reader: ok". It is skipped unless NVBROWSER_NVIM_E2E=1 is set, and it
+skips when a compatible nvbrowser binary or Chromium backend is unavailable.
 
 ==============================================================================
 COMMANDS                                           *nvim-browser-commands*
@@ -743,7 +744,8 @@ COMMANDS                                           *nvim-browser-commands*
 	Chromium/CDP browser runtime, then report whether a healthy rendered frame
 	was received. The report includes the effective output mode, runtime
 	metadata, frame geometry, and frame health. Inside Zellij with Kitty
-	graphics configured, a healthy smoke report shows "output: ANSI fallback".
+	graphics configured, a healthy smoke report shows "output: ANSI fallback"
+	and "reader: ok".
 
 							*:NBrowserCalibrate*
 :NBrowserCalibrate [cell_width_px cell_height_px]
