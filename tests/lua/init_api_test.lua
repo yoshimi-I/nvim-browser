@@ -2922,9 +2922,22 @@ assert(_G.nvim_browser_point_info_callback == _G.nvim_browser_point_info_callbac
 
 _G.nvim_browser_activate_point = nil
 _G.nvim_browser_activate_calls = {}
+_G.nvim_browser_activate_warnings = {}
+_G.nvim_browser_original_activate_echo = vim.api.nvim_echo
+vim.api.nvim_echo = function(chunks, history, opts)
+  if type(chunks) == "table" and chunks[1] ~= nil and chunks[1][2] == "WarningMsg" then
+    table.insert(_G.nvim_browser_activate_warnings, chunks[1][1])
+    return
+  end
+  return _G.nvim_browser_original_activate_echo(chunks, history, opts)
+end
 terminal.point_info_here = function(callback)
   if _G.nvim_browser_activate_point == false then
     return false
+  end
+  if _G.nvim_browser_activate_point == "error" then
+    callback({ status = "error", error = "stale point" })
+    return true
   end
   callback({ status = "ok", point = _G.nvim_browser_activate_point })
   return true
@@ -2990,6 +3003,10 @@ assert(
   #_G.nvim_browser_activate_calls == _G.nvim_browser_before_legacy_input_activate_calls,
   "activate_here should not guess an action for protocol-old generic input points"
 )
+assert(
+  _G.nvim_browser_activate_warnings[#_G.nvim_browser_activate_warnings] == "nvim-browser: no actionable browser element under cursor",
+  "activate_here should explain legacy generic input points instead of silently doing nothing"
+)
 
 _G.nvim_browser_activate_point = {
   kind = "select",
@@ -3021,9 +3038,40 @@ _G.nvim_browser_before_unsupported_activate_calls = #_G.nvim_browser_activate_ca
 _G.nvim_browser_activate_point = { tag = "span", label = "Plain text" }
 assert(browser.activate_here() == true, "activate_here should still complete point inspection for unsupported points")
 assert(#_G.nvim_browser_activate_calls == _G.nvim_browser_before_unsupported_activate_calls, "activate_here should not send browser input for unsupported points")
+assert(
+  _G.nvim_browser_activate_warnings[#_G.nvim_browser_activate_warnings] == "nvim-browser: no actionable browser element under cursor",
+  "activate_here should explain unsupported cursor points"
+)
+
+_G.nvim_browser_activate_point = { kind = "button", label = "No coordinate button", clickable = true }
+assert(browser.activate_here() == true, "activate_here should inspect coordinate-less actionable points")
+assert(
+  _G.nvim_browser_activate_warnings[#_G.nvim_browser_activate_warnings] == "nvim-browser: cursor activation could not map the element to viewport coordinates",
+  "activate_here should explain missing viewport coordinates"
+)
+
+terminal.click_point = function(x, y)
+  table.insert(_G.nvim_browser_activate_calls, "failed-click:" .. tostring(x) .. ":" .. tostring(y))
+  return false
+end
+_G.nvim_browser_activate_point = { kind = "button", label = "Broken button", clickable = true, x = 19, y = 29 }
+assert(browser.activate_here() == true, "activate_here should inspect actionable points even when dispatch fails")
+assert(
+  _G.nvim_browser_activate_warnings[#_G.nvim_browser_activate_warnings] == "nvim-browser: cursor activation failed for button",
+  "activate_here should explain failed browser action dispatch"
+)
+
+_G.nvim_browser_before_silent_warning_count = #_G.nvim_browser_activate_warnings
+_G.nvim_browser_activate_point = "error"
+assert(browser.activate_here({ warn = false }) == true, "activate_here should allow silent async point inspection failures")
+assert(
+  #_G.nvim_browser_activate_warnings == _G.nvim_browser_before_silent_warning_count,
+  "activate_here warn=false should suppress async point inspection failure warnings"
+)
 
 _G.nvim_browser_activate_point = false
 assert(browser.activate_here() == false, "activate_here should return false when cursor point inspection cannot start")
+vim.api.nvim_echo = _G.nvim_browser_original_activate_echo
 
 local clicked_mouse = nil
 terminal.click_mouse = function(mousepos)

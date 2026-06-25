@@ -739,7 +739,9 @@ link URL under the preview cursor in the active preview without sending a click.
 `:NBrowserActivateHere` inspects the live DOM under the preview cursor and
 chooses the obvious cursor action: follow links, toggle checkbox/radio inputs,
 prompt and type into text inputs, pick an enabled select option, or click
-buttons and other clickable elements.
+buttons and other clickable elements. If the inspected point is plain text,
+stale, missing viewport coordinates, or the backend rejects the action, it
+emits a warning instead of failing silently.
 `:NBrowserScreenshot [path]` captures the active browser session viewport to a
 PNG file without replacing the Neovim preview frame. Without a path, it writes a
 timestamped PNG under Neovim's cache directory.

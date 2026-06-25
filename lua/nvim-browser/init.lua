@@ -852,6 +852,7 @@ function M.smoke(opts)
           local activated = M.activate_here({
             point = input_hint,
             submit = true,
+            warn = false,
             input = function()
               return interaction_text
             end,
@@ -2885,6 +2886,21 @@ local function enabled_point_options(point)
   return enabled
 end
 
+local function warn_activate_here(message)
+  vim.api.nvim_echo({ { "nvim-browser: " .. tostring(message), "WarningMsg" } }, false, {})
+end
+
+local function should_warn_activate(opts)
+  return opts.warn ~= false
+end
+
+local function activate_failure_kind(kind)
+  if kind == nil or kind == vim.NIL or kind == "" then
+    return "element"
+  end
+  return tostring(kind)
+end
+
 local function activate_point(point, opts)
   local input = opts.input or vim.fn.input
   local select = opts.select or vim.ui.select
@@ -2893,23 +2909,43 @@ local function activate_point(point, opts)
   local x, y = point_xy(point)
   local href = point.href
   if href ~= nil and href ~= vim.NIL and href ~= "" and kind == "link" then
-    M.navigate(tostring(href))
-    return true
+    local ok = M.navigate(tostring(href))
+    if not ok and should_warn_activate(opts) then
+      warn_activate_here("cursor activation failed for link")
+    end
+    return ok
   end
 
   if kind == "checkbox" or kind == "radio" then
-    if x ~= nil and y ~= nil then
-      return terminal.toggle_point(x, y)
+    if x == nil or y == nil then
+      if should_warn_activate(opts) then
+        warn_activate_here("cursor activation could not map the element to viewport coordinates")
+      end
+      return false
     end
-    return false
+    local ok = terminal.toggle_point(x, y)
+    if not ok and should_warn_activate(opts) then
+      warn_activate_here("cursor activation failed for " .. activate_failure_kind(kind))
+    end
+    return ok
   end
 
   if kind == "input" or kind == "text_area" or kind == "editable" then
     local text = input("nvim-browser text: ")
-    if text ~= nil and text ~= "" and x ~= nil and y ~= nil then
-      return terminal.type_point(x, y, text, { submit = opts.submit == true })
+    if text == nil or text == "" then
+      return false
     end
-    return false
+    if x == nil or y == nil then
+      if should_warn_activate(opts) then
+        warn_activate_here("cursor activation could not map the element to viewport coordinates")
+      end
+      return false
+    end
+    local ok = terminal.type_point(x, y, text, { submit = opts.submit == true })
+    if not ok and should_warn_activate(opts) then
+      warn_activate_here("cursor activation failed for " .. activate_failure_kind(kind))
+    end
+    return ok
   end
 
   if kind == "select" then
@@ -2924,26 +2960,51 @@ local function activate_point(point, opts)
         end
         local choice = select_option_choice(option)
         if choice ~= nil and x ~= nil and y ~= nil then
-          terminal.select_point(x, y, choice)
+          local ok = terminal.select_point(x, y, choice)
+          if not ok and should_warn_activate(opts) then
+            warn_activate_here("cursor activation failed for select")
+          end
+        elseif choice ~= nil and should_warn_activate(opts) then
+          warn_activate_here("cursor activation could not map the element to viewport coordinates")
         end
       end)
       return true
     else
       local choice = input("nvim-browser option: ")
-      if choice ~= nil and choice ~= "" and x ~= nil and y ~= nil then
-        return terminal.select_point(x, y, choice)
+      if choice == nil or choice == "" then
+        return false
       end
+      if x == nil or y == nil then
+        if should_warn_activate(opts) then
+          warn_activate_here("cursor activation could not map the element to viewport coordinates")
+        end
+        return false
+      end
+      local ok = terminal.select_point(x, y, choice)
+      if not ok and should_warn_activate(opts) then
+        warn_activate_here("cursor activation failed for select")
+      end
+      return ok
     end
-    return false
   end
 
   if kind == "button" or point.clickable == true then
-    if x ~= nil and y ~= nil then
-      return terminal.click_point(x, y)
+    if x == nil or y == nil then
+      if should_warn_activate(opts) then
+        warn_activate_here("cursor activation could not map the element to viewport coordinates")
+      end
+      return false
     end
-    return false
+    local ok = terminal.click_point(x, y)
+    if not ok and should_warn_activate(opts) then
+      warn_activate_here("cursor activation failed for " .. activate_failure_kind(kind))
+    end
+    return ok
   end
 
+  if should_warn_activate(opts) then
+    warn_activate_here("no actionable browser element under cursor")
+  end
   return false
 end
 
@@ -2955,7 +3016,9 @@ function M.activate_here(opts)
 
   return terminal.point_info_here(function(response)
     if response.status ~= "ok" or type(response.point) ~= "table" then
-      vim.api.nvim_echo({ { "nvim-browser: cursor activation requires an active cursor-addressable browser preview or actionable element", "WarningMsg" } }, false, {})
+      if should_warn_activate(opts) then
+        warn_activate_here("cursor activation requires an active cursor-addressable browser preview or actionable element")
+      end
       return
     end
 

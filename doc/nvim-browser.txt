@@ -551,7 +551,9 @@ COMMANDS                                           *nvim-browser-commands*
 	Inspect the live DOM under the preview cursor and choose the obvious
 	cursor action: follow links, toggle checkbox/radio inputs, prompt and type
 	into text inputs, pick an enabled select option, or click buttons and other
-	clickable elements.
+	clickable elements. Plain text, missing viewport coordinates, stale
+	metadata, and rejected backend actions warn instead of silently doing
+	nothing.
 
 							*:NBrowserWheelDownHere*
 :NBrowserWheelDownHere [pixels]

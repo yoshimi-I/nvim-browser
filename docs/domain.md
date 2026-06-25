@@ -100,13 +100,17 @@ can be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - `:NBrowserSmoke` should prove the browser surface is usable from Neovim, not
   only that Chromium loaded a page. The smoke fixture should require fresh
   input hints with viewport geometry, place the preview cursor over the input
-  hint, send a cursor click, then submit through the fresh hint path. Focused
-  element metadata is useful diagnostics when observed, but should not be the
-  sole success gate for the smoke interaction because real capture timing can
-  make focus metadata transient. Smoke reports should distinguish hint
-  discovery, cursor placement, point click dispatch, and hint-backed input
-  submission. Both the Zellij ANSI fallback profile and direct Kitty Unicode
-  profile should keep exercising this interaction contract.
+  hint, send a cursor click, then submit through smart cursor activation.
+  Focused element metadata is useful diagnostics when observed, but should not
+  be the sole success gate for the smoke interaction because real capture timing
+  can make focus metadata transient. Smoke reports should distinguish hint
+  discovery, cursor placement, point click dispatch, smart activation, and any
+  hint-backed fallback. Both the Zellij ANSI fallback profile and direct Kitty
+  Unicode profile should keep exercising this interaction contract.
+- Smart cursor activation should be diagnosable during real use. Unsupported
+  plain text, protocol-old generic input metadata, missing viewport coordinates,
+  and rejected backend actions should warn with a concrete reason rather than
+  making `ga` appear inert.
 - Kitty Unicode terminal graphics diagnostics should keep raw payload bytes and
   terminal egress bytes separate. Multiplexer wrapping belongs at egress time, so
   replay can re-wrap the stored raw payload for the active transport. Egress
