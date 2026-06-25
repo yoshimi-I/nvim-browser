@@ -195,7 +195,8 @@ previews remain visible instead of producing broken terminal graphics. To force
 Kitty graphics anyway, opt in with `allow_unsafe_multiplexer_graphics = true`.
 When this ANSI fallback is selected, nvim-browser also opens the Reader buffer
 from the first successful page text snapshot so the page remains readable even
-when image fidelity is low. Disable that with
+when image fidelity is low, then refreshes it after later rendered frames.
+Failed or empty refresh snapshots keep the last readable text. Disable that with
 `reader.auto_open_on_ansi_fallback = false`.
 Lua backend tests cover the `ZELLIJ=1` resolution for browser sessions and
 image targets, and the opt-in Chromium E2E suite covers that ANSI browser

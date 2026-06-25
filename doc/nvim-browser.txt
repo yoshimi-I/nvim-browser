@@ -148,8 +148,9 @@ safe fallback also applies when graphics="kitty" or graphics="kitty-unicode" is
 configured explicitly under Zellij. To force Kitty graphics anyway, opt in with
 allow_unsafe_multiplexer_graphics=true. When this ANSI fallback is selected,
 nvim-browser also opens the Reader buffer from the first successful page text
-snapshot so the page remains readable even when image fidelity is low. Disable
-that with reader.auto_open_on_ansi_fallback=false. tmux keeps Kitty output and
+snapshot so the page remains readable even when image fidelity is low, then
+refreshes it after later rendered frames. Failed or empty refresh snapshots keep
+the last readable text. Disable that with reader.auto_open_on_ansi_fallback=false. tmux keeps Kitty output and
 relies on tmux passthrough wrapping. Unknown terminals use ANSI as the safe
 fallback. Outside Zellij, override with graphics="ansi", "kitty", or
 "kitty-unicode" when needed.

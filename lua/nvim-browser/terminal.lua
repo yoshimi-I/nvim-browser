@@ -78,6 +78,7 @@ local state = {
   reader_bufnr = nil,
   reader_base_url = nil,
   latest_reader_request_id = nil,
+  auto_reader_request_id = nil,
   latest_page_text_yank_request_id = nil,
   auto_reader_request_in_flight = false,
   auto_reader_opened = false,
@@ -971,7 +972,8 @@ local function delete_reader_buffer()
   state.reader_base_url = nil
 end
 
-local function apply_reader_snapshot(snapshot)
+local function apply_reader_snapshot(snapshot, opts)
+  opts = opts or {}
   if state.reader_bufnr == nil or not vim.api.nvim_buf_is_valid(state.reader_bufnr) then
     state.reader_bufnr = vim.api.nvim_create_buf(false, true)
     vim.bo[state.reader_bufnr].buftype = "nofile"
@@ -999,36 +1001,48 @@ local function apply_reader_snapshot(snapshot)
   vim.bo[state.reader_bufnr].modifiable = true
   vim.api.nvim_buf_set_lines(state.reader_bufnr, 0, -1, false, lines)
   vim.bo[state.reader_bufnr].modifiable = false
-  vim.cmd("botright split")
-  vim.api.nvim_win_set_buf(0, state.reader_bufnr)
+  if opts.open_window ~= false then
+    vim.cmd("botright split")
+    vim.api.nvim_win_set_buf(0, state.reader_bufnr)
+  end
 end
 
 local function handle_reader_response(response)
   local is_auto_reader_response = state.auto_reader_request_in_flight
     and response.id ~= nil
-    and state.latest_reader_request_id ~= nil
-    and tonumber(response.id) == state.latest_reader_request_id
+    and state.auto_reader_request_id ~= nil
+    and tonumber(response.id) == state.auto_reader_request_id
   if
     response.id ~= nil
     and state.latest_reader_request_id ~= nil
     and tonumber(response.id) ~= nil
     and tonumber(response.id) < state.latest_reader_request_id
   then
+    if is_auto_reader_response then
+      state.auto_reader_request_in_flight = false
+      state.auto_reader_request_id = nil
+    end
     return
   end
   if response.status ~= "ok" or response.text == nil or response.text == vim.NIL then
     if is_auto_reader_response then
       state.auto_reader_request_in_flight = false
+      state.auto_reader_request_id = nil
     end
-    delete_reader_buffer()
+    if not (is_auto_reader_response and state.auto_reader_opened) then
+      delete_reader_buffer()
+    end
     vim.api.nvim_echo({ { "nvim-browser: reader snapshot failed", "WarningMsg" } }, false, {})
     return
   end
   if response.text.text == nil or response.text.text == "" or response.text.text == vim.NIL then
     if is_auto_reader_response then
       state.auto_reader_request_in_flight = false
+      state.auto_reader_request_id = nil
     end
-    delete_reader_buffer()
+    if not (is_auto_reader_response and state.auto_reader_opened) then
+      delete_reader_buffer()
+    end
     vim.api.nvim_echo({ { "nvim-browser: reader snapshot was empty", "WarningMsg" } }, false, {})
     return
   end
@@ -1036,15 +1050,22 @@ local function handle_reader_response(response)
   if response.display_url ~= nil and response.display_url ~= vim.NIL and response.display_url ~= "" then
     snapshot = vim.tbl_extend("force", {}, snapshot, { display_url = response.display_url })
   end
-  apply_reader_snapshot(snapshot)
+  local should_open_reader_window = not (
+    is_auto_reader_response
+    and state.auto_reader_opened
+    and state.reader_bufnr ~= nil
+    and vim.api.nvim_buf_is_valid(state.reader_bufnr)
+  )
+  apply_reader_snapshot(snapshot, { open_window = should_open_reader_window })
   if is_auto_reader_response then
     state.auto_reader_request_in_flight = false
+    state.auto_reader_request_id = nil
     state.auto_reader_opened = true
   end
 end
 
 local function maybe_auto_open_reader_for_ansi_fallback()
-  if state.auto_reader_opened or state.auto_reader_request_in_flight then
+  if state.auto_reader_request_in_flight then
     return
   end
   if options.reader == nil or options.reader.auto_open_on_ansi_fallback ~= true then
@@ -1057,6 +1078,7 @@ local function maybe_auto_open_reader_for_ansi_fallback()
   local ok, id = send_serve_request({ type = "page_text" }, handle_reader_response)
   if ok then
     state.auto_reader_request_in_flight = true
+    state.auto_reader_request_id = id
     state.latest_reader_request_id = id
   end
 end
@@ -2699,6 +2721,7 @@ function M.open(command)
   state.navigation_suppressed_request_ids = {}
   state.latest_applied_response_id = 0
   state.latest_reader_request_id = nil
+  state.auto_reader_request_id = nil
   state.latest_page_text_yank_request_id = nil
   state.auto_reader_request_in_flight = false
   state.auto_reader_opened = false
@@ -3176,6 +3199,7 @@ function M.close()
   state.navigation_suppressed_request_ids = {}
   state.latest_applied_response_id = 0
   state.latest_reader_request_id = nil
+  state.auto_reader_request_id = nil
   state.latest_page_text_yank_request_id = nil
   state.auto_reader_request_in_flight = false
   state.auto_reader_opened = false
@@ -3941,6 +3965,8 @@ end
 function M.reader()
   local ok, id = send_serve_request({ type = "page_text" }, handle_reader_response)
   if ok then
+    state.auto_reader_request_in_flight = false
+    state.auto_reader_request_id = nil
     state.latest_reader_request_id = id
   end
   return ok
@@ -4800,6 +4826,7 @@ function M.state()
     last_find_query = state.last_find_query,
     element_hints = state.element_hints,
     reader_bufnr = state.reader_bufnr,
+    auto_reader_request_id = state.auto_reader_request_id,
     auto_reader_request_in_flight = state.auto_reader_request_in_flight,
     auto_reader_opened = state.auto_reader_opened,
   }

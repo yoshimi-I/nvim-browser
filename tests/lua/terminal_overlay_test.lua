@@ -6327,6 +6327,151 @@ assert(
     and vim.api.nvim_win_get_buf(_G.nvim_browser_fallback_preview_win) == _G.nvim_browser_fallback_preview_buf,
   "ANSI fallback reader auto-open should not replace the browser preview window"
 )
+_G.nvim_browser_fallback_reader_buf = terminal.state().reader_bufnr
+_G.nvim_browser_fallback_reader_win_count = vim.fn.winnr("$")
+_G.nvim_browser_fallback_current_win = vim.api.nvim_get_current_win()
+
+sent_requests = {}
+serve_stdout(nil, { vim.json.encode({
+  id = 3,
+  status = "ok",
+  payload = "ansi fallback frame after navigation",
+  url = "https://example.com/zellij-fallback/next",
+  title = "Zellij Fallback Next",
+  runtime = interactive_runtime(450, 165),
+}), "" })
+assert(vim.wait(1000, function()
+  return last_request_of_type("page_text") ~= nil
+end), "ANSI fallback reader should refresh page_text after a later successful frame")
+_G.nvim_browser_fallback_refresh_request = last_request_of_type("page_text")
+assert(
+  _G.nvim_browser_fallback_refresh_request.id ~= _G.nvim_browser_fallback_reader_request.id,
+  "ANSI fallback reader refresh should use a fresh request id"
+)
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_fallback_refresh_request.id,
+  status = "ok",
+  text = {
+    title = "Zellij Fallback Next",
+    url = "https://example.com/zellij-fallback/next",
+    text = "# Zellij Fallback Next\n\nRefreshed fallback body",
+    truncated = false,
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  local reader_bufnr = terminal.state().reader_bufnr
+  return reader_bufnr == _G.nvim_browser_fallback_reader_buf
+    and vim.api.nvim_buf_is_valid(reader_bufnr)
+    and nvim_browser_buffer_text(reader_bufnr):match("Refreshed fallback body") ~= nil
+end), "ANSI fallback reader refresh responses should update the existing reader buffer")
+assert(
+  vim.fn.winnr("$") == _G.nvim_browser_fallback_reader_win_count,
+  "ANSI fallback reader refresh should not open additional reader splits"
+)
+assert(
+  vim.api.nvim_get_current_win() == _G.nvim_browser_fallback_current_win,
+  "ANSI fallback reader refresh should not steal focus"
+)
+
+sent_requests = {}
+serve_stdout(nil, { vim.json.encode({
+  id = 5,
+  status = "ok",
+  payload = "ansi fallback frame with pending reader refresh",
+  url = "https://example.com/zellij-fallback/pending",
+  title = "Zellij Fallback Pending",
+  runtime = interactive_runtime(450, 165),
+}), "" })
+assert(vim.wait(1000, function()
+  return last_request_of_type("page_text") ~= nil
+end), "ANSI fallback reader should request refresh page_text before testing duplicate suppression")
+_G.nvim_browser_fallback_pending_refresh_request = last_request_of_type("page_text")
+serve_stdout(nil, { vim.json.encode({
+  id = 6,
+  status = "ok",
+  payload = "ansi fallback frame while reader refresh is pending",
+  url = "https://example.com/zellij-fallback/pending-second",
+  title = "Zellij Fallback Pending Second",
+  runtime = interactive_runtime(450, 165),
+}), "" })
+vim.wait(100)
+assert(
+  #nvim_browser_requests_of_type("page_text") == 1,
+  "ANSI fallback reader should not send duplicate refresh requests while one is in flight"
+)
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_fallback_pending_refresh_request.id,
+  status = "error",
+  error = "page text refresh failed",
+}), "" })
+assert(
+  terminal.state().reader_bufnr == _G.nvim_browser_fallback_reader_buf
+    and vim.api.nvim_buf_is_valid(_G.nvim_browser_fallback_reader_buf)
+    and nvim_browser_buffer_text(_G.nvim_browser_fallback_reader_buf):match("Refreshed fallback body") ~= nil,
+  "ANSI fallback reader refresh failures should preserve the existing reader buffer"
+)
+
+sent_requests = {}
+serve_stdout(nil, { vim.json.encode({
+  id = 8,
+  status = "ok",
+  payload = "ansi fallback frame with empty reader refresh",
+  url = "https://example.com/zellij-fallback/empty-refresh",
+  title = "Zellij Fallback Empty Refresh",
+  runtime = interactive_runtime(450, 165),
+}), "" })
+assert(vim.wait(1000, function()
+  return last_request_of_type("page_text") ~= nil
+end), "ANSI fallback reader should request refresh page_text before testing empty snapshot preservation")
+_G.nvim_browser_fallback_empty_refresh_request = last_request_of_type("page_text")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_fallback_empty_refresh_request.id,
+  status = "ok",
+  text = {
+    title = "Zellij Fallback Empty Refresh",
+    url = "https://example.com/zellij-fallback/empty-refresh",
+    text = "",
+    truncated = false,
+  },
+}), "" })
+assert(
+  terminal.state().reader_bufnr == _G.nvim_browser_fallback_reader_buf
+    and vim.api.nvim_buf_is_valid(_G.nvim_browser_fallback_reader_buf)
+    and nvim_browser_buffer_text(_G.nvim_browser_fallback_reader_buf):match("Refreshed fallback body") ~= nil,
+  "ANSI fallback reader empty refresh snapshots should preserve the existing reader buffer"
+)
+
+sent_requests = {}
+serve_stdout(nil, { vim.json.encode({
+  id = 10,
+  status = "ok",
+  payload = "ansi fallback frame before manual reader",
+  url = "https://example.com/zellij-fallback/manual-reader",
+  title = "Zellij Fallback Manual Reader",
+  runtime = interactive_runtime(450, 165),
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().auto_reader_request_in_flight == true and last_request_of_type("page_text") ~= nil
+end), "ANSI fallback reader should have an auto refresh in flight before testing manual reader separation")
+_G.nvim_browser_auto_before_manual_reader_request = last_request_of_type("page_text")
+assert(terminal.reader() == true, "manual reader should still be allowed while an auto refresh was pending")
+_G.nvim_browser_manual_reader_request = last_request_of_type("page_text")
+assert(
+  _G.nvim_browser_manual_reader_request.id ~= _G.nvim_browser_auto_before_manual_reader_request.id,
+  "manual reader should use a distinct page_text request id"
+)
+assert(
+  terminal.state().auto_reader_request_in_flight == false and terminal.state().auto_reader_request_id == nil,
+  "manual reader should clear pending auto reader bookkeeping"
+)
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_manual_reader_request.id,
+  status = "error",
+  error = "manual reader failed",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().reader_bufnr == nil or not vim.api.nvim_buf_is_valid(_G.nvim_browser_fallback_reader_buf)
+end), "manual reader failures should keep the existing failure semantics instead of being treated as auto refresh failures")
 
 sent_requests = {}
 terminal.close()
