@@ -6273,6 +6273,181 @@ assert(vim.wait(1000, function()
 end), "page text yank request ids should reset with new serve sessions")
 vim.fn.setreg("b", _G.nvim_browser_old_page_text_reset_register)
 
+sent_requests = {}
+terminal.configure({ reader = { auto_open_on_ansi_fallback = true } })
+terminal.close()
+terminal.open({
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  "https://example.com/zellij-fallback",
+  nvim_browser_output_label = "ANSI fallback",
+})
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "ansi fallback frame",
+  url = "https://example.com/zellij-fallback",
+  title = "Zellij Fallback",
+  runtime = interactive_runtime(450, 165),
+}), "" })
+assert(vim.wait(1000, function()
+  return last_request_of_type("page_text") ~= nil
+end), "ANSI fallback serve frames should automatically request reader page text: label="
+  .. tostring(terminal.state().serve_output_label)
+  .. " title="
+  .. tostring(terminal.state().current_title)
+  .. " auto="
+  .. tostring(terminal.state().auto_reader_request_in_flight)
+  .. "/"
+  .. tostring(terminal.state().auto_reader_opened))
+_G.nvim_browser_fallback_reader_request = last_request_of_type("page_text")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_fallback_reader_request.id,
+  status = "ok",
+  text = {
+    title = "Zellij Fallback",
+    url = "https://example.com/zellij-fallback",
+    text = "# Zellij Fallback\n\nReadable fallback body",
+    truncated = false,
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  local reader_bufnr = terminal.state().reader_bufnr
+  return reader_bufnr ~= nil
+    and vim.api.nvim_buf_is_valid(reader_bufnr)
+    and nvim_browser_buffer_text(reader_bufnr):match("Readable fallback body") ~= nil
+end), "ANSI fallback page_text responses should open the reader buffer")
+
+sent_requests = {}
+terminal.close()
+terminal.open({
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  "https://example.com/zellij-fallback-retry",
+  nvim_browser_output_label = "ANSI fallback",
+})
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "ansi fallback retry frame",
+  url = "https://example.com/zellij-fallback-retry",
+  title = "Zellij Fallback Retry",
+  runtime = interactive_runtime(450, 165),
+}), "" })
+assert(vim.wait(1000, function()
+  return last_request_of_type("page_text") ~= nil
+end), "ANSI fallback should request page_text before testing retry")
+_G.nvim_browser_failed_fallback_reader_request = last_request_of_type("page_text")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_failed_fallback_reader_request.id,
+  status = "error",
+  error = "page text not ready",
+}), "" })
+sent_requests = {}
+serve_stdout(nil, { vim.json.encode({
+  id = 3,
+  status = "ok",
+  payload = "ansi fallback retry second frame",
+  url = "https://example.com/zellij-fallback-retry",
+  title = "Zellij Fallback Retry",
+  runtime = interactive_runtime(450, 165),
+}), "" })
+assert(vim.wait(1000, function()
+  local request = last_request_of_type("page_text")
+  return request ~= nil and request.id ~= _G.nvim_browser_failed_fallback_reader_request.id
+end), "ANSI fallback reader auto-open should retry after failed page_text snapshots")
+
+sent_requests = {}
+terminal.close()
+terminal.open({
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  "https://example.com/zellij-fallback-empty-retry",
+  nvim_browser_output_label = "ANSI fallback",
+})
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "ansi fallback empty retry frame",
+  url = "https://example.com/zellij-fallback-empty-retry",
+  title = "Zellij Fallback Empty Retry",
+  runtime = interactive_runtime(450, 165),
+}), "" })
+assert(vim.wait(1000, function()
+  return last_request_of_type("page_text") ~= nil
+end), "ANSI fallback should request page_text before testing empty snapshot retry")
+_G.nvim_browser_empty_fallback_reader_request = last_request_of_type("page_text")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_empty_fallback_reader_request.id,
+  status = "ok",
+  text = {
+    title = "Zellij Fallback Empty Retry",
+    url = "https://example.com/zellij-fallback-empty-retry",
+    text = "",
+    truncated = false,
+  },
+}), "" })
+sent_requests = {}
+serve_stdout(nil, { vim.json.encode({
+  id = 3,
+  status = "ok",
+  payload = "ansi fallback empty retry second frame",
+  url = "https://example.com/zellij-fallback-empty-retry",
+  title = "Zellij Fallback Empty Retry",
+  runtime = interactive_runtime(450, 165),
+}), "" })
+assert(vim.wait(1000, function()
+  local request = last_request_of_type("page_text")
+  return request ~= nil and request.id ~= _G.nvim_browser_empty_fallback_reader_request.id
+end), "ANSI fallback reader auto-open should retry after empty page_text snapshots")
+
+sent_requests = {}
+terminal.close()
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/plain-ansi" })
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "plain ansi frame",
+  url = "https://example.com/plain-ansi",
+  title = "Plain ANSI",
+  runtime = interactive_runtime(450, 165),
+}), "" })
+vim.wait(100)
+assert(last_request_of_type("page_text") == nil, "plain ANSI serve frames should not auto-open reader")
+
+sent_requests = {}
+terminal.configure({ reader = { auto_open_on_ansi_fallback = false } })
+terminal.close()
+terminal.open({
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  "https://example.com/zellij-fallback-disabled",
+  nvim_browser_output_label = "ANSI fallback",
+})
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "disabled fallback frame",
+  url = "https://example.com/zellij-fallback-disabled",
+  title = "Disabled Fallback",
+  runtime = interactive_runtime(450, 165),
+}), "" })
+vim.wait(100)
+assert(last_request_of_type("page_text") == nil, "disabled ANSI fallback reader option should suppress auto-open")
+terminal.configure({ reader = { auto_open_on_ansi_fallback = true } })
+
 terminal._test.set_timer_factory(nil)
 vim.fn.jobstart = original_jobstart
 vim.fn.chansend = original_chansend

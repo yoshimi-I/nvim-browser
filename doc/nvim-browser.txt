@@ -146,10 +146,13 @@ the standalone nvbrowser show-image CLI uses kitty for raster images. Zellij
 falls back to ANSI because Kitty graphics passthrough is unreliable there. This
 safe fallback also applies when graphics="kitty" or graphics="kitty-unicode" is
 configured explicitly under Zellij. To force Kitty graphics anyway, opt in with
-allow_unsafe_multiplexer_graphics=true. tmux keeps Kitty output and relies on
-tmux passthrough wrapping. Unknown terminals use ANSI as the safe fallback.
-Outside Zellij, override with graphics="ansi", "kitty", or "kitty-unicode" when
-needed.
+allow_unsafe_multiplexer_graphics=true. When this ANSI fallback is selected,
+nvim-browser also opens the Reader buffer from the first successful page text
+snapshot so the page remains readable even when image fidelity is low. Disable
+that with reader.auto_open_on_ansi_fallback=false. tmux keeps Kitty output and
+relies on tmux passthrough wrapping. Unknown terminals use ANSI as the safe
+fallback. Outside Zellij, override with graphics="ansi", "kitty", or
+"kitty-unicode" when needed.
 
 Markdown and raster-image wrapper previews refresh when the matching local
 source buffer is saved. Disable this with: >

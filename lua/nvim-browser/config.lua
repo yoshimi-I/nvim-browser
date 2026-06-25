@@ -57,6 +57,9 @@ M.options = {
     persist = true,
     path = default_calibration_path(),
   },
+  reader = {
+    auto_open_on_ansi_fallback = true,
+  },
   live_refresh = {
     enabled = true,
     interval_ms = 1500,
@@ -154,6 +157,10 @@ function M.setup(opts)
   M.options.calibration.path = M.options.calibration.path or default_calibration_path()
   if M.options.calibration.persist == nil then
     M.options.calibration.persist = true
+  end
+  M.options.reader = M.options.reader or {}
+  if M.options.reader.auto_open_on_ansi_fallback == nil then
+    M.options.reader.auto_open_on_ansi_fallback = true
   end
   return M.options
 end

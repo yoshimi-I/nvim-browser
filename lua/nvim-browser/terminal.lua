@@ -79,6 +79,8 @@ local state = {
   reader_base_url = nil,
   latest_reader_request_id = nil,
   latest_page_text_yank_request_id = nil,
+  auto_reader_request_in_flight = false,
+  auto_reader_opened = false,
 }
 
 local options = {
@@ -91,6 +93,9 @@ local options = {
     cell_height_px = 20,
   },
   navigation_timeout_ms = 20000,
+  reader = {
+    auto_open_on_ansi_fallback = true,
+  },
 }
 
 local timer_factory = function()
@@ -999,6 +1004,10 @@ local function apply_reader_snapshot(snapshot)
 end
 
 local function handle_reader_response(response)
+  local is_auto_reader_response = state.auto_reader_request_in_flight
+    and response.id ~= nil
+    and state.latest_reader_request_id ~= nil
+    and tonumber(response.id) == state.latest_reader_request_id
   if
     response.id ~= nil
     and state.latest_reader_request_id ~= nil
@@ -1008,11 +1017,17 @@ local function handle_reader_response(response)
     return
   end
   if response.status ~= "ok" or response.text == nil or response.text == vim.NIL then
+    if is_auto_reader_response then
+      state.auto_reader_request_in_flight = false
+    end
     delete_reader_buffer()
     vim.api.nvim_echo({ { "nvim-browser: reader snapshot failed", "WarningMsg" } }, false, {})
     return
   end
   if response.text.text == nil or response.text.text == "" or response.text.text == vim.NIL then
+    if is_auto_reader_response then
+      state.auto_reader_request_in_flight = false
+    end
     delete_reader_buffer()
     vim.api.nvim_echo({ { "nvim-browser: reader snapshot was empty", "WarningMsg" } }, false, {})
     return
@@ -1022,6 +1037,28 @@ local function handle_reader_response(response)
     snapshot = vim.tbl_extend("force", {}, snapshot, { display_url = response.display_url })
   end
   apply_reader_snapshot(snapshot)
+  if is_auto_reader_response then
+    state.auto_reader_request_in_flight = false
+    state.auto_reader_opened = true
+  end
+end
+
+local function maybe_auto_open_reader_for_ansi_fallback()
+  if state.auto_reader_opened or state.auto_reader_request_in_flight then
+    return
+  end
+  if options.reader == nil or options.reader.auto_open_on_ansi_fallback ~= true then
+    return
+  end
+  if state.serve_output_label ~= "ANSI fallback" then
+    return
+  end
+
+  local ok, id = send_serve_request({ type = "page_text" }, handle_reader_response)
+  if ok then
+    state.auto_reader_request_in_flight = true
+    state.latest_reader_request_id = id
+  end
 end
 
 local function warn_selection_yank_failed()
@@ -2663,6 +2700,8 @@ function M.open(command)
   state.latest_applied_response_id = 0
   state.latest_reader_request_id = nil
   state.latest_page_text_yank_request_id = nil
+  state.auto_reader_request_in_flight = false
+  state.auto_reader_opened = false
   state.latest_find_request_id = nil
   state.last_find_found = nil
   state.last_find_match_count = nil
@@ -2692,7 +2731,7 @@ function M.open(command)
   if command_uses_serve(command) then
     state.mode = "serve"
     state.serve_output = command_output(command)
-    state.serve_output_label = command.nvim_browser_output_label
+    state.serve_output_label = original_command and original_command.nvim_browser_output_label
     state.browser_history = nil
     ensure_resize_autocmd()
     local bufnr = state.bufnr
@@ -2819,6 +2858,7 @@ function M.open(command)
           else
             hints_overlay.clear(bufnr)
           end
+          maybe_auto_open_reader_for_ansi_fallback()
           vim.cmd("redraw")
           return
         end
@@ -3137,6 +3177,8 @@ function M.close()
   state.latest_applied_response_id = 0
   state.latest_reader_request_id = nil
   state.latest_page_text_yank_request_id = nil
+  state.auto_reader_request_in_flight = false
+  state.auto_reader_opened = false
   state.last_find_found = nil
   state.last_find_match_count = nil
   state.last_find_query = nil
@@ -4680,6 +4722,7 @@ function M.configure(opts)
   options = vim.tbl_deep_extend("force", options, {
     live_refresh = opts.live_refresh or {},
     viewport = opts.viewport or {},
+    reader = opts.reader or {},
     navigation_timeout_ms = opts.navigation_timeout_ms,
   })
   if state.mode == "serve" and state.job_id ~= nil and is_valid_buffer() then
@@ -4757,6 +4800,8 @@ function M.state()
     last_find_query = state.last_find_query,
     element_hints = state.element_hints,
     reader_bufnr = state.reader_bufnr,
+    auto_reader_request_in_flight = state.auto_reader_request_in_flight,
+    auto_reader_opened = state.auto_reader_opened,
   }
 end
 

@@ -48,6 +48,7 @@ assert(
   configured.calibration.path == vim.fn.stdpath("state") .. "/nvim-browser/calibration.json",
   "viewport calibration path should default to the plugin state path"
 )
+assert(configured.reader.auto_open_on_ansi_fallback == true, "reader should auto-open for ANSI fallback by default")
 assert(configured.preview_keymaps.enabled == true, "preview-local keymaps should be enabled by default")
 assert(configured.preview_keymaps.mappings.close == "q", "preview-local keymaps should include a close mapping")
 assert(
@@ -74,6 +75,8 @@ local timeout_config = config.setup({ navigation_timeout_ms = 1234 })
 assert(timeout_config.navigation_timeout_ms == 1234, "setup should preserve custom navigation timeouts")
 local unsafe_graphics_config = config.setup({ allow_unsafe_multiplexer_graphics = true })
 assert(unsafe_graphics_config.allow_unsafe_multiplexer_graphics == true, "setup should preserve unsafe multiplexer graphics opt-in")
+local reader_config = config.setup({ reader = { auto_open_on_ansi_fallback = false } })
+assert(reader_config.reader.auto_open_on_ansi_fallback == false, "setup should allow disabling ANSI fallback reader auto-open")
 assert(
   configured.preview_keymaps.mappings.wheel_up == "<ScrollWheelUp>",
   "preview-local keymaps should include a wheel-up mouse mapping"
