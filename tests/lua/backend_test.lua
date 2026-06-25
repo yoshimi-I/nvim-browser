@@ -527,6 +527,7 @@ assert(vim.deep_equal(zellij_auto_image_command, {
   "contain",
   "--image",
   "/tmp/image.png",
+  nvim_browser_output_label = "ANSI fallback",
 }), "auto raster image browser previews under Zellij should use ANSI output")
 
 local zellij_auto_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
@@ -539,6 +540,7 @@ assert(vim.deep_equal(zellij_auto_url_command, {
   "ansi",
   "--url",
   "https://example.com",
+  nvim_browser_output_label = "ANSI fallback",
 }), "auto web URLs under Zellij should use ANSI browser output")
 
 vim.env.ZELLIJ = nil
@@ -605,6 +607,7 @@ assert(vim.deep_equal(zellij_explicit_kitty_unicode_image_command, {
   "contain",
   "--image",
   "/tmp/image.png",
+  nvim_browser_output_label = "ANSI fallback",
 }), "explicit kitty-unicode raster image browser previews under Zellij should downgrade to ANSI output")
 assert(vim.deep_equal(zellij_explicit_kitty_unicode_url_command, {
   "nvbrowser",
@@ -613,6 +616,7 @@ assert(vim.deep_equal(zellij_explicit_kitty_unicode_url_command, {
   "ansi",
   "--url",
   "https://example.com",
+  nvim_browser_output_label = "ANSI fallback",
 }), "explicit kitty-unicode web URLs under Zellij should downgrade to ANSI browser output")
 assert(vim.deep_equal(zellij_unsafe_kitty_unicode_url_command, {
   "nvbrowser",

@@ -37,6 +37,7 @@ local state = {
   dialog_history = {},
   calibration_state = nil,
   runtime_metadata = nil,
+  serve_output_label = nil,
   rendered_frame_geometry = nil,
   rendered_frame_url = nil,
   rendered_frame_dom_epoch = nil,
@@ -337,6 +338,8 @@ local function set_option(command, option, value)
   table.insert(command, tostring(value))
 end
 
+local copy_command
+
 local function command_for_window(command)
   if
     not command_uses_ansi_browse(command)
@@ -348,7 +351,7 @@ local function command_for_window(command)
     return command
   end
 
-  local adjusted = vim.list_extend({}, command)
+  local adjusted = copy_command(command)
 
   if command_uses_show_image(command) then
     local cells = preview_cells()
@@ -486,10 +489,16 @@ local function command_has_flag(command, flag)
   return false
 end
 
-local function copy_command(command)
+copy_command = function(command)
   if type(command) ~= "table" then
     return nil
   end
+  local copied = vim.list_extend({}, command)
+  copied.nvim_browser_output_label = command.nvim_browser_output_label
+  return copied
+end
+
+local function command_argv(command)
   return vim.list_extend({}, command)
 end
 
@@ -2061,7 +2070,7 @@ local function runtime_footer_label(runtime)
   if type(runtime) ~= "table" then
     return nil
   end
-  local output = runtime.output ~= nil and runtime.output ~= vim.NIL and tostring(runtime.output) or nil
+  local output = status_labels.runtime_output_label(runtime.output, runtime.output_label or state.serve_output_label)
   if type(runtime.cells) ~= "table" then
     return output
   end
@@ -2171,6 +2180,11 @@ local function preview_footer_line(width)
       table.insert(parts, health)
     end
   end
+  local runtime = runtime_footer_label(state.runtime_metadata)
+  local runtime_is_fallback = runtime ~= nil and runtime:find("ANSI fallback", 1, true) ~= nil
+  if runtime_is_fallback then
+    table.insert(parts, runtime)
+  end
 
   local title = state.current_title ~= nil and state.current_title ~= "" and state.current_title or nil
   local url = state.serve_exit ~= nil
@@ -2216,8 +2230,7 @@ local function preview_footer_line(width)
     table.insert(parts, "find: " .. tostring(state.last_find_match_count) .. " " .. suffix)
   end
 
-  local runtime = runtime_footer_label(state.runtime_metadata)
-  if runtime ~= nil then
+  if runtime ~= nil and not runtime_is_fallback then
     table.insert(parts, runtime)
   end
 
@@ -2632,6 +2645,7 @@ function M.open(command)
   state.stream_buffer = ""
   state.mode = nil
   state.serve_output = nil
+  state.serve_output_label = nil
   state.last_serve_command = command_uses_serve(original_command) and original_command or nil
   state.next_request_id = 1
   state.current_url = nil
@@ -2698,6 +2712,7 @@ function M.open(command)
   if command_uses_serve(command) then
     state.mode = "serve"
     state.serve_output = command_output(command)
+    state.serve_output_label = command.nvim_browser_output_label
     state.browser_history = nil
     ensure_resize_autocmd()
     local bufnr = state.bufnr
@@ -2859,7 +2874,7 @@ function M.open(command)
       end)
     end
 
-    state.job_id = vim.fn.jobstart(command, {
+    state.job_id = vim.fn.jobstart(command_argv(command), {
       stdout_buffered = false,
       stderr_buffered = true,
       on_stdout = function(_, data)
@@ -2910,6 +2925,7 @@ function M.open(command)
           stop_live_refresh()
           state.mode = nil
           state.serve_output = nil
+          state.serve_output_label = nil
           state.pending_operation = nil
           state.stopped_operation = nil
           state.serve_exit = nil
@@ -3010,7 +3026,7 @@ function M.open(command)
     vim.bo[state.bufnr].modifiable = false
 
     local chunks = {}
-    state.job_id = vim.fn.jobstart(command, {
+    state.job_id = vim.fn.jobstart(command_argv(command), {
       stdout_buffered = true,
       stderr_buffered = true,
       on_stdout = function(_, data)
@@ -3059,7 +3075,7 @@ function M.open(command)
   end
 
   state.job_id = vim.api.nvim_buf_call(state.bufnr, function()
-    return vim.fn.termopen(command)
+    return vim.fn.termopen(command_argv(command))
   end)
   vim.cmd("startinsert")
 end
@@ -3101,6 +3117,7 @@ function M.close()
   state.stream_buffer = ""
   state.mode = nil
   state.serve_output = nil
+  state.serve_output_label = nil
   state.last_serve_command = nil
   state.current_url = nil
   state.browser_url = nil
@@ -3335,6 +3352,7 @@ hard_stop_pending_operation = function(reason)
   end
   state.mode = nil
   state.serve_output = nil
+  state.serve_output_label = nil
   state.runtime_metadata = nil
   state.browser_history = nil
   state.rendered_frame_url = nil
@@ -3383,6 +3401,7 @@ hard_stop_capture_operation = function(reason)
   end
   state.mode = nil
   state.serve_output = nil
+  state.serve_output_label = nil
   state.runtime_metadata = nil
   state.browser_history = nil
   state.latest_download = nil
@@ -4723,6 +4742,7 @@ function M.state()
     has_payload = state.last_payload ~= nil,
     mode = state.mode,
     serve_output = state.serve_output,
+    serve_output_label = state.serve_output_label,
     cursor_addressable_preview = state.cursor_addressable_preview,
     current_preview_geometry = valid_preview_geometry(),
     text_mode_active = state.text_mode_active,

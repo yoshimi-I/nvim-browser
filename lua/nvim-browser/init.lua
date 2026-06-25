@@ -1056,8 +1056,9 @@ local function runtime_status_label(runtime)
     return nil
   end
   local parts = {}
-  if runtime.output ~= nil and runtime.output ~= vim.NIL then
-    table.insert(parts, "output=" .. tostring(runtime.output))
+  local output = status_labels.runtime_output_label(runtime.output, runtime.output_label)
+  if output ~= nil then
+    table.insert(parts, "output=" .. output)
   end
   if type(runtime.viewport) == "table" then
     local width = runtime.viewport.width
@@ -2392,7 +2393,13 @@ function M.browser_history()
 end
 
 function M.runtime_metadata()
-  return terminal.state().runtime_metadata
+  local terminal_state = terminal.state()
+  local runtime = terminal_state.runtime_metadata
+  if type(runtime) == "table" and terminal_state.serve_output_label ~= nil then
+    runtime = vim.deepcopy(runtime)
+    runtime.output_label = terminal_state.serve_output_label
+  end
+  return runtime
 end
 
 function M.focused_element()

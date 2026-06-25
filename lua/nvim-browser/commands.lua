@@ -53,8 +53,9 @@ function M.register(browser, opts)
       return nil
     end
     local parts = {}
-    if runtime.output ~= nil and runtime.output ~= vim.NIL then
-      table.insert(parts, "output=" .. tostring(runtime.output))
+    local output = status_labels.runtime_output_label(runtime.output, runtime.output_label)
+    if output ~= nil then
+      table.insert(parts, "output=" .. output)
     end
     if type(runtime.viewport) == "table" then
       local width = runtime.viewport.width

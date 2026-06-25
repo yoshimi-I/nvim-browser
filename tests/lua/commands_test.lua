@@ -78,6 +78,8 @@ local zoomed = {}
 local picked_action = nil
 local selected_region = nil
 local yanked_region = nil
+local runtime_output = "kitty-unicode"
+local runtime_output_label = nil
 local opened_download = nil
 local browser = {
   open = function(target)
@@ -407,7 +409,8 @@ local browser = {
       protocol_version = 1,
       transport = "stdio-jsonl",
       renderer = "chromium-cdp",
-      output = "kitty-unicode",
+      output = runtime_output,
+      output_label = runtime_output_label,
       cells = { columns = 80, rows = 24 },
       viewport = { width = 800, height = 600, device_scale_factor = 1 },
     }
@@ -808,6 +811,13 @@ assert(echoed:match("cells=80x24"), "NBrowserStatus should include runtime cell 
 assert(echoed:match("renderer=chromium%-cdp"), "NBrowserStatus should include runtime renderer when available")
 assert(echoed:find("frame=stale", 1, true), "NBrowserStatus should include stale frame health")
 assert(echoed:find("refreshing", 1, true), "NBrowserStatus should include pending frame refresh health")
+
+runtime_output = "ansi"
+runtime_output_label = "ANSI fallback"
+vim.cmd("NBrowserStatus")
+assert(echoed:match("output=ANSI fallback"), "NBrowserStatus should make Zellij-safe ANSI fallback visible")
+runtime_output = "kitty-unicode"
+runtime_output_label = nil
 
 vim.cmd("NBrowserDownloads")
 assert(echoed:match("1%.%s+report%.pdf%s+/tmp/downloads/report%.pdf"), "NBrowserDownloads should list indexed download filenames and paths")

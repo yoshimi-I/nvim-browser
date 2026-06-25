@@ -1008,6 +1008,26 @@ assert(
 )
 
 terminal._test.apply_serve_response({
+  id = 1011,
+  status = "ok",
+  url = "https://example.com/fallback",
+  title = "ANSI Fallback",
+  runtime = {
+    output = "ansi",
+    output_label = "ANSI fallback",
+    cells = { columns = 44, rows = 10 },
+  },
+})
+assert(
+  terminal._test.preview_footer_line(120):find("ANSI fallback 44x10", 1, true),
+  "Zellij-safe ANSI previews should label the effective fallback output"
+)
+assert(
+  terminal._test.preview_footer_line(36):find("ANSI fallback", 1, true),
+  "Zellij-safe ANSI fallback labels should remain visible in narrow preview footers"
+)
+
+terminal._test.apply_serve_response({
   id = 102,
   status = "ok",
   download = {

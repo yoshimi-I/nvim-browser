@@ -153,6 +153,17 @@ local function browser_graphics_output(opts)
   return M.resolve_graphics(opts).browser_output
 end
 
+local function annotate_graphics_resolution(command, resolution)
+  if
+    resolution.browser_output == "ansi"
+    and resolution.graphics ~= "ansi"
+    and resolution.multiplexer == "zellij"
+  then
+    command.nvim_browser_output_label = "ANSI fallback"
+  end
+  return command
+end
+
 local function add_cdp_ws_url(command, opts)
   if opts ~= nil and opts.cdp_ws_url ~= nil and opts.cdp_ws_url ~= "" then
     table.insert(command, "--cdp-ws-url")
@@ -190,7 +201,9 @@ local function add_navigation_timeout(command, opts)
 end
 
 local function serve_command(binary, opts)
-  local command = { binary, "serve", "--output", browser_graphics_output(opts) }
+  local resolution = M.resolve_graphics(opts)
+  local command = { binary, "serve", "--output", resolution.browser_output }
+  annotate_graphics_resolution(command, resolution)
   add_navigation_timeout(command, opts)
   add_cdp_ws_url(command, opts)
   add_user_data_dir(command, opts)

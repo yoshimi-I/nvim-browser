@@ -52,4 +52,15 @@ function M.frame_health_label(health)
   return table.concat(parts, " ")
 end
 
+function M.runtime_output_label(output, label)
+  if output == nil or output == vim.NIL then
+    return nil
+  end
+  if label ~= nil and label ~= vim.NIL and label ~= "" then
+    return tostring(label)
+  end
+  output = tostring(output)
+  return output
+end
+
 return M

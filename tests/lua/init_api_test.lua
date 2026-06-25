@@ -1402,6 +1402,32 @@ with_action_stubs(function()
   assert(status_message:find("https://example.com", 1, true), "Status action should include the current URL")
   assert(status_message:find("last error", 1, true), "Status action should include the status error")
 
+  browser.runtime_metadata = function()
+    return {
+      output = "ansi",
+      output_label = "ANSI fallback",
+      viewport = { width = 960, height = 720 },
+      cells = { columns = 120, rows = 40 },
+      renderer = "chromium",
+    }
+  end
+  action_calls = {}
+  status_message = nil
+  assert(browser.actions({
+    select = function(items, _, on_choice)
+      for _, item in ipairs(items) do
+        if item.label == "Status" then
+          on_choice(item)
+          return
+        end
+      end
+    end,
+    on_status = function(message)
+      status_message = message
+    end,
+  }) == true, "Status action should run with fallback runtime metadata")
+  assert(status_message:find("output=ANSI fallback", 1, true), "Status action should include fallback runtime output labels")
+
   action_calls = {}
   assert(browser.actions({
     select = function(_, _, on_choice)

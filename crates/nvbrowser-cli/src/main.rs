@@ -2384,6 +2384,7 @@ fn image_to_ansi_halfblocks(
         target_height += 1;
     }
 
+    let source = image.to_rgba8();
     let resized = image
         .resize_exact(columns, target_height, FilterType::Triangle)
         .to_rgba8();
@@ -2391,8 +2392,22 @@ fn image_to_ansi_halfblocks(
 
     for y in (0..target_height).step_by(2) {
         for x in 0..columns {
-            let top = rgba_to_rgb(*resized.get_pixel(x, y));
-            let bottom = rgba_to_rgb(*resized.get_pixel(x, y + 1));
+            let top = ansi_edge_sample_rgb(
+                &source,
+                *resized.get_pixel(x, y),
+                columns,
+                target_height,
+                x,
+                y,
+            );
+            let bottom = ansi_edge_sample_rgb(
+                &source,
+                *resized.get_pixel(x, y + 1),
+                columns,
+                target_height,
+                x,
+                y + 1,
+            );
             output.push_str(&format!(
                 "\x1b[38;2;{};{};{}m\x1b[48;2;{};{};{}m▀",
                 top.0, top.1, top.2, bottom.0, bottom.1, bottom.2
@@ -2402,6 +2417,65 @@ fn image_to_ansi_halfblocks(
     }
 
     output
+}
+
+fn ansi_edge_sample_rgb(
+    source: &image::RgbaImage,
+    resized_pixel: Rgba<u8>,
+    target_width: u32,
+    target_height: u32,
+    target_x: u32,
+    target_y: u32,
+) -> (u8, u8, u8) {
+    let sampled = rgba_to_rgb(resized_pixel);
+    let source_width = source.width().max(1);
+    let source_height = source.height().max(1);
+    let target_width = target_width.max(1);
+    let target_height = target_height.max(1);
+    let start_x =
+        ((u64::from(target_x) * u64::from(source_width)) / u64::from(target_width)) as u32;
+    let end_x = (((u64::from(target_x + 1) * u64::from(source_width))
+        .div_ceil(u64::from(target_width))) as u32)
+        .min(source_width);
+    let start_y =
+        ((u64::from(target_y) * u64::from(source_height)) / u64::from(target_height)) as u32;
+    let end_y = (((u64::from(target_y + 1) * u64::from(source_height))
+        .div_ceil(u64::from(target_height))) as u32)
+        .min(source_height);
+
+    let mut darkest = sampled;
+    let mut brightest = sampled;
+    let mut min_luma = luma(sampled);
+    let mut max_luma = min_luma;
+    for y in start_y..end_y.max(start_y + 1).min(source_height) {
+        for x in start_x..end_x.max(start_x + 1).min(source_width) {
+            let rgb = rgba_to_rgb(*source.get_pixel(x, y));
+            let value = luma(rgb);
+            if value < min_luma {
+                min_luma = value;
+                darkest = rgb;
+            }
+            if value > max_luma {
+                max_luma = value;
+                brightest = rgb;
+            }
+        }
+    }
+
+    let sampled_luma = luma(sampled);
+    if max_luma.saturating_sub(min_luma) >= 160 {
+        if sampled_luma < 128 {
+            return darkest;
+        }
+        if sampled_luma > 160 {
+            return brightest;
+        }
+    }
+    sampled
+}
+
+fn luma((r, g, b): (u8, u8, u8)) -> u8 {
+    ((u16::from(r) * 30 + u16::from(g) * 59 + u16::from(b) * 11) / 100) as u8
 }
 
 fn rgba_to_rgb(pixel: Rgba<u8>) -> (u8, u8, u8) {
@@ -3236,6 +3310,27 @@ mod tests {
         let output = image_to_ansi_halfblocks(&image, 4, Some(4));
 
         assert_eq!(output.lines().count(), 2);
+    }
+
+    #[test]
+    fn ansi_halfblocks_preserve_high_contrast_text_edges() {
+        let mut image = image::RgbaImage::from_pixel(8, 4, Rgba([255, 255, 255, 255]));
+        for x in 1..7 {
+            image.put_pixel(x, 0, Rgba([0, 0, 0, 255]));
+        }
+        image.put_pixel(1, 1, Rgba([0, 0, 0, 255]));
+        image.put_pixel(6, 1, Rgba([0, 0, 0, 255]));
+
+        let output = image_to_ansi_halfblocks(&DynamicImage::ImageRgba8(image), 2, Some(4));
+
+        assert!(
+            output.contains("38;2;0;0;0") || output.contains("48;2;0;0;0"),
+            "ANSI downsampling should preserve dark text strokes; got {output:?}"
+        );
+        assert!(
+            output.contains("38;2;255;255;255") || output.contains("48;2;255;255;255"),
+            "ANSI downsampling should preserve light page background; got {output:?}"
+        );
     }
 
     #[test]
