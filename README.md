@@ -94,12 +94,16 @@ With `graphics = "auto"`, nvim-browser resolves graphics from the terminal
 environment. Ghostty, Kitty, and WezTerm use `kitty-unicode` for browser frames;
 the standalone `nvbrowser show-image` CLI uses `kitty` for raster images.
 Zellij falls back to ANSI because Kitty graphics passthrough is unreliable
-there. Lua backend tests cover the `ZELLIJ=1` auto resolution for browser
-sessions and image targets, and the opt-in Chromium E2E suite covers that ANSI
-browser surface with frame rendering, hints, text input, clicks, and page text.
+there. This safe fallback also applies when `graphics = "kitty"` or
+`graphics = "kitty-unicode"` is configured explicitly under Zellij, so browser
+previews remain visible instead of producing broken terminal graphics. To force
+Kitty graphics anyway, opt in with `allow_unsafe_multiplexer_graphics = true`.
+Lua backend tests cover the `ZELLIJ=1` resolution for browser sessions and
+image targets, and the opt-in Chromium E2E suite covers that ANSI browser
+surface with frame rendering, hints, text input, clicks, and page text.
 tmux keeps Kitty output and relies on tmux passthrough wrapping. Unknown
-terminals use ANSI as the safe fallback. Override with `graphics = "ansi"`,
-`"kitty"`, or `"kitty-unicode"` when needed.
+terminals use ANSI as the safe fallback. Outside Zellij, override with
+`graphics = "ansi"`, `"kitty"`, or `"kitty-unicode"` when needed.
 
 For tmux, enable passthrough in your tmux config before expecting Kitty graphics
 to render:
@@ -158,6 +162,9 @@ sample.
 The calibration page also exposes fixed click, right-click, hover, type, and
 wheel targets; after interacting with them, `:NBrowserDoctor` reports which
 fixture hit tests have been observed.
+Inside Zellij, it reports when explicit Kitty graphics were downgraded to ANSI
+and names `allow_unsafe_multiplexer_graphics = true` as the opt-in to force
+Kitty anyway.
 Inside tmux, it also checks `allow-passthrough` when Kitty graphics are selected.
 
 To attach to an already-running Chrome DevTools Protocol browser instead of

@@ -48,10 +48,13 @@ require("nvim-browser").setup({
 With graphics="auto", nvim-browser resolves graphics from the terminal
 environment. Ghostty, Kitty, and WezTerm use kitty-unicode for browser frames;
 the standalone nvbrowser show-image CLI uses kitty for raster images. Zellij
-falls back to ANSI because Kitty graphics passthrough is unreliable there. tmux
-keeps Kitty output and relies on tmux passthrough wrapping. Unknown terminals
-use ANSI as the safe fallback. Override with graphics="ansi", "kitty", or
-"kitty-unicode" when needed.
+falls back to ANSI because Kitty graphics passthrough is unreliable there. This
+safe fallback also applies when graphics="kitty" or graphics="kitty-unicode" is
+configured explicitly under Zellij. To force Kitty graphics anyway, opt in with
+allow_unsafe_multiplexer_graphics=true. tmux keeps Kitty output and relies on
+tmux passthrough wrapping. Unknown terminals use ANSI as the safe fallback.
+Outside Zellij, override with graphics="ansi", "kitty", or "kitty-unicode" when
+needed.
 
 Markdown and raster-image wrapper previews refresh when the matching local
 source buffer is saved. Disable this with: >
@@ -615,8 +618,9 @@ COMMANDS                                           *nvim-browser-commands*
 	serve protocol compatibility, viewport calibration status, and click
 	calibration diagnostics for the active cursor-addressable preview. The
 	backend readiness and protocol check uses `nvbrowser doctor --json` and
-	does not launch Chrome. Inside tmux with Kitty graphics selected, it also
-	probes `tmux show -gqv
+	does not launch Chrome. Inside Zellij with Kitty graphics configured, it
+	reports the ANSI downgrade and the unsafe opt-in needed to force Kitty.
+	Inside tmux with Kitty graphics selected, it also probes `tmux show -gqv
 	allow-passthrough`; warnings recommend:
 >
 	set -g allow-passthrough on

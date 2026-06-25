@@ -120,8 +120,22 @@ local explicit_kitty = doctor.run({
   graphics = "kitty-unicode",
   image_fit = "original",
 }, {})
-assert(contains_line(explicit_kitty, "warning: ZELLIJ detected with explicit Kitty graphics"), "explicit Kitty under Zellij should warn")
+assert(contains_line(explicit_kitty, "browser output: ansi"), "explicit Kitty under Zellij should downgrade browser output to ANSI")
+assert(has_line(explicit_kitty, "image target output: ansi"), "explicit Kitty image targets under Zellij should downgrade to ANSI")
+assert(contains_line(explicit_kitty, "graphics reason: Zellij"), "doctor should explain the Zellij explicit graphics downgrade")
+assert(contains_line(explicit_kitty, "warning: ZELLIJ detected with explicit Kitty graphics; downgraded to ANSI"), "explicit Kitty under Zellij should warn about downgrade")
 assert(count_lines(explicit_kitty, "warning: ZELLIJ detected with explicit Kitty graphics") == 1, "explicit Kitty under Zellij should warn only once")
+
+local unsafe_explicit_kitty = doctor.run({
+  binary = "nvim",
+  backend_diagnostics = false,
+  graphics = "kitty-unicode",
+  image_fit = "original",
+  allow_unsafe_multiplexer_graphics = true,
+}, {})
+assert(contains_line(unsafe_explicit_kitty, "browser output: kitty-unicode"), "unsafe multiplexer graphics should preserve explicit Kitty under Zellij")
+assert(has_line(unsafe_explicit_kitty, "image target output: kitty-unicode"), "unsafe multiplexer graphics image targets should preserve Kitty Unicode browser output")
+assert(contains_line(unsafe_explicit_kitty, "warning: ZELLIJ detected with explicit Kitty graphics"), "unsafe explicit Kitty under Zellij should still warn")
 
 vim.env.ZELLIJ = nil
 vim.env.TMUX = "/tmp/tmux-501/default,123,0"

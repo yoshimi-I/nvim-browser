@@ -38,9 +38,22 @@ assert(unknown_resolution.image_output == "ansi", "unknown auto image output sho
 assert(unknown_resolution.terminal == "unknown", "graphics resolver should label unknown terminals")
 
 local explicit_unicode_resolution = backend.resolve_graphics({ graphics = "kitty-unicode" }, { ZELLIJ = "1" })
-assert(explicit_unicode_resolution.browser_output == "kitty-unicode", "explicit kitty-unicode should preserve browser output")
-assert(explicit_unicode_resolution.image_output == "kitty", "explicit kitty-unicode should map raster images to Kitty")
-assert(#explicit_unicode_resolution.warnings > 0, "explicit Kitty graphics under a risky multiplexer should warn")
+assert(explicit_unicode_resolution.browser_output == "ansi", "explicit kitty-unicode should downgrade browser output under Zellij")
+assert(explicit_unicode_resolution.image_output == "ansi", "explicit kitty-unicode should downgrade image output under Zellij")
+assert(explicit_unicode_resolution.reason:find("downgraded", 1, true), "Zellij downgrade reason should explain the explicit override")
+assert(#explicit_unicode_resolution.warnings > 0, "explicit Kitty graphics under Zellij should warn when downgraded")
+
+local explicit_kitty_zellij_resolution = backend.resolve_graphics({ graphics = "kitty" }, { ZELLIJ = "1" })
+assert(explicit_kitty_zellij_resolution.browser_output == "ansi", "explicit kitty should downgrade browser output under Zellij")
+assert(explicit_kitty_zellij_resolution.image_output == "ansi", "explicit kitty should downgrade image output under Zellij")
+
+local unsafe_zellij_resolution = backend.resolve_graphics({
+  graphics = "kitty-unicode",
+  allow_unsafe_multiplexer_graphics = true,
+}, { ZELLIJ = "1" })
+assert(unsafe_zellij_resolution.browser_output == "kitty-unicode", "unsafe multiplexer graphics should preserve explicit Kitty Unicode")
+assert(unsafe_zellij_resolution.image_output == "kitty", "unsafe multiplexer graphics should preserve Kitty raster output")
+assert(#unsafe_zellij_resolution.warnings > 0, "unsafe multiplexer graphics under Zellij should still warn")
 
 local explicit_ansi_resolution = backend.resolve_graphics({ graphics = "ansi" }, { TERM_PROGRAM = "ghostty" })
 assert(explicit_ansi_resolution.browser_output == "ansi", "explicit ansi should preserve browser output")
@@ -575,17 +588,40 @@ local zellij_explicit_kitty_unicode_image_command = backend.command_for("nvbrows
   graphics = "kitty-unicode",
   image_fit = "contain",
 })
+local zellij_explicit_kitty_unicode_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
+  graphics = "kitty-unicode",
+})
+local zellij_unsafe_kitty_unicode_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
+  graphics = "kitty-unicode",
+  allow_unsafe_multiplexer_graphics = true,
+})
 vim.env.ZELLIJ = original_zellij
 assert(vim.deep_equal(zellij_explicit_kitty_unicode_image_command, {
   "nvbrowser",
   "serve",
   "--output",
-  "kitty-unicode",
+  "ansi",
   "--image-fit",
   "contain",
   "--image",
   "/tmp/image.png",
-}), "explicit kitty-unicode raster image browser previews under Zellij should preserve browser output")
+}), "explicit kitty-unicode raster image browser previews under Zellij should downgrade to ANSI output")
+assert(vim.deep_equal(zellij_explicit_kitty_unicode_url_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  "https://example.com",
+}), "explicit kitty-unicode web URLs under Zellij should downgrade to ANSI browser output")
+assert(vim.deep_equal(zellij_unsafe_kitty_unicode_url_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "kitty-unicode",
+  "--url",
+  "https://example.com",
+}), "unsafe multiplexer graphics should preserve explicit Kitty Unicode browser output under Zellij")
 
 vim.env.ZELLIJ = original_zellij
 vim.env.TMUX = original_tmux

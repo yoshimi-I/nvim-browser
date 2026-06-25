@@ -38,6 +38,7 @@ end
 M.options = {
   binary = default_binary(),
   graphics = "auto",
+  allow_unsafe_multiplexer_graphics = false,
   image_fit = "original",
   user_data_dir = nil,
   download_dir = nil,

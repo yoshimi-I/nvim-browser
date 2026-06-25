@@ -36,6 +36,7 @@ assert(
 assert(configured.user_data_dir == nil, "persistent Chromium profile directory should default to nil")
 assert(configured.download_dir == nil, "download directory should default to nil")
 assert(configured.navigation_timeout_ms == 20000, "navigation timeout should default to 20 seconds")
+assert(configured.allow_unsafe_multiplexer_graphics == false, "unsafe multiplexer graphics should default to disabled")
 assert(configured.session.persist == true, "session recents should persist by default")
 assert(configured.session.history_limit == 50, "session recents should default to the existing history limit")
 assert(
@@ -71,6 +72,8 @@ local download_config = config.setup({ download_dir = "/tmp/nvbrowser-downloads"
 assert(download_config.download_dir == "/tmp/nvbrowser-downloads", "setup should preserve a download directory")
 local timeout_config = config.setup({ navigation_timeout_ms = 1234 })
 assert(timeout_config.navigation_timeout_ms == 1234, "setup should preserve custom navigation timeouts")
+local unsafe_graphics_config = config.setup({ allow_unsafe_multiplexer_graphics = true })
+assert(unsafe_graphics_config.allow_unsafe_multiplexer_graphics == true, "setup should preserve unsafe multiplexer graphics opt-in")
 assert(
   configured.preview_keymaps.mappings.wheel_up == "<ScrollWheelUp>",
   "preview-local keymaps should include a wheel-up mouse mapping"

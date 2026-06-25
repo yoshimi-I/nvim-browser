@@ -69,6 +69,20 @@ function M.resolve_graphics(opts, env)
     resolution.reason = "explicit ANSI graphics"
     return resolution
   end
+  if
+    multiplexer == "zellij"
+    and (graphics == "kitty" or graphics == "kitty-unicode")
+    and not (opts and opts.allow_unsafe_multiplexer_graphics == true)
+  then
+    resolution.browser_output = "ansi"
+    resolution.image_output = "ansi"
+    resolution.reason = "Zellij detected; explicit Kitty graphics downgraded to ANSI because terminal graphics passthrough is unreliable"
+    table.insert(
+      resolution.warnings,
+      "ZELLIJ detected with explicit Kitty graphics; downgraded to ANSI. Set allow_unsafe_multiplexer_graphics=true to keep Kitty graphics"
+    )
+    return resolution
+  end
   if graphics == "kitty" then
     resolution.browser_output = "kitty"
     resolution.image_output = "kitty"
