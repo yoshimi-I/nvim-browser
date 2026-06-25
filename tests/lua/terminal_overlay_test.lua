@@ -3144,7 +3144,59 @@ assert(
   last_request_of_type("navigate_image") == nil,
   "image preview refresh should not regenerate the wrapper while another navigation is pending"
 )
+assert(last_request_of_type("capture") == nil, "image preview refresh should not capture while another navigation is pending")
 terminal._test.clear_pending_operation(_G.nvim_browser_pending_from_image_id)
+
+terminal._test.apply_serve_response({
+  id = 30002,
+  status = "ok",
+  payload = "markdown wrapper frame",
+  url = "file:///tmp/nvbrowser-markdown-wrapper.html",
+  display_url = "file:///tmp/docs/README.md",
+  title = "README.md",
+})
+sent_requests = {}
+assert(
+  terminal.navigate("https://example.com/pending-from-markdown") == true,
+  "test setup should send a pending navigation from a Markdown preview"
+)
+_G.nvim_browser_pending_from_markdown_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(_G.nvim_browser_pending_from_markdown_id ~= nil, "pending navigation from Markdown preview should be tracked")
+sent_requests = {}
+assert(terminal.refresh() == true, "refresh during pending Markdown navigation should be treated as handled")
+assert(
+  terminal.state().pending_operation and terminal.state().pending_operation.id == _G.nvim_browser_pending_from_markdown_id,
+  "Markdown preview refresh should not replace a pending navigation"
+)
+assert(
+  last_request_of_type("navigate_markdown") == nil,
+  "Markdown preview refresh should not regenerate the wrapper while another navigation is pending"
+)
+assert(last_request_of_type("capture") == nil, "Markdown preview refresh should not capture while another navigation is pending")
+terminal._test.clear_pending_operation(_G.nvim_browser_pending_from_markdown_id)
+
+terminal._test.apply_serve_response({
+  id = 30003,
+  status = "ok",
+  payload = "direct web frame",
+  url = "https://example.com/current",
+  title = "Direct Current",
+})
+sent_requests = {}
+assert(
+  terminal.navigate("https://example.com/pending-from-web") == true,
+  "test setup should send a pending navigation from a direct web page"
+)
+_G.nvim_browser_pending_from_web_id = terminal.state().pending_operation and terminal.state().pending_operation.id
+assert(_G.nvim_browser_pending_from_web_id ~= nil, "pending navigation from a direct web page should be tracked")
+sent_requests = {}
+assert(terminal.refresh() == true, "direct web refresh during pending navigation should keep existing capture behavior")
+assert(
+  terminal.state().pending_operation and terminal.state().pending_operation.id == _G.nvim_browser_pending_from_web_id,
+  "direct web refresh should not replace a pending navigation"
+)
+assert(last_request_of_type("capture") ~= nil, "direct web refresh should still request a capture while navigation is pending")
+terminal._test.clear_pending_operation(_G.nvim_browser_pending_from_web_id)
 
 sent_requests = {}
 assert(terminal.navigate("https://example.com/older") == true, "test setup should send an older navigation")

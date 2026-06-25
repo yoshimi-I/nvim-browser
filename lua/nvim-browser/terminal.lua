@@ -2920,7 +2920,7 @@ function M.refresh()
   local wrapper_request = wrapper_navigation_request_for_url(target)
   if wrapper_request ~= nil then
     if state.pending_operation ~= nil then
-      return send_capture_request()
+      return true
     end
     if state.live_refresh_request_id ~= nil then
       return false
