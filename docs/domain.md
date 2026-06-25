@@ -173,7 +173,13 @@ can be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   until Enter, exit, manual refresh, or an adaptive/live captured response
   refreshes them. When that DOM epoch advances without a captured frame, old
   hints must stay visible only as stale context; hint-driven actions should not
-  send old backend hint IDs until a fresh captured frame refreshes hints.
+  send old backend hint IDs until a fresh captured frame refreshes hints. A
+  stale hint action should request the appropriate recovery refresh itself:
+  resize for preview-geometry staleness first, then capture for DOM-epoch
+  staleness. This applies to hint click, right-click, hover, focus, follow,
+  type, select, upload, toggle, and hinted URL lookup paths. Repeated stale
+  actions should coalesce with any matching resize debounce, adaptive capture,
+  or in-flight capture instead of flooding the backend.
 - Chromium target lifecycle is a core reliability area. `target=_blank`,
   `window.open`, and delayed `about:blank` navigations should stay covered by
   opt-in E2E because real pages commonly create and navigate child targets

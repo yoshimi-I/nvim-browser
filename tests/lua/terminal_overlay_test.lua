@@ -5637,6 +5637,63 @@ assert(
   not terminal._test.preview_footer_line(120):find("frame=stale", 1, true),
   "fresh DOM epoch capture should remove stale frame footer state"
 )
+terminal._test.apply_serve_response({
+  id = _G.nvim_browser_stale_dom_request.id + 2,
+  status = "ok",
+  url = "https://example.com/dom-epoch-baseline",
+  title = "DOM Epoch Baseline",
+  dom_epoch = 12,
+})
+assert(terminal.state().frame_health.stale == true, "direct DOM metadata changes should make existing hints stale")
+sent_requests = {}
+assert(terminal.click_hint("a") == false, "DOM-stale hint actions should not use old backend hint ids")
+assert(last_request_of_type("click_hint") == nil, "DOM-stale hint actions should not send old hint ids")
+assert(last_request_of_type("capture") ~= nil, "DOM-stale hint actions should request a fresh captured frame")
+assert(#nvim_browser_requests_of_type("capture") == 1, "DOM-stale hint actions should request exactly one capture")
+assert(terminal.click_hint("a") == false, "repeated DOM-stale hint actions should remain unavailable until capture")
+assert(#nvim_browser_requests_of_type("capture") == 1, "repeated DOM-stale hint actions should not duplicate captures in flight")
+terminal._test.clear_in_flight_capture()
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_stale_dom_request.id + 3,
+  status = "ok",
+  payload = "fresh dom epoch frame after stale action",
+  url = "https://example.com/dom-epoch-baseline",
+  title = "DOM Epoch Baseline",
+  dom_epoch = 12,
+  runtime = {
+    protocol_version = 19,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 450, height = 165, device_scale_factor = 1 },
+  },
+  hints = {
+    {
+      id = 12,
+      kind = "button",
+      label = "Fresh DOM Button Again",
+      x = 10,
+      y = 20,
+      width = 30,
+      height = 10,
+      clickable = true,
+      focusable = true,
+    },
+  },
+}), "" })
+assert(vim.wait(200, function()
+  return terminal.state().dom_epoch == 12 and terminal.state().frame_health.stale == false
+end), "test setup should restore fresh hints after DOM-stale action refresh")
+_G.nvim_browser_fresh_hint_geometry = terminal.state().current_preview_geometry
+_G.nvim_browser_stale_hint_geometry = vim.deepcopy(_G.nvim_browser_fresh_hint_geometry)
+_G.nvim_browser_stale_hint_geometry.width = _G.nvim_browser_stale_hint_geometry.width + 10
+terminal._test.set_element_hints(terminal.state().element_hints, _G.nvim_browser_stale_hint_geometry)
+sent_requests = {}
+assert(terminal.click_hint("a") == false, "geometry-stale hint actions should not use old backend hint ids")
+assert(last_request_of_type("click_hint") == nil, "geometry-stale hint actions should not send old hint ids")
+assert(last_request_of_type("resize") ~= nil, "geometry-stale hint actions should request a resize refresh")
+terminal._test.set_element_hints(terminal.state().element_hints, _G.nvim_browser_fresh_hint_geometry)
 sent_requests = {}
 assert(terminal.click_hint("a") == true, "captured DOM epoch frame should make fresh hints usable again")
 assert(last_request_of_type("click_hint") ~= nil, "fresh hints should send backend hint ids")

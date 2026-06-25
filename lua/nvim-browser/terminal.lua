@@ -4556,11 +4556,28 @@ local function element_hints_are_current()
     and rendered_frame_dom_epoch_is_current()
 end
 
+function M._request_stale_hint_refresh()
+  if not same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
+    if state.resize_timer ~= nil then
+      return true
+    end
+    return request_resize()
+  end
+  if not rendered_frame_dom_epoch_is_current() then
+    if state.adaptive_capture_timer ~= nil or state.live_refresh_request_type == "capture" then
+      return true
+    end
+    return send_capture_request()
+  end
+  return false
+end
+
 function M.click_hint(id)
   if state.mode ~= "serve" or not is_valid_window() or state.element_hints_geometry == nil then
     return false
   end
   if not element_hints_are_current() then
+    M._request_stale_hint_refresh()
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -4578,6 +4595,7 @@ function M.right_click_hint(id)
     return false
   end
   if not element_hints_are_current() then
+    M._request_stale_hint_refresh()
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -4592,6 +4610,7 @@ function M.hover_hint(id)
     return false
   end
   if not element_hints_are_current() then
+    M._request_stale_hint_refresh()
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -4610,6 +4629,7 @@ function M.focus_hint(id)
     return false
   end
   if not element_hints_are_current() then
+    M._request_stale_hint_refresh()
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -4628,6 +4648,7 @@ function M.follow_hint(id)
     return false
   end
   if not element_hints_are_current() then
+    M._request_stale_hint_refresh()
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -4645,6 +4666,7 @@ local function active_hint_for_identifier(id)
     return nil
   end
   if not element_hints_are_current() then
+    M._request_stale_hint_refresh()
     return nil
   end
   return find_hint(state.element_hints, id)
@@ -4675,6 +4697,7 @@ function M.type_hint(id, text, opts)
     return false
   end
   if not element_hints_are_current() then
+    M._request_stale_hint_refresh()
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -4701,6 +4724,7 @@ function M.select_hint(id, choice)
     return false
   end
   if not element_hints_are_current() then
+    M._request_stale_hint_refresh()
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -4733,6 +4757,7 @@ function M.upload_hint(id, paths)
     return false
   end
   if not element_hints_are_current() then
+    M._request_stale_hint_refresh()
     return false
   end
   local hint = find_hint(state.element_hints, id)
@@ -4752,6 +4777,7 @@ function M.toggle_hint(id)
     return false
   end
   if not element_hints_are_current() then
+    M._request_stale_hint_refresh()
     return false
   end
   local hint = find_hint(state.element_hints, id)
