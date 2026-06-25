@@ -48,6 +48,7 @@ assert(type(browser.yank_hint_url) == "function", "hint URL yank API should exis
 assert(type(browser.yank_point_url_here) == "function", "cursor URL yank API should exist")
 assert(type(browser.follow_point_url_here) == "function", "cursor link follow API should exist")
 assert(type(browser.point_info_here) == "function", "cursor point info API should exist")
+assert(type(browser.inspect_point_here) == "function", "cursor point inspection API should exist")
 assert(type(browser.yank_page_text) == "function", "page text yank API should exist")
 assert(type(browser.screenshot) == "function", "active browser screenshot API should exist")
 assert(type(browser.downloads) == "function", "download history API should exist")
@@ -823,6 +824,8 @@ local function with_action_stubs(fn)
     right_click_here = browser.right_click_here,
     hover_here = browser.hover_here,
     follow_point_url_here = browser.follow_point_url_here,
+    inspect_point_here = browser.inspect_point_here,
+    yank_point_url_here = browser.yank_point_url_here,
     wheel_here = browser.wheel_here,
     type_here = browser.type_here,
   }
@@ -976,6 +979,14 @@ local function with_action_stubs(fn)
     table.insert(action_calls, "follow_point_url_here")
     return true
   end
+  browser.inspect_point_here = function()
+    table.insert(action_calls, "inspect_point_here")
+    return true
+  end
+  browser.yank_point_url_here = function(register)
+    table.insert(action_calls, "yank_point_url_here:" .. tostring(register))
+    return true
+  end
   browser.wheel_here = function(delta_y, delta_x)
     table.insert(action_calls, "wheel_here:" .. tostring(delta_y) .. ":" .. tostring(delta_x))
     return true
@@ -1031,6 +1042,8 @@ with_action_stubs(function()
 	    "Right-click cursor",
 	    "Hover cursor",
 	    "Follow link at cursor",
+	    "Yank link URL at cursor",
+	    "Inspect cursor",
 	    "Wheel down at cursor",
 	    "Wheel up at cursor",
 	    "Type at cursor",
@@ -1140,6 +1153,32 @@ with_action_stubs(function()
 	    end,
 	  }) == true, "Inspect action should run")
 	  assert(action_calls[#action_calls]:match("^inspect:"), "Inspect action should call inspect with a target")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Inspect cursor" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Inspect cursor action should run")
+	  assert(action_calls[#action_calls] == "inspect_point_here", "Inspect cursor action should inspect the browser point under the cursor")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Yank link URL at cursor" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Yank link URL at cursor action should run")
+	  assert(action_calls[#action_calls] == 'yank_point_url_here:"', "Yank link URL at cursor action should yank into the unnamed register")
 
 	  action_calls = {}
 	  assert(browser.actions({
@@ -1523,6 +1562,32 @@ with_action_stubs(function()
   }) == false, "Text mode action should fail when text mode is unavailable")
   vim.api.nvim_echo = original_echo
   assert(action_warning_count == 1, "Text mode action should not add a duplicate generic warning")
+end)
+
+with_action_stubs(function()
+  browser.inspect_point_here = function()
+    vim.api.nvim_echo({ { "nvim-browser: cursor point inspection requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+    return false
+  end
+  local original_echo = vim.api.nvim_echo
+  local action_warning_count = 0
+  vim.api.nvim_echo = function(chunks)
+    if chunks[1][2] == "WarningMsg" then
+      action_warning_count = action_warning_count + 1
+    end
+  end
+  assert(browser.actions({
+    select = function(items, _, on_choice)
+      for _, item in ipairs(items) do
+        if item.label == "Inspect cursor" then
+          on_choice(item)
+          return
+        end
+      end
+    end,
+  }) == false, "Inspect cursor action should fail when point inspection is unavailable")
+  vim.api.nvim_echo = original_echo
+  assert(action_warning_count == 1, "Inspect cursor action should not add a duplicate generic warning")
 end)
 
 with_action_stubs(function()

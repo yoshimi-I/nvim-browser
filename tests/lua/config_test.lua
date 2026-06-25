@@ -118,6 +118,7 @@ assert(configured.preview_keymaps.mappings.right_click_here == "gr", "preview-lo
 assert(configured.preview_keymaps.mappings.right_click_mouse == "<RightMouse>", "preview-local keymaps should include mouse right click")
 assert(configured.preview_keymaps.mappings.hover_here == "gh", "preview-local keymaps should include cursor hover")
 assert(configured.preview_keymaps.mappings.follow_point_url_here == "gf", "preview-local keymaps should include cursor link follow")
+assert(configured.preview_keymaps.mappings.point_info_here == "gi", "preview-local keymaps should include cursor point inspection")
 assert(configured.preview_keymaps.mappings.find_next == "n", "preview-local keymaps should include find-next")
 assert(configured.preview_keymaps.mappings.find_previous == "N", "preview-local keymaps should include find-previous")
 assert(
@@ -219,6 +220,10 @@ assert(
 assert(
   remapped.preview_keymaps.mappings.follow_point_url_here == "gf",
   "preview-local partial remaps should retain cursor link follow"
+)
+assert(
+  remapped.preview_keymaps.mappings.point_info_here == "gi",
+  "preview-local partial remaps should retain cursor point inspection"
 )
 assert(
   remapped.preview_keymaps.mappings.yank_point_url_here == "gY",

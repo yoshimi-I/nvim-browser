@@ -927,6 +927,10 @@ function M.register(browser, opts)
   end, {})
 
   vim.api.nvim_create_user_command("NBrowserPointInfo", function()
+    if browser.inspect_point_here ~= nil then
+      browser.inspect_point_here()
+      return
+    end
     if not browser.point_info_here or not browser.point_info_here(echo_point_info) then
       warn_point_info_unavailable()
     end

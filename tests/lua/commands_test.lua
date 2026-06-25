@@ -87,6 +87,7 @@ local yanked_hint_url = nil
 local yanked_point_url_register = nil
 local followed_point_url = false
 local point_info_called = false
+local point_info_should_fail = false
 local yanked_page_text_register = nil
 local screenshot_path = nil
 local screenshot_on_response = nil
@@ -311,6 +312,15 @@ local browser = {
         },
       })
     end
+    return true
+  end,
+  inspect_point_here = function()
+    point_info_called = true
+    if point_info_should_fail then
+      vim.api.nvim_echo({ { "nvim-browser: cursor point inspection requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+      return false
+    end
+    vim.api.nvim_echo({ { "a Docs -> https://example.com/docs target=_blank" } }, false, {})
     return true
   end,
   yank_page_text = function(register)
@@ -1287,8 +1297,20 @@ assert(
 
 point_info_called = false
 vim.cmd("NBrowserPointInfo")
-assert(point_info_called == true, "NBrowserPointInfo should call point_info_here")
+assert(point_info_called == true, "NBrowserPointInfo should call inspect_point_here")
 assert(echoed:find("a Docs -> https://example.com/docs target=_blank", 1, true), "NBrowserPointInfo should echo inspected element metadata")
+
+point_info_called = false
+point_info_should_fail = true
+local point_info_warning_count = #warnings
+vim.cmd("NBrowserPointInfo")
+assert(point_info_called == true, "NBrowserPointInfo should call inspect_point_here before warning")
+assert(
+  warnings[#warnings] == "nvim-browser: cursor point inspection requires an active cursor-addressable browser preview",
+  "NBrowserPointInfo should keep the cursor inspection warning from inspect_point_here"
+)
+assert(#warnings == point_info_warning_count + 1, "NBrowserPointInfo should not duplicate inspect_point_here warnings")
+point_info_should_fail = false
 
 yanked_page_text_register = nil
 vim.cmd("NBrowserYankPageText")

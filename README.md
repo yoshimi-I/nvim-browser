@@ -679,7 +679,7 @@ directly with `require("nvim-browser").address("example.com")`.
 `:NBrowserActions` opens a compact picker for common browser actions such as
 opening, previewing, inspecting, resuming, bookmarking, address, reload, history
 movement, find, hints, text mode, cursor click/double-click/right-click/hover/wheel/type,
-cursor link follow, downloads, screenshot, reader, status, zoom, doctor, and
+cursor link follow/yank/inspect, downloads, screenshot, reader, status, zoom, doctor, and
 close. Preview buffers map `?` to this picker by default.
 
 `:NBrowserZoom {scale}` sets an exact page scale, for example `1.25` for
@@ -791,7 +791,8 @@ Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` address
 prompt, arrow keys, `gc` click the browser viewport at the cursor, `gd`
 double-click at the cursor, `gr` right-click at the cursor, `gh` hover the
 browser viewport at the cursor, `gf` follow the link URL under the cursor in
-the active preview, `<Esc>` stop a pending load, left click to click the browser
+the active preview, `gi` inspect the browser element under the cursor, `<Esc>`
+stop a pending load, left click to click the browser
 viewport, double left click to send a native browser double-click, right click
 to send a native browser right-click, scroll wheel to send a native browser
 wheel event at the mouse position, and `q` close.
@@ -800,7 +801,9 @@ Disable or remap them with
 example, keep preview keymaps enabled but preserve Vim's built-in `gf` with
 `preview_keymaps = { mappings = { follow_point_url_here = false } }`, or disable
 cursor link URL yank with
-`preview_keymaps = { mappings = { yank_point_url_here = false } }`.
+`preview_keymaps = { mappings = { yank_point_url_here = false } }`, or disable
+cursor inspect with
+`preview_keymaps = { mappings = { point_info_here = false } }`.
 
 Configure search with `require("nvim-browser").setup({ search_url = "https://www.google.com/search?q=%s" })`.
 The `%s` placeholder receives the encoded query; write literal percent signs as

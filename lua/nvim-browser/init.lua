@@ -1763,6 +1763,19 @@ local function action_items(opts, report_error)
       end,
     },
     {
+      label = "Yank link URL at cursor",
+      run = function()
+        return M.yank_point_url_here('"')
+      end,
+    },
+    {
+      label = "Inspect cursor",
+      reports_own_error = true,
+      run = function()
+        return M.inspect_point_here()
+      end,
+    },
+    {
       label = "Wheel down at cursor",
       run = function()
         return M.wheel_here(120, 0)
@@ -2038,6 +2051,36 @@ end
 
 function M.point_info_here(on_response)
   return terminal.point_info_here(on_response)
+end
+
+local function echo_point_info(response)
+  if response.status ~= "ok" or type(response.point) ~= "table" then
+    vim.api.nvim_echo({ { "nvim-browser: cursor point inspection requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+    return
+  end
+  local point = response.point
+  local parts = {}
+  if point.tag ~= nil and point.tag ~= vim.NIL and point.tag ~= "" then
+    table.insert(parts, tostring(point.tag))
+  end
+  if point.label ~= nil and point.label ~= vim.NIL and point.label ~= "" then
+    table.insert(parts, tostring(point.label))
+  end
+  if point.href ~= nil and point.href ~= vim.NIL and point.href ~= "" then
+    table.insert(parts, "-> " .. tostring(point.href))
+  end
+  if point.target ~= nil and point.target ~= vim.NIL and point.target ~= "" then
+    table.insert(parts, "target=" .. tostring(point.target))
+  end
+  vim.api.nvim_echo({ { #parts > 0 and table.concat(parts, " ") or "no element" } }, false, {})
+end
+
+function M.inspect_point_here()
+  if not terminal.point_info_here(echo_point_info) then
+    vim.api.nvim_echo({ { "nvim-browser: cursor point inspection requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+    return false
+  end
+  return true
 end
 
 function M.yank_point_url_here(register)

@@ -303,6 +303,16 @@ function M.setup_buffer(browser, bufnr, opts)
     end
   end, "nvim-browser: follow link at cursor", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "point_info_here", "gi"), function()
+    if browser.inspect_point_here ~= nil then
+      browser.inspect_point_here()
+      return
+    end
+    if browser.point_info_here ~= nil then
+      browser.point_info_here()
+    end
+  end, "nvim-browser: inspect cursor", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "type_hint_mode", "t"), function()
     browser.type_hint_mode(input)
   end, "nvim-browser: type into hint", buffer_opts)

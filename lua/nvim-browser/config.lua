@@ -115,6 +115,7 @@ M.options = {
       right_click_here = "gr",
       hover_here = "gh",
       follow_point_url_here = "gf",
+      point_info_here = "gi",
       type_hint_mode = "t",
       submit_hint_mode = "s",
       submit_focused = "gs",

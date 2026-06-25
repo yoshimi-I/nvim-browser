@@ -923,6 +923,7 @@ gd       double-click browser viewport at cursor
 gr       right-click browser viewport at cursor
 gh       hover browser viewport at cursor
 gf       follow link URL under cursor in the active preview
+gi       inspect browser element under cursor
 <Esc> stop pending load
 <LeftMouse>        click browser viewport
 <2-LeftMouse>      double-click browser viewport
@@ -947,6 +948,7 @@ require("nvim-browser").setup({
       right_click_here = "gr",
       follow_point_url_here = "gf",
       yank_point_url_here = "gY",
+      point_info_here = "gi",
       left_click = false,
       double_click = "<2-LeftMouse>",
       right_click_mouse = "<RightMouse>",
@@ -976,6 +978,8 @@ require("nvim-browser").setup({
 	<
 Set a mapping value to `false` to preserve that key, for example
 `preview_keymaps = { mappings = { yank_point_url_here = false } }`.
+To preserve Vim's built-in `gi`, use
+`preview_keymaps = { mappings = { point_info_here = false } }`.
 
 	The session file stores recent pages, bookmarks, and completed-download
 	history. `history_limit` bounds each persisted list. Set `persist = false`
