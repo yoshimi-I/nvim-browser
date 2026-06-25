@@ -2116,6 +2116,8 @@ terminal._test.apply_serve_response({
 })
 assert(terminal.state().calibration_state == nil, "non-calibration page_text should clear stale calibration state")
 assert(#_G.nvim_browser_serve_egress_payloads == 1, "kitty-unicode serve frames should emit exactly one terminal payload")
+assert(terminal.state().terminal_graphics_egress_count > 0, "kitty-unicode serve frames should count terminal graphics egress")
+_G.nvim_browser_graphics_egress_count_after_frame = terminal.state().terminal_graphics_egress_count
 _G.nvim_browser_wrapped_unicode_payload = _G.nvim_browser_serve_egress_payloads[1]
 _G.nvim_browser_assert_redraw_before_payload("unicode-frame", "kitty-unicode serve frame")
 assert(nvim_browser_count_substrings(_G.nvim_browser_wrapped_unicode_payload, "\27Ptmux;") == 1, "serve payload should be wrapped in tmux passthrough exactly once")
@@ -2175,6 +2177,10 @@ assert(#_G.nvim_browser_serve_egress_payloads == 0, "unrelated buffers should no
 vim.api.nvim_set_current_win(_G.nvim_browser_tmux_state.winid)
 assert(terminal.focus() == true, "focus should replay the active kitty-unicode preview")
 _G.nvim_browser_assert_redraw_before_payload("unicode-frame", "kitty-unicode focus replay")
+assert(
+  terminal.state().terminal_graphics_egress_count > _G.nvim_browser_graphics_egress_count_after_frame,
+  "kitty-unicode focus replay should count terminal graphics egress"
+)
 _G.nvim_browser_serve_egress_payloads = {}
 _G.nvim_browser_serve_egress_events = {}
 assert(terminal.toggle() == false, "first toggle should close the active preview window")
@@ -2224,6 +2230,7 @@ vim.api.nvim_chan_send = function(channel, payload)
 end
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
 _G.nvim_browser_ansi_focus_state = terminal.state()
+assert(_G.nvim_browser_ansi_focus_state.terminal_graphics_egress_count == 0, "ansi browser previews should reset terminal graphics egress count")
 _G.nvim_browser_serve_egress_payloads = {}
 vim.api.nvim_exec_autocmds("BufEnter", { buffer = _G.nvim_browser_ansi_focus_state.bufnr, modeline = false })
 vim.wait(50)

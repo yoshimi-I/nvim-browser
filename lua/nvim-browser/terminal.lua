@@ -10,6 +10,7 @@ local state = {
   generation = 0,
   last_payload = nil,
   last_payload_is_unicode = false,
+  terminal_graphics_egress_count = 0,
   suppress_focus_replay = false,
   focus_replay_scheduled = false,
   has_rendered_frame = false,
@@ -2550,6 +2551,7 @@ local function emit_terminal_graphics(payload, winid)
   send_terminal_escape(kitty_cleanup_escape())
   vim.api.nvim_chan_send(vim.v.stderr, cursor_position_escape(winid))
   send_terminal_escape(payload)
+  state.terminal_graphics_egress_count = state.terminal_graphics_egress_count + 1
 end
 
 local function send_kitty_unicode_frame(payload)
@@ -2558,6 +2560,7 @@ local function send_kitty_unicode_frame(payload)
   end
   vim.cmd("redraw")
   send_terminal_escape(payload)
+  state.terminal_graphics_egress_count = state.terminal_graphics_egress_count + 1
 end
 
 local function preview_has_current_focus()
@@ -2679,6 +2682,7 @@ function M.open(command)
   state.generation = state.generation + 1
   state.last_payload = nil
   state.last_payload_is_unicode = false
+  state.terminal_graphics_egress_count = 0
   state.has_rendered_frame = false
   state.last_target = command_target(command)
   state.stream_buffer = ""
@@ -3156,6 +3160,7 @@ function M.close()
   state.job_id = nil
   state.last_payload = nil
   state.last_payload_is_unicode = false
+  state.terminal_graphics_egress_count = 0
   state.last_target = nil
   state.stream_buffer = ""
   state.mode = nil
@@ -4789,6 +4794,8 @@ function M.state()
     has_buffer = is_valid_buffer(),
     has_window = is_valid_window(),
     has_payload = state.last_payload ~= nil,
+    last_payload_is_unicode = state.last_payload_is_unicode,
+    terminal_graphics_egress_count = state.terminal_graphics_egress_count,
     mode = state.mode,
     serve_output = state.serve_output,
     serve_output_label = state.serve_output_label,

@@ -744,9 +744,10 @@ COMMANDS                                           *nvim-browser-commands*
 	Open the bundled deterministic smoke fixture through the normal
 	Chromium/CDP browser runtime, then report whether a healthy rendered frame
 	was received. The report includes the effective output mode, runtime
-	metadata, frame geometry, and frame health. Inside Zellij with Kitty
-	graphics configured, a healthy smoke report shows "output: ANSI fallback"
-	and "reader: ok".
+	metadata, frame geometry, and frame health. Kitty graphics sessions also
+	report "terminal graphics: ok" after a frame payload is sent to the
+	terminal. Inside Zellij with Kitty graphics configured, a healthy smoke
+	report shows "output: ANSI fallback" and "reader: ok".
 
 							*:NBrowserCalibrate*
 :NBrowserCalibrate [cell_width_px cell_height_px]

@@ -1872,6 +1872,7 @@ terminal.state = function()
     current_title = _G.nvim_browser_smoke_title,
     status = "ok",
     serve_output = "kitty-unicode",
+    terminal_graphics_egress_count = 1,
     runtime_metadata = {
       output = "kitty-unicode",
       renderer = "chromium-cdp",
@@ -1901,6 +1902,49 @@ end }) == true, "non-fallback smoke should not require a reader buffer")
 assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == true, "non-fallback smoke should still pass without reader")
 _G.nvim_browser_non_fallback_smoke_report_lines = table.concat(_G.nvim_browser_smoke_report.lines, "\n")
 assert(not _G.nvim_browser_non_fallback_smoke_report_lines:find("reader: ok", 1, true), "non-fallback smoke report should not include reader status")
+assert(_G.nvim_browser_non_fallback_smoke_report_lines:find("terminal graphics: ok", 1, true), "kitty-unicode smoke report should include terminal graphics egress status")
+
+_G.nvim_browser_smoke_report = nil
+_G.nvim_browser_smoke_title = _G.nvim_browser_smoke_fixture_title
+_G.nvim_browser_smoke_focused = nil
+_G.nvim_browser_smoke_calls = {}
+terminal.state = function()
+  return {
+    mode = "serve",
+    job_id = 1,
+    has_buffer = true,
+    current_url = _G.nvim_browser_smoke_fixture_url,
+    current_title = _G.nvim_browser_smoke_title,
+    status = "ok",
+    serve_output = "kitty-unicode",
+    terminal_graphics_egress_count = 0,
+    runtime_metadata = {
+      output = "kitty-unicode",
+      renderer = "chromium-cdp",
+      transport = "stdio-jsonl",
+      cells = { columns = 80, rows = 20 },
+      viewport = { width = 800, height = 400 },
+    },
+    rendered_frame_geometry = { width = 80, height = 20 },
+    rendered_frame_url = _G.nvim_browser_smoke_fixture_url,
+    dom_epoch = 1,
+    rendered_frame_dom_epoch = 1,
+    frame_health = { stale = false, refresh_pending = false },
+    focused_element = _G.nvim_browser_smoke_focused,
+    element_hints = {
+      { id = 1, kind = "input", label = "Smoke input", hint_label = "i" },
+      { id = 2, kind = "button", label = "Run smoke", hint_label = "s" },
+    },
+  }
+end
+assert(browser.smoke({ timeout_ms = 1, interval_ms = 1, on_report = function(report)
+  _G.nvim_browser_smoke_report = report
+end }) == true, "kitty-unicode smoke should still finish when graphics egress has not been observed")
+_G.nvim_browser_missing_graphics_smoke_report_lines = table.concat(_G.nvim_browser_smoke_report.lines, "\n")
+assert(
+  _G.nvim_browser_missing_graphics_smoke_report_lines:find("terminal graphics: none", 1, true),
+  "kitty-unicode smoke report should identify missing terminal graphics egress"
+)
 
 _G.nvim_browser_smoke_report = nil
 _G.nvim_browser_smoke_fake_now = 0

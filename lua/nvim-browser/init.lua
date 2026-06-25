@@ -1271,6 +1271,13 @@ smoke_report = function(status, reason, details)
   if details.reader == true then
     table.insert(lines, "reader: ok")
   end
+  if (output == "kitty" or output == "kitty-unicode") and tonumber(terminal_state.terminal_graphics_egress_count) ~= nil then
+    if tonumber(terminal_state.terminal_graphics_egress_count) > 0 then
+      table.insert(lines, "terminal graphics: ok")
+    else
+      table.insert(lines, "terminal graphics: none")
+    end
+  end
   if reason ~= nil and reason ~= "" then
     table.insert(lines, "reason: " .. tostring(reason))
   end
