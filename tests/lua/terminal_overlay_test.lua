@@ -579,7 +579,7 @@ terminal._test.handle_reader_response({
   text = {
     title = "Local Reader",
     url = "file:///tmp/site/index.html",
-    text = "# Local Reader\n\n[Next](guide/page.html)\n\n[Parent](../docs/page.html)\n\n[Double](assets//app.js)\n\n[DotFragment](..#intro)\n\n[DotQuery](.?q=x)\n\n[Docs](/docs)\n\n[Section](#intro)\n\n[Search](?q=x)",
+    text = "# Local Reader\n\n[Next](guide/page.html)\n\n[Parent](../docs/page.html)\n\n[Double](assets//app.js)\n\n[DotFragment](..#intro)\n\n[DotQuery](.?q=x)\n\n[Docs](/docs)\n\n[Section](#intro)\n\n[Search](?q=x)\n\n[Markdown](guide/notes.md)\n\n[Image](assets/pixel.png)\n\n[Pdf](manual.pdf)",
   },
 })
 vim.api.nvim_set_current_buf(terminal.state().reader_bufnr)
@@ -605,6 +605,54 @@ assert(terminal.reader_follow() == "file:///tmp/site/index.html#intro", "reader 
 vim.api.nvim_win_set_cursor(0, { 19, 1 })
 assert(terminal.reader_follow() == "file:///tmp/site/index.html?q=x", "reader follow should resolve file query-only links")
 vim.fn.chansend = original_chansend_for_reader
+assert(reader_requests[1].request.type == "navigate", "local HTML reader follow should use normal navigation")
+assert(reader_requests[1].request.url == "file:///tmp/site/guide/page.html", "local HTML reader follow should send the resolved file URL")
+vim.fn.chansend = function(job_id, payload)
+  table.insert(reader_requests, { job_id = job_id, request = vim.json.decode(payload) })
+  return 1
+end
+vim.api.nvim_win_set_cursor(0, { 21, 1 })
+assert(terminal.reader_follow() == "file:///tmp/site/guide/notes.md", "reader follow should resolve local Markdown links")
+vim.api.nvim_win_set_cursor(0, { 23, 1 })
+assert(terminal.reader_follow() == "file:///tmp/site/assets/pixel.png", "reader follow should resolve local raster image links")
+vim.api.nvim_win_set_cursor(0, { 25, 1 })
+assert(terminal.reader_follow() == "file:///tmp/site/manual.pdf", "reader follow should resolve local PDF links")
+vim.fn.chansend = original_chansend_for_reader
+assert(reader_requests[9].request.type == "navigate_markdown", "local Markdown reader follow should use the Markdown preview wrapper")
+assert(reader_requests[9].request.path == "/tmp/site/guide/notes.md", "local Markdown reader follow should send a filesystem path")
+assert(reader_requests[10].request.type == "navigate_image", "local raster reader follow should use the image preview wrapper")
+assert(reader_requests[10].request.path == "/tmp/site/assets/pixel.png", "local raster reader follow should send a filesystem path")
+assert(reader_requests[10].request.fit == "original", "local raster reader follow should preserve the default image fit")
+assert(reader_requests[11].request.type == "navigate", "local PDF reader follow should keep normal Chromium file navigation")
+assert(reader_requests[11].request.url == "file:///tmp/site/manual.pdf", "local PDF reader follow should send the resolved file URL")
+
+terminal._test.handle_reader_response({
+  status = "ok",
+  text = {
+    title = "Localhost Reader",
+    url = "file:///tmp/site/index.html",
+    text = "# Localhost Reader\n\n[LocalhostMd](file://localhost/tmp/localhost.md)\n\n[MdFragment](file:///tmp/site/guide/notes.md#intro)\n\n[ImageQuery](file:///tmp/site/assets/pixel.png?size=1)",
+  },
+})
+vim.api.nvim_set_current_buf(terminal.state().reader_bufnr)
+reader_requests = {}
+vim.fn.chansend = function(job_id, payload)
+  table.insert(reader_requests, { job_id = job_id, request = vim.json.decode(payload) })
+  return 1
+end
+vim.api.nvim_win_set_cursor(0, { 5, 1 })
+assert(terminal.reader_follow() == "file://localhost/tmp/localhost.md", "reader follow should preserve localhost file URLs")
+vim.api.nvim_win_set_cursor(0, { 7, 1 })
+assert(terminal.reader_follow() == "file:///tmp/site/guide/notes.md#intro", "reader follow should preserve Markdown file fragments")
+vim.api.nvim_win_set_cursor(0, { 9, 1 })
+assert(terminal.reader_follow() == "file:///tmp/site/assets/pixel.png?size=1", "reader follow should preserve raster image file queries")
+vim.fn.chansend = original_chansend_for_reader
+assert(reader_requests[1].request.type == "navigate_markdown", "localhost Markdown file URLs should use the Markdown preview wrapper")
+assert(reader_requests[1].request.path == "/tmp/localhost.md", "localhost Markdown file URLs should decode to the local filesystem path")
+assert(reader_requests[2].request.type == "navigate", "Markdown file URLs with fragments should keep normal navigation")
+assert(reader_requests[2].request.url == "file:///tmp/site/guide/notes.md#intro", "Markdown file fragments should remain in the navigated URL")
+assert(reader_requests[3].request.type == "navigate", "raster image file URLs with queries should keep normal navigation")
+assert(reader_requests[3].request.url == "file:///tmp/site/assets/pixel.png?size=1", "raster image file queries should remain in the navigated URL")
 
 terminal._test.handle_reader_response({
   status = "ok",

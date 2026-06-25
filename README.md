@@ -580,7 +580,9 @@ press `<CR>` or `gf` on a reader link, or run `:NBrowserReaderFollow`, to
 navigate the active browser session to that URL. Reader follow resolves
 root-relative paths, page-relative paths, and `#fragment` links against the
 current page URL; if a line has exactly one link, it can be followed even when
-the cursor is not directly on the link text.
+the cursor is not directly on the link text. Local Markdown and raster-image
+reader links keep using the browser preview wrappers instead of raw file
+navigation.
 
 Opt-in browser keymaps can be enabled from setup:
 

@@ -405,6 +405,59 @@ local function is_raster_image_path(target)
   return extension == "png" or extension == "jpg" or extension == "jpeg" or extension == "gif" or extension == "webp"
 end
 
+local function is_markdown_path(target)
+  if target == nil or target == "" or target:match("^%a[%w+.-]*:") then
+    return false
+  end
+  local extension = vim.fn.fnamemodify(target, ":e"):lower()
+  return extension == "md" or extension == "markdown"
+end
+
+local function file_url_to_path(url)
+  if type(url) ~= "string" or not url:match("^file://") then
+    return nil
+  end
+  if url:find("[#?]") ~= nil then
+    return nil
+  end
+  local authority = url:match("^file://([^/]*)")
+  if authority ~= nil and authority ~= "" and authority:lower() ~= "localhost" then
+    return nil
+  end
+  local path = url:match("^file://[^/]*(/.*)$")
+  if path == nil then
+    return nil
+  end
+  path = path:gsub("%%(%x%x)", function(hex)
+    return string.char(tonumber(hex, 16))
+  end)
+  if path == "" then
+    return nil
+  end
+  return path
+end
+
+local function wrapper_navigation_request_for_url(url)
+  local path = file_url_to_path(url)
+  if path == nil then
+    return nil
+  end
+  if is_markdown_path(path) then
+    return {
+      type = "navigate_markdown",
+      path = path,
+    }
+  end
+  if is_raster_image_path(path) then
+    return {
+      type = "navigate_image",
+      path = path,
+      fit = command_image_fit(state.last_serve_command),
+    }
+  end
+  return nil
+end
+
 local function command_has_flag(command, flag)
   if type(command) ~= "table" then
     return false
@@ -2862,7 +2915,7 @@ function M.navigate(url)
     return ok
   end
   request_resize()
-  local ok = send_pending_request({
+  local ok = send_pending_request(wrapper_navigation_request_for_url(url) or {
     type = "navigate",
     url = url,
   }, url)
@@ -3626,7 +3679,7 @@ function M.reader_follow()
     return false
   end
   request_resize()
-  local ok = send_pending_request({
+  local ok = send_pending_request(wrapper_navigation_request_for_url(url) or {
     type = "navigate",
     url = url,
   }, url, "loading", function(response)
