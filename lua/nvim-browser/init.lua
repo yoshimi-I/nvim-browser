@@ -708,29 +708,89 @@ function M.preview()
 end
 
 local smoke_is_ready
+local smoke_focused_input_ready
 local smoke_report
 local emit_smoke_report
 
 function M.smoke(opts)
   opts = opts or {}
-  local timeout_ms = math.max(1, math.floor(tonumber(opts.timeout_ms) or 20000))
+  local timeout_ms = math.max(1, math.floor(tonumber(opts.timeout_ms) or 30000))
   local interval_ms = math.max(1, math.floor(tonumber(opts.interval_ms) or 100))
   local clock = opts.clock or vim.uv or vim.loop
   local deadline = clock.now() + timeout_ms
   local last_reason = nil
+  local interaction_text = opts.interaction_text or "nvim-browser interaction"
+  local input_selector = "#nvim-browser-smoke-input"
+  local stage = "render"
+  local details = {
+    interaction = false,
+    focus = false,
+    input = false,
+    submit = false,
+  }
 
   state.smoke_target = smoke_fixture_url()
   open_target(state.smoke_target, { record = false })
 
+  local function fail(reason)
+    emit_smoke_report(smoke_report("failed", reason or last_reason or "timeout", details), opts)
+  end
+
   local function poll()
-    local ready, reason = smoke_is_ready()
-    last_reason = reason or last_reason
-    if ready then
-      emit_smoke_report(smoke_report("ok"), opts)
-      return
+    local ready, reason
+    if stage == "render" then
+      ready, reason = smoke_is_ready("nvim-browser smoke")
+      if ready then
+        stage = "focus"
+        if not M.focus_selector(input_selector) then
+          fail("focus: request failed")
+          return
+        end
+        vim.defer_fn(poll, interval_ms)
+        return
+      end
+      reason = "render: " .. tostring(reason)
+    elseif stage == "focus" then
+      ready, reason = smoke_focused_input_ready("Smoke input")
+      if ready then
+        details.focus = true
+        stage = "input"
+        if not M.input_text(interaction_text) then
+          fail("input: request failed")
+          return
+        end
+        details.input = true
+        stage = "input_wait"
+        vim.defer_fn(poll, interval_ms)
+        return
+      end
+      reason = "focus: " .. tostring(reason)
+    elseif stage == "input_wait" then
+      local terminal_state = terminal.state()
+      if terminal_state.pending_operation == nil
+        and terminal_state.dom_epoch ~= nil
+        and terminal_state.rendered_frame_dom_epoch ~= nil
+        and terminal_state.dom_epoch == terminal_state.rendered_frame_dom_epoch
+      then
+        stage = "submitted"
+        vim.defer_fn(poll, interval_ms)
+        return
+      end
+      reason = "input: waiting for fresh hints"
+    else
+      ready, reason = smoke_is_ready("nvim-browser smoke submitted: " .. interaction_text)
+      if ready then
+        details.submit = true
+        details.interaction = true
+        emit_smoke_report(smoke_report("ok", nil, details), opts)
+        return
+      end
+      reason = "submit: " .. tostring(reason)
     end
+
+    last_reason = reason or last_reason
     if clock.now() >= deadline then
-      emit_smoke_report(smoke_report("failed", last_reason or "timeout"), opts)
+      fail(last_reason or "timeout")
       return
     end
     vim.defer_fn(poll, interval_ms)
@@ -1144,7 +1204,8 @@ local function smoke_output_label(runtime, terminal_state)
     or "unknown"
 end
 
-smoke_report = function(status, reason)
+smoke_report = function(status, reason, details)
+  details = type(details) == "table" and details or {}
   local terminal_state = terminal.state()
   local runtime = M.runtime_metadata()
   local health = M.frame_health()
@@ -1174,6 +1235,18 @@ smoke_report = function(status, reason)
       )
     end
   end
+  if details.interaction == true then
+    table.insert(lines, "interaction: ok")
+  end
+  if details.focus == true then
+    table.insert(lines, "focus: ok")
+  end
+  if details.input == true then
+    table.insert(lines, "input: ok")
+  end
+  if details.submit == true then
+    table.insert(lines, "submit: ok")
+  end
   if reason ~= nil and reason ~= "" then
     table.insert(lines, "reason: " .. tostring(reason))
   end
@@ -1185,15 +1258,17 @@ smoke_report = function(status, reason)
     status = status,
     output = output,
     reason = reason,
+    details = details,
     lines = lines,
   }
 end
 
-smoke_is_ready = function()
+smoke_is_ready = function(expected_title)
   local terminal_state = terminal.state()
   local runtime = M.runtime_metadata()
   local health = M.frame_health()
   local target = state.smoke_target or smoke_fixture_url()
+  expected_title = expected_title or "nvim-browser smoke"
   if terminal_state.pending_operation ~= nil then
     return false, "operation pending"
   end
@@ -1206,7 +1281,7 @@ smoke_is_ready = function()
   if M.status() ~= "ok" then
     return false, "status=" .. tostring(M.status())
   end
-  if M.current_title() ~= "nvim-browser smoke" then
+  if M.current_title() ~= expected_title then
     return false, "title=" .. tostring(M.current_title())
   end
   if type(runtime) ~= "table" then
@@ -1220,6 +1295,20 @@ smoke_is_ready = function()
   end
   if health.stale ~= false or health.refresh_pending ~= false then
     return false, "frame not healthy"
+  end
+  return true, nil
+end
+
+smoke_focused_input_ready = function(expected_label)
+  local focused = M.focused_element()
+  if type(focused) ~= "table" then
+    return false, "missing focused element"
+  end
+  if focused.kind ~= "input" and focused.kind ~= "textarea" then
+    return false, "kind=" .. tostring(focused.kind)
+  end
+  if focused.label ~= expected_label then
+    return false, "label=" .. tostring(focused.label)
   end
   return true, nil
 end

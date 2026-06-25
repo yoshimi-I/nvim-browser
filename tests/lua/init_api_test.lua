@@ -1741,8 +1741,18 @@ terminal.open = original_terminal_open
 
 _G.nvim_browser_original_terminal_open_for_smoke = terminal.open
 _G.nvim_browser_original_terminal_state_for_smoke = terminal.state
+_G.nvim_browser_original_terminal_focus_selector_for_smoke = terminal.focus_selector
+_G.nvim_browser_original_terminal_input_text_for_smoke = terminal.input_text
+_G.nvim_browser_original_terminal_submit_focused_for_smoke = terminal.submit_focused
+_G.nvim_browser_original_terminal_click_hint_for_smoke = terminal.click_hint
 _G.nvim_browser_original_defer_fn_for_smoke = vim.defer_fn
 _G.nvim_browser_smoke_opened_command = nil
+_G.nvim_browser_smoke_fixture_url = vim.uri_from_fname(root .. "/data/html/smoke.html")
+_G.nvim_browser_smoke_fixture_title = "nvim-browser smoke"
+_G.nvim_browser_smoke_interaction_text = "nvim-browser interaction"
+_G.nvim_browser_smoke_title = _G.nvim_browser_smoke_fixture_title
+_G.nvim_browser_smoke_focused = nil
+_G.nvim_browser_smoke_calls = {}
 terminal.open = function(command)
   _G.nvim_browser_smoke_opened_command = command
 end
@@ -1751,8 +1761,8 @@ terminal.state = function()
     mode = "serve",
     job_id = 1,
     has_buffer = true,
-    current_url = vim.uri_from_fname(root .. "/data/html/smoke.html"),
-    current_title = "nvim-browser smoke",
+    current_url = _G.nvim_browser_smoke_fixture_url,
+    current_title = _G.nvim_browser_smoke_title,
     status = "ok",
     serve_output = "ansi",
     serve_output_label = "ANSI fallback",
@@ -1765,9 +1775,38 @@ terminal.state = function()
       viewport = { width = 800, height = 400 },
     },
     rendered_frame_geometry = { width = 80, height = 20 },
-    rendered_frame_url = vim.uri_from_fname(root .. "/data/html/smoke.html"),
+    rendered_frame_url = _G.nvim_browser_smoke_fixture_url,
+    dom_epoch = 1,
+    rendered_frame_dom_epoch = 1,
     frame_health = { stale = false, refresh_pending = false },
+    focused_element = _G.nvim_browser_smoke_focused,
+    element_hints = {
+      { id = 1, kind = "input", label = "Smoke input", hint_label = "i" },
+      { id = 2, kind = "button", label = "Run smoke", hint_label = "s" },
+    },
   }
+end
+terminal.focus_selector = function(selector)
+  table.insert(_G.nvim_browser_smoke_calls, "focus:" .. tostring(selector))
+  if selector == "#nvim-browser-smoke-input" then
+    _G.nvim_browser_smoke_focused = {
+      kind = "input",
+      label = "Smoke input",
+      value = "",
+      submittable = true,
+    }
+    return true
+  end
+  return false
+end
+terminal.input_text = function(text)
+  table.insert(_G.nvim_browser_smoke_calls, "input:" .. tostring(text))
+  if _G.nvim_browser_smoke_focused ~= nil and text == _G.nvim_browser_smoke_interaction_text then
+    _G.nvim_browser_smoke_focused.value = text
+    _G.nvim_browser_smoke_title = "nvim-browser smoke submitted: " .. text
+    return true
+  end
+  return false
 end
 vim.defer_fn = function(callback)
   callback()
@@ -1789,8 +1828,17 @@ assert(#browser.history() == 0, "smoke should not record the fixture in user his
 assert(browser.last_target() == _G.nvim_browser_last_target_before_smoke, "smoke should not set the fixture as the resume target")
 assert(browser.record_history(vim.uri_from_fname(root .. "/data/html/smoke.html"), "nvim-browser smoke") == false, "smoke metadata should not be recorded into session state")
 assert(browser.last_target() == _G.nvim_browser_last_target_before_smoke, "smoke metadata should not persist as last target")
-assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == true, "smoke should report a healthy frame")
-assert(table.concat(_G.nvim_browser_smoke_report.lines, "\n"):find("output: ANSI fallback", 1, true), "smoke report should include effective fallback output")
+assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == true, "smoke should report a healthy interaction")
+assert(vim.deep_equal(_G.nvim_browser_smoke_calls, {
+  "focus:#nvim-browser-smoke-input",
+  "input:nvim-browser interaction",
+}), "smoke should focus, type, and submit through the browser runtime")
+_G.nvim_browser_smoke_report_lines = table.concat(_G.nvim_browser_smoke_report.lines, "\n")
+assert(_G.nvim_browser_smoke_report_lines:find("output: ANSI fallback", 1, true), "smoke report should include effective fallback output")
+assert(_G.nvim_browser_smoke_report_lines:find("interaction: ok", 1, true), "smoke report should include interaction status")
+assert(_G.nvim_browser_smoke_report_lines:find("focus: ok", 1, true), "smoke report should include focus status")
+assert(_G.nvim_browser_smoke_report_lines:find("input: ok", 1, true), "smoke report should include input status")
+assert(_G.nvim_browser_smoke_report_lines:find("submit: ok", 1, true), "smoke report should include submit status")
 
 _G.nvim_browser_smoke_report = nil
 _G.nvim_browser_smoke_fake_now = 0
@@ -1830,8 +1878,62 @@ assert(browser.smoke({
 }) == true, "smoke should report previous-page false positives as failures")
 assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == false, "smoke should not pass while the smoke navigation is still pending")
 assert(table.concat(_G.nvim_browser_smoke_report.lines, "\n"):find("reason:", 1, true), "failed smoke should explain the failed readiness condition")
+
+_G.nvim_browser_smoke_report = nil
+_G.nvim_browser_smoke_fake_now = 0
+_G.nvim_browser_smoke_title = _G.nvim_browser_smoke_fixture_title
+_G.nvim_browser_smoke_focused = nil
+terminal.state = function()
+  return {
+    mode = "serve",
+    job_id = 1,
+    has_buffer = true,
+    current_url = _G.nvim_browser_smoke_fixture_url,
+    current_title = _G.nvim_browser_smoke_title,
+    status = "ok",
+    serve_output = "ansi",
+    runtime_metadata = {
+      output = "ansi",
+      renderer = "chromium-cdp",
+      cells = { columns = 80, rows = 20 },
+      viewport = { width = 800, height = 400 },
+    },
+    rendered_frame_geometry = { width = 80, height = 20 },
+    rendered_frame_url = _G.nvim_browser_smoke_fixture_url,
+    dom_epoch = 1,
+    rendered_frame_dom_epoch = 1,
+    frame_health = { stale = false, refresh_pending = false },
+    focused_element = _G.nvim_browser_smoke_focused,
+    element_hints = {
+      { id = 1, kind = "input", label = "Smoke input", hint_label = "i" },
+      { id = 2, kind = "button", label = "Run smoke", hint_label = "s" },
+    },
+  }
+end
+terminal.focus_selector = function()
+  return true
+end
+assert(browser.smoke({
+  timeout_ms = 1,
+  interval_ms = 1,
+  clock = {
+    now = function()
+      _G.nvim_browser_smoke_fake_now = _G.nvim_browser_smoke_fake_now + 1
+      return _G.nvim_browser_smoke_fake_now
+    end,
+  },
+  on_report = function(report)
+    _G.nvim_browser_smoke_report = report
+  end,
+}) == true, "smoke should report focus metadata failures")
+assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == false, "smoke should fail if focus metadata never reaches the expected input")
+assert(table.concat(_G.nvim_browser_smoke_report.lines, "\n"):find("reason: focus", 1, true), "failed smoke should identify focus as the failed stage")
 terminal.open = _G.nvim_browser_original_terminal_open_for_smoke
 terminal.state = _G.nvim_browser_original_terminal_state_for_smoke
+terminal.focus_selector = _G.nvim_browser_original_terminal_focus_selector_for_smoke
+terminal.input_text = _G.nvim_browser_original_terminal_input_text_for_smoke
+terminal.submit_focused = _G.nvim_browser_original_terminal_submit_focused_for_smoke
+terminal.click_hint = _G.nvim_browser_original_terminal_click_hint_for_smoke
 vim.defer_fn = _G.nvim_browser_original_defer_fn_for_smoke
 
 browser.hints = function()

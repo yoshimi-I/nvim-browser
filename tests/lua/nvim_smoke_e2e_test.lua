@@ -120,12 +120,12 @@ browser.setup({
 
 vim.cmd("NBrowserSmoke")
 
-local ready = vim.wait(20000, function()
+local ready = vim.wait(35000, function()
   local runtime = browser.runtime_metadata()
   local health = browser.frame_health()
   local state = terminal.state()
   return browser.status() == "ok"
-    and browser.current_title() == "nvim-browser smoke"
+    and browser.current_title() == "nvim-browser smoke submitted: nvim-browser interaction"
     and type(runtime) == "table"
     and runtime.output == "ansi"
     and state.serve_output == "ansi"
@@ -136,6 +136,10 @@ local ready = vim.wait(20000, function()
     and smoke_echo ~= nil
     and smoke_echo:find("nvim-browser smoke", 1, true) ~= nil
     and smoke_echo:find("status: ok", 1, true) ~= nil
+    and smoke_echo:find("interaction: ok", 1, true) ~= nil
+    and smoke_echo:find("focus: ok", 1, true) ~= nil
+    and smoke_echo:find("input: ok", 1, true) ~= nil
+    and smoke_echo:find("submit: ok", 1, true) ~= nil
 end, 50)
 
 if not ready then
@@ -184,6 +188,10 @@ assert(smoke_echo ~= nil and smoke_echo:find("nvim-browser smoke", 1, true), "NB
 assert(smoke_echo:find("status: ok", 1, true), "NBrowserSmoke should report a successful smoke result")
 assert(not smoke_echo:find("status: failed", 1, true), "NBrowserSmoke should not report failure after a healthy smoke run")
 assert(smoke_echo:find("output: ANSI fallback", 1, true), "smoke report should show the effective ANSI fallback output")
+assert(smoke_echo:find("interaction: ok", 1, true), "smoke report should show a completed interaction loop")
+assert(smoke_echo:find("focus: ok", 1, true), "smoke report should show focused input")
+assert(smoke_echo:find("input: ok", 1, true), "smoke report should show typed text")
+assert(smoke_echo:find("submit: ok", 1, true), "smoke report should show submitted fixture state")
 
 browser.close()
 vim.api.nvim_chan_send = original_nvim_chan_send

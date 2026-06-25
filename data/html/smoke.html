@@ -36,6 +36,40 @@
       margin: 0;
       color: #cbd5e1;
     }
+    form {
+      display: grid;
+      gap: 12px;
+      margin-top: 24px;
+    }
+    label {
+      color: #bfdbfe;
+      font-weight: 700;
+    }
+    input,
+    button {
+      box-sizing: border-box;
+      width: 100%;
+      border: 1px solid #7dd3fc;
+      background: #0f172a;
+      color: #f8fafc;
+      font: inherit;
+      padding: 10px 12px;
+    }
+    input:focus,
+    button:focus {
+      outline: 3px solid #facc15;
+      outline-offset: 2px;
+    }
+    button {
+      cursor: pointer;
+      background: #0e7490;
+      font-weight: 700;
+    }
+    output {
+      min-height: 24px;
+      color: #86efac;
+      font-weight: 700;
+    }
     strong {
       color: #86efac;
     }
@@ -45,6 +79,30 @@
   <main>
     <h1>nvim-browser smoke</h1>
     <p><strong>ready</strong> deterministic local browser runtime fixture</p>
+    <form id="nvim-browser-smoke-form">
+      <label for="nvim-browser-smoke-input">Smoke input</label>
+      <input id="nvim-browser-smoke-input" name="smoke" autocomplete="off">
+      <button id="nvim-browser-smoke-submit" type="submit">Run smoke</button>
+      <output id="nvim-browser-smoke-result" for="nvim-browser-smoke-input">waiting</output>
+    </form>
   </main>
+  <script>
+    const form = document.querySelector("#nvim-browser-smoke-form");
+    const input = document.querySelector("#nvim-browser-smoke-input");
+    const result = document.querySelector("#nvim-browser-smoke-result");
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      result.value = "submitted: " + input.value;
+      document.title = "nvim-browser smoke submitted: " + input.value;
+      document.body.dataset.smokeSubmitted = input.value;
+    });
+
+    input.addEventListener("input", () => {
+      if (input.value === "nvim-browser interaction") {
+        form.requestSubmit();
+      }
+    });
+  </script>
 </body>
 </html>
