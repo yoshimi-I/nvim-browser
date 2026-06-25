@@ -1725,6 +1725,39 @@ terminal._test.apply_serve_response({
 assert(terminal.state().pending_operation == nil, "matching select response should clear pending select state")
 
 footer_click_requests = {}
+vim.api.nvim_win_set_cursor(image_win, { 6, 24 })
+_G.nvim_browser_expected_cursor_toggle_point = terminal.viewport_point_for_cell(6, vim.api.nvim_win_call(image_win, function()
+  return vim.fn.virtcol(".")
+end), { columns = 50, rows = 11, width = 450, height = 165 })
+assert(terminal.toggle_here() == true, "cursor toggle should send browser point toggle input")
+_G.nvim_browser_cursor_toggle_seen = false
+_G.nvim_browser_cursor_toggle_request_id = nil
+for _, request in ipairs(footer_click_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if
+    ok
+    and decoded.type == "toggle_point"
+    and decoded.x == _G.nvim_browser_expected_cursor_toggle_point.x
+    and decoded.y == _G.nvim_browser_expected_cursor_toggle_point.y
+  then
+    _G.nvim_browser_cursor_toggle_seen = true
+    _G.nvim_browser_cursor_toggle_request_id = decoded.id
+  end
+end
+assert(_G.nvim_browser_cursor_toggle_seen, "cursor toggle should map preview cells to viewport pixels")
+assert(terminal.state().pending_operation ~= nil, "cursor toggle should mark the browser input as pending")
+assert(terminal.state().pending_operation.label == "toggle", "cursor toggle pending footer should use a toggle label")
+terminal._test.apply_serve_response({
+  id = _G.nvim_browser_cursor_toggle_request_id,
+  status = "ok",
+  payload = "toggled frame",
+  url = "https://example.com/toggled",
+  title = "Toggled",
+  runtime = interactive_runtime(450, 165),
+})
+assert(terminal.state().pending_operation == nil, "matching toggle response should clear pending toggle state")
+
+footer_click_requests = {}
 terminal.configure({
   viewport = {
     cell_width_px = 10,
@@ -1737,6 +1770,7 @@ assert(terminal.wheel_here(120, 0) == false, "stale rendered frame geometry shou
 assert(terminal.hover_here() == false, "stale rendered frame geometry should block cursor hover")
 assert(terminal.type_here("stale text") == false, "stale rendered frame geometry should block cursor typing")
 assert(terminal.select_here("stale option") == false, "stale rendered frame geometry should block cursor select")
+assert(terminal.toggle_here() == false, "stale rendered frame geometry should block cursor toggle")
 assert(terminal.select_region(6, 10, 6, 25) == false, "stale rendered frame geometry should block region selection")
 assert(terminal.yank_region("b", 6, 10, 6, 25) == false, "stale rendered frame geometry should block region yank")
 assert(terminal.click_mouse({ winid = image_win, line = 6, column = 25 }) == false, "stale rendered frame geometry should block mouse click")
@@ -1749,7 +1783,7 @@ for _, request in ipairs(footer_click_requests) do
   if ok and decoded.type == "resize" then
     stale_resize_seen = true
   end
-  if ok and (decoded.type == "click_point" or decoded.type == "hover_point" or decoded.type == "type_point" or decoded.type == "select_point" or decoded.type == "wheel_point" or decoded.type == "drag_point") then
+  if ok and (decoded.type == "click_point" or decoded.type == "hover_point" or decoded.type == "type_point" or decoded.type == "select_point" or decoded.type == "toggle_point" or decoded.type == "wheel_point" or decoded.type == "drag_point") then
     stale_point_seen = true
   end
 end

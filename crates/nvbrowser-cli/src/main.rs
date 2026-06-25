@@ -23,11 +23,12 @@ use nvbrowser_core::{
     ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
     RightClickHintRequest, RightClickPointRequest, ScrollRequest, SelectHintRequest,
     SelectPointRequest, SelectionTextRequest, SessionId, StopLoadingRequest, TextInputRequest,
-    ToggleHintRequest, UploadHintRequest, Viewport, WheelPointRequest, ZoomRequest,
+    ToggleHintRequest, TogglePointRequest, UploadHintRequest, Viewport, WheelPointRequest,
+    ZoomRequest,
 };
 use serde::{Deserialize, Serialize};
 
-const SERVE_PROTOCOL_VERSION: u32 = 27;
+const SERVE_PROTOCOL_VERSION: u32 = 28;
 
 #[derive(Debug, Parser)]
 #[command(name = "nvbrowser")]
@@ -483,6 +484,11 @@ enum ServeRequest {
         hint_id: u32,
         #[serde(default)]
         dom_epoch: Option<u64>,
+    },
+    TogglePoint {
+        id: u64,
+        x: f64,
+        y: f64,
     },
     SubmitFocused {
         id: u64,
@@ -1632,6 +1638,16 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload(true).map(Some)
             }
+            ServeRequest::TogglePoint { x, y, .. } => {
+                self.renderer.toggle_point(TogglePointRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    x,
+                    y,
+                ))?;
+                self.settle_after_interaction()?;
+                self.capture_payload(true).map(Some)
+            }
             ServeRequest::SubmitFocused { .. } => {
                 let focused = self
                     .renderer
@@ -1977,6 +1993,7 @@ impl ServeRequest {
             | ServeRequest::SelectHint { id, .. }
             | ServeRequest::UploadHint { id, .. }
             | ServeRequest::ToggleHint { id, .. }
+            | ServeRequest::TogglePoint { id, .. }
             | ServeRequest::SubmitFocused { id }
             | ServeRequest::TypePoint { id, .. }
             | ServeRequest::SelectPoint { id, .. }
@@ -2588,6 +2605,7 @@ mod tests {
         selected_points: Vec<(f64, f64, String)>,
         uploaded_hints: Vec<(u32, Vec<PathBuf>)>,
         toggled_hints: Vec<u32>,
+        toggled_points: Vec<(f64, f64)>,
         clicked_points: Vec<(f64, f64, u32)>,
         right_clicked_points: Vec<(f64, f64)>,
         hovered_points: Vec<(f64, f64)>,
@@ -2646,6 +2664,7 @@ mod tests {
                 selected_points: Vec::new(),
                 uploaded_hints: Vec::new(),
                 toggled_hints: Vec::new(),
+                toggled_points: Vec::new(),
                 clicked_points: Vec::new(),
                 right_clicked_points: Vec::new(),
                 hovered_points: Vec::new(),
@@ -3082,6 +3101,18 @@ mod tests {
                     "hint toggle failed",
                 ));
             }
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn toggle_point(
+            &mut self,
+            request: TogglePointRequest,
+        ) -> Result<InputResult, RendererError> {
+            self.operations.push("toggle_point");
+            self.toggled_points.push((request.x, request.y));
             Ok(InputResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
@@ -4079,6 +4110,19 @@ mod tests {
     }
 
     #[test]
+    fn serve_request_parses_toggle_point_jsonl() {
+        assert_eq!(
+            parse_serve_request(r##"{"type":"toggle_point","id":19,"x":120.5,"y":240.25}"##)
+                .expect("toggle point request should parse"),
+            ServeRequest::TogglePoint {
+                id: 19,
+                x: 120.5,
+                y: 240.25,
+            }
+        );
+    }
+
+    #[test]
     fn parse_serve_request_accepts_hint_dom_epoch_precondition() {
         assert_eq!(
             parse_serve_request(
@@ -4737,7 +4781,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":27,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":28,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -7013,6 +7057,51 @@ mod tests {
         assert_eq!(
             runtime.renderer.operations,
             vec!["capture", "hints", "select_point"]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_toggles_at_point_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                image_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::TogglePoint {
+            id: 2,
+            x: 120.5,
+            y: 240.25,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(runtime.renderer.toggled_points, vec![(120.5, 240.25)]);
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "toggle_point",
+                "settle",
+                "capture",
+                "hints"
+            ]
         );
     }
 

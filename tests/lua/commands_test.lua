@@ -80,6 +80,7 @@ local jumped_hint = nil
 local typed_here = nil
 local submitted_here = nil
 local selected_here = nil
+local toggled_here = false
 local input_text = nil
 local pasted_register = nil
 local yanked_register = nil
@@ -385,6 +386,10 @@ local browser = {
   end,
   select_here = function(choice)
     selected_here = choice
+    return true
+  end,
+  toggle_here = function()
+    toggled_here = true
     return true
   end,
   doctor = function()
@@ -1410,6 +1415,9 @@ assert(submitted_here == "hello world", "NBrowserSubmitHere should type at the p
 vim.cmd("NBrowserSelectHere Canada")
 assert(selected_here == "Canada", "NBrowserSelectHere should select at the preview cursor")
 
+vim.cmd("NBrowserToggleHere")
+assert(toggled_here == true, "NBrowserToggleHere should toggle at the preview cursor")
+
 typed_hint = nil
 local hint_prompts = {}
 local hint_responses = { "s", "hello world" }
@@ -1729,6 +1737,9 @@ local failed_browser = {
   select_here = function()
     return false
   end,
+  toggle_here = function()
+    return false
+  end,
   wheel_here = function()
     return false
   end,
@@ -1828,6 +1839,9 @@ assert(warnings[#warnings] == "nvim-browser: cursor text input requires an activ
 
 vim.cmd("NBrowserSelectHere missing")
 assert(warnings[#warnings] == "nvim-browser: cursor select requires an active cursor-addressable browser preview", "NBrowserSelectHere should warn when cursor select fails")
+
+vim.cmd("NBrowserToggleHere")
+assert(warnings[#warnings] == "nvim-browser: cursor toggle requires an active cursor-addressable browser preview", "NBrowserToggleHere should warn when cursor toggle fails")
 
 vim.cmd("NBrowserWheelDownHere")
 assert(warnings[#warnings] == "nvim-browser: cursor wheel requires an active cursor-addressable browser preview", "NBrowserWheelDownHere should warn when cursor wheel fails")

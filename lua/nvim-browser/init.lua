@@ -1808,6 +1808,12 @@ local function action_items(opts, report_error)
       end,
     },
     {
+      label = "Toggle at cursor",
+      run = function()
+        return M.toggle_here()
+      end,
+    },
+    {
       label = "Submit focused",
       run = function()
         return M.submit_focused()
@@ -2212,6 +2218,10 @@ function M.select_point(x, y, choice)
   return terminal.select_point(x, y, choice)
 end
 
+function M.toggle_point(x, y)
+  return terminal.toggle_point(x, y)
+end
+
 function M.find_text(query, opts)
   return terminal.find_text(query, opts)
 end
@@ -2263,6 +2273,10 @@ end
 
 function M.select_here(choice)
   return terminal.select_here(choice)
+end
+
+function M.toggle_here()
+  return terminal.toggle_here()
 end
 
 function M.jump_hint(id)

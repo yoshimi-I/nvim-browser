@@ -119,6 +119,7 @@ M.options = {
       type_here = "gI",
       submit_here = "gS",
       select_here = "gO",
+      toggle_here = "gC",
       type_hint_mode = "t",
       submit_hint_mode = "s",
       submit_focused = "gs",

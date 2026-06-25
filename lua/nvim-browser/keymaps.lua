@@ -346,6 +346,12 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.select_here(choice)
   end, "nvim-browser: select at cursor", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "toggle_here", "gC"), function()
+    if browser.toggle_here ~= nil then
+      browser.toggle_here()
+    end
+  end, "nvim-browser: toggle at cursor", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "type_hint_mode", "t"), function()
     browser.type_hint_mode(input)
   end, "nvim-browser: type into hint", buffer_opts)

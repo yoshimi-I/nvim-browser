@@ -533,7 +533,7 @@ local backend_ready = doctor.run({
           user_data_dir = "/tmp/nvbrowser-profile",
         },
         protocol = {
-          serve = 27,
+          serve = 28,
         },
       }),
       stderr = "",
@@ -544,7 +544,7 @@ assert(contains_line(backend_ready, "backend: available via cdp"), "doctor shoul
 assert(contains_line(backend_ready, "backend cdp: ws://127.0.0.1:9222/devtools/browser/test"), "doctor should include CDP URL")
 assert(contains_line(backend_ready, "backend chrome: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), "doctor should include Chrome path")
 assert(contains_line(backend_ready, "backend user data dir: /tmp/nvbrowser-profile"), "doctor should include user data dir")
-assert(contains_line(backend_ready, "ok: backend protocol matches plugin serve protocol=27"), "doctor should report matching backend protocol")
+assert(contains_line(backend_ready, "ok: backend protocol matches plugin serve protocol=28"), "doctor should report matching backend protocol")
 
 local backend_protocol_mismatch = doctor.run({
   binary = "nvbrowser-test",
@@ -567,7 +567,7 @@ local backend_protocol_mismatch = doctor.run({
   end,
 }, {})
 assert(
-  contains_line(backend_protocol_mismatch, "warning: backend protocol mismatch; plugin expects serve protocol=27 but backend reports 18; rebuild or pin nvim-browser and nvbrowser to the same tag or commit"),
+  contains_line(backend_protocol_mismatch, "warning: backend protocol mismatch; plugin expects serve protocol=28 but backend reports 18; rebuild or pin nvim-browser and nvbrowser to the same tag or commit"),
   "doctor should warn when backend protocol differs from the plugin"
 )
 
@@ -589,7 +589,7 @@ local backend_protocol_missing = doctor.run({
   end,
 }, {})
 assert(
-  contains_line(backend_protocol_missing, "warning: backend protocol unavailable; plugin expects serve protocol=27; rebuild or pin nvim-browser and nvbrowser to the same tag or commit"),
+  contains_line(backend_protocol_missing, "warning: backend protocol unavailable; plugin expects serve protocol=28; rebuild or pin nvim-browser and nvbrowser to the same tag or commit"),
   "doctor should warn when backend protocol is missing"
 )
 
@@ -612,7 +612,7 @@ local active_protocol_mismatch = doctor.run({
   },
 })
 assert(
-  contains_line(active_protocol_mismatch, "warning: active session protocol mismatch; plugin expects serve protocol=27 but session reports 18; reopen the preview after rebuilding or updating nvbrowser"),
+  contains_line(active_protocol_mismatch, "warning: active session protocol mismatch; plugin expects serve protocol=28 but session reports 18; reopen the preview after rebuilding or updating nvbrowser"),
   "doctor should warn when the active runtime protocol differs from the plugin"
 )
 
@@ -634,7 +634,7 @@ local active_protocol_missing = doctor.run({
   },
 })
 assert(
-  contains_line(active_protocol_missing, "warning: active session protocol unavailable; plugin expects serve protocol=27; reopen the preview after rebuilding or updating nvbrowser"),
+  contains_line(active_protocol_missing, "warning: active session protocol unavailable; plugin expects serve protocol=28; reopen the preview after rebuilding or updating nvbrowser"),
   "doctor should warn when the active runtime protocol is missing"
 )
 
@@ -649,7 +649,7 @@ local active_runtime_missing = doctor.run({
   status = "ok",
 })
 assert(
-  contains_line(active_runtime_missing, "warning: active session protocol unavailable; plugin expects serve protocol=27; reopen the preview after rebuilding or updating nvbrowser"),
+  contains_line(active_runtime_missing, "warning: active session protocol unavailable; plugin expects serve protocol=28; reopen the preview after rebuilding or updating nvbrowser"),
   "doctor should warn when active runtime metadata is missing"
 )
 

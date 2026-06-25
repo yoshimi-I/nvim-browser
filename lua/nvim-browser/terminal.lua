@@ -4063,6 +4063,20 @@ function M.select_point(x, y, choice)
   }, state.current_url or state.last_target or "select", "select")
 end
 
+function M.toggle_point(x, y)
+  x = tonumber(x)
+  y = tonumber(y)
+  if x == nil or y == nil then
+    return false
+  end
+  request_resize()
+  return send_pending_request({
+    type = "toggle_point",
+    x = x,
+    y = y,
+  }, state.current_url or state.last_target or "toggle", "toggle")
+end
+
 function M.find_text(query, opts)
   if query == nil or query == "" then
     return false
@@ -4541,6 +4555,30 @@ function M.select_here(choice)
   end
   local point = M.viewport_point_for_cell(cursor[1], column, geometry)
   return M.select_point(point.x, point.y, choice)
+end
+
+function M.toggle_here()
+  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+    return false
+  end
+
+  local cursor = vim.api.nvim_win_get_cursor(state.winid)
+  local geometry = current_preview_geometry()
+  if cursor[1] > geometry.rows then
+    return false
+  end
+  local column = vim.api.nvim_win_call(state.winid, function()
+    return vim.fn.virtcol(".")
+  end)
+  if column > geometry.columns then
+    return false
+  end
+  geometry = current_rendered_frame_geometry()
+  if geometry == nil then
+    return false
+  end
+  local point = M.viewport_point_for_cell(cursor[1], column, geometry)
+  return M.toggle_point(point.x, point.y)
 end
 
 function M.click_mouse(mousepos)

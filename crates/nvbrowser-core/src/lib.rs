@@ -18,8 +18,8 @@ pub use renderer::{
     Renderer, RendererError, RendererErrorKind, RightClickHintRequest, RightClickPointRequest,
     ScrollRequest, ScrollResult, SelectHintRequest, SelectOptionHint, SelectPointRequest,
     SelectionTextRequest, SelectionTextResult, ShutdownResult, StopLoadingRequest,
-    StopLoadingResult, TextInputRequest, ToggleHintRequest, UploadHintRequest, WheelPointRequest,
-    ZoomRequest, ZoomResult,
+    StopLoadingResult, TextInputRequest, ToggleHintRequest, TogglePointRequest, UploadHintRequest,
+    WheelPointRequest, ZoomRequest, ZoomResult,
 };
 pub use session::{
     BrowserSession, FrameId, FrameMetadata, LoadingState, PageId, PageState, SessionId, Viewport,

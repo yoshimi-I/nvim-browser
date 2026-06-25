@@ -37,7 +37,7 @@ use crate::{
         RightClickHintRequest, RightClickPointRequest, ScrollRequest, ScrollResult,
         SelectHintRequest, SelectPointRequest, SelectionTextRequest, SelectionTextResult,
         ShutdownResult, StopLoadingRequest, StopLoadingResult, TextInputRequest, ToggleHintRequest,
-        UploadHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
+        TogglePointRequest, UploadHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -764,6 +764,28 @@ impl Renderer for ChromiumRenderer {
             return Err(RendererError::new(
                 RendererErrorKind::InvalidState,
                 "hint id was not a checkbox or radio input, was stale, or was disabled",
+            ));
+        }
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn toggle_point(&mut self, request: TogglePointRequest) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
+        let script = toggle_point_script(request.x, request.y)?;
+        let toggled = self
+            .tab
+            .evaluate(&script, true)
+            .map_err(render_error)?
+            .value
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        if !toggled {
+            return Err(RendererError::new(
+                RendererErrorKind::InvalidState,
+                "point was not over a checkbox or radio input, or was disabled",
             ));
         }
         Ok(InputResult {
@@ -2303,6 +2325,57 @@ fn toggle_hint_script(hint_id: u32) -> Result<String, RendererError> {
     let hint_id = serde_json::to_string(&hint_id).map_err(render_error)?;
     Ok(TOGGLE_HINT_SCRIPT.replace("__HINT_ID__", &hint_id))
 }
+
+fn toggle_point_script(x: f64, y: f64) -> Result<String, RendererError> {
+    let x = serde_json::to_string(&x).map_err(render_error)?;
+    let y = serde_json::to_string(&y).map_err(render_error)?;
+    Ok(TOGGLE_POINT_SCRIPT
+        .replace("__X__", &x)
+        .replace("__Y__", &y))
+}
+
+const TOGGLE_POINT_SCRIPT: &str = r#"
+(() => {
+  const x = __X__;
+  const y = __Y__;
+  const elementAtPoint = (root, pointX, pointY, depth) => {
+    const element = root && typeof root.elementFromPoint === 'function'
+      ? root.elementFromPoint(pointX, pointY)
+      : null;
+    if (!element || depth >= 8) return element;
+    const tag = element.tagName ? element.tagName.toLowerCase() : '';
+    if (tag !== 'iframe' && tag !== 'frame') return element;
+    try {
+      const frameDocument = element.contentDocument;
+      if (!frameDocument) return element;
+      const rect = element.getBoundingClientRect();
+      const innerX = pointX - rect.left - (element.clientLeft || 0);
+      const innerY = pointY - rect.top - (element.clientTop || 0);
+      return elementAtPoint(frameDocument, innerX, innerY, depth + 1) || element;
+    } catch (_error) {
+      return element;
+    }
+  };
+  const hit = elementAtPoint(document, x, y, 0);
+  let element = hit && typeof hit.closest === 'function' ? hit.closest('input') : null;
+  if (!element && hit && typeof hit.closest === 'function') {
+    const label = hit.closest('label');
+    element = label && label.control ? label.control : null;
+    if (!element && label && typeof label.querySelector === 'function') {
+      element = label.querySelector('input');
+    }
+  }
+  if (!element || !element.isConnected || element.tagName.toLowerCase() !== 'input') return false;
+  if (element.disabled || element.getAttribute('aria-disabled') === 'true') return false;
+  const type = (element.getAttribute('type') || '').toLowerCase();
+  if (type !== 'checkbox' && type !== 'radio') return false;
+  if (typeof element.focus === 'function') {
+    element.focus({ preventScroll: true });
+  }
+  element.click();
+  return true;
+})()
+"#;
 
 const TOGGLE_HINT_SCRIPT: &str = r#"
 (() => {
@@ -4295,6 +4368,25 @@ mod tests {
     fn toggle_hint_script_uses_requested_hint_id() {
         let script = toggle_hint_script(7).expect("toggle script should build");
         assert!(script.contains("const hintId = 7;"));
+    }
+
+    #[test]
+    fn toggle_point_script_uses_element_from_point_and_checkbox_radio_guards() {
+        let script = toggle_point_script(12.5, 24.25).expect("toggle point script should build");
+
+        assert!(script.contains("const x = 12.5;"));
+        assert!(script.contains("const y = 24.25;"));
+        assert!(script.contains("elementAtPoint(document, x, y, 0)"));
+        assert!(script.contains("hit.closest('input')"));
+        assert!(script.contains("hit.closest('label')"));
+        assert!(script.contains("label.control"));
+        assert!(script.contains("type !== 'checkbox'"));
+        assert!(script.contains("type !== 'radio'"));
+        assert!(script.contains("element.disabled"));
+        assert!(script.contains("aria-disabled"));
+        assert!(script.contains("element.focus({ preventScroll: true })"));
+        assert!(script.contains("element.click()"));
+        assert!(!script.contains("element.checked ="));
     }
 
     #[test]

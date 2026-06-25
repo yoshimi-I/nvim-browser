@@ -147,6 +147,7 @@ With lazy.nvim:
     "NBrowserTypeHere",
     "NBrowserSubmitHere",
     "NBrowserSelectHere",
+    "NBrowserToggleHere",
     "NBrowserTypeHintMode",
     "NBrowserSubmitHintMode",
     "NBrowserSelectHintMode",
@@ -495,6 +496,7 @@ Then run:
 :NBrowserTypeHere hello world
 :NBrowserSubmitHere hello world
 :NBrowserSelectHere Canada
+:NBrowserToggleHere
 :NBrowserTypeHintMode
 :NBrowserSubmitHintMode
 :NBrowserSelectHintMode
@@ -648,8 +650,9 @@ does the same and presses Enter after the text is queued. These commands require
 an ANSI or Kitty Unicode browser preview and ignore the preview footer row.
 `:NBrowserSelectHere {choice}` maps the preview cursor to a browser point and
 selects a `<select>` option by 1-based index, value, or visible label. Focused
-preview buffers map `gI`, `gS`, and `gO` to prompt for these cursor-local type,
-submit, and select actions.
+`:NBrowserToggleHere` maps the preview cursor to a browser point and toggles a
+checkbox or radio input there. Focused preview buffers map `gI`, `gS`, `gO`, and
+`gC` to prompt for these cursor-local type, submit, select, and toggle actions.
 
 `:NBrowserTypeHintMode` prompts for a hint label and text, then types into the
 hinted element. `:NBrowserSubmitHintMode` does the same and presses Enter after
@@ -793,7 +796,7 @@ register into the focused element, `y` yank the browser selection into the
 selected register, `Y` yank the active browser URL into the selected register,
 `gY` yank the link URL under the cursor into the selected register, `gI` type
 text at the cursor, `gS` type text at the cursor and submit, `gO` select a
-dropdown option at the cursor, `<CR>`
+dropdown option at the cursor, `gC` toggle a checkbox/radio at the cursor, `<CR>`
 Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
 Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` address
 prompt, arrow keys, `gc` click the browser viewport at the cursor, `gd`
@@ -812,7 +815,9 @@ cursor link URL yank with
 `preview_keymaps = { mappings = { yank_point_url_here = false } }`, or disable
 cursor inspect with
 `preview_keymaps = { mappings = { point_info_here = false } }`, or disable
-cursor select with `preview_keymaps = { mappings = { select_here = false } }`.
+cursor select with `preview_keymaps = { mappings = { select_here = false } }`,
+or disable cursor toggle with
+`preview_keymaps = { mappings = { toggle_here = false } }`.
 
 Configure search with `require("nvim-browser").setup({ search_url = "https://www.google.com/search?q=%s" })`.
 The `%s` placeholder receives the encoded query; write literal percent signs as

@@ -105,6 +105,7 @@ Example lazy.nvim setup:
     "NBrowserTypeHere",
     "NBrowserSubmitHere",
     "NBrowserSelectHere",
+    "NBrowserToggleHere",
     "NBrowserTypeHintMode",
     "NBrowserSubmitHintMode",
     "NBrowserSelectHintMode",
@@ -654,8 +655,14 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserSelectHere {choice}
 	Map the preview cursor to viewport pixels, select a <select> option by
 	1-based index, value, or visible label, and capture a fresh frame.
-	Focused preview buffers map `gI`, `gS`, and `gO` to prompt for
-	:NBrowserTypeHere, :NBrowserSubmitHere, and :NBrowserSelectHere behavior.
+
+							*:NBrowserToggleHere*
+:NBrowserToggleHere
+	Map the preview cursor to viewport pixels, toggle a checkbox or radio input
+	at that browser point, and capture a fresh frame.
+	Focused preview buffers map `gI`, `gS`, `gO`, and `gC` to prompt for
+	:NBrowserTypeHere, :NBrowserSubmitHere, :NBrowserSelectHere, and
+	:NBrowserToggleHere behavior.
 
 							*:NBrowserTypeHintMode*
 :NBrowserTypeHintMode
@@ -917,6 +924,7 @@ gY yank link URL under cursor into register
 gI type text at cursor
 gS type text at cursor and submit
 gO select dropdown option at cursor
+gC toggle checkbox/radio at cursor
 <CR>     press Enter
 <Tab>    press Tab
 <S-Tab>  press Shift-Tab
@@ -963,6 +971,7 @@ require("nvim-browser").setup({
       type_here = "gI",
       submit_here = "gS",
       select_here = "gO",
+      toggle_here = "gC",
       left_click = false,
       double_click = "<2-LeftMouse>",
       right_click_mouse = "<RightMouse>",
@@ -996,6 +1005,8 @@ To preserve Vim's built-in `gi`, use
 `preview_keymaps = { mappings = { point_info_here = false } }`.
 To disable cursor-local select prompts, use
 `preview_keymaps = { mappings = { select_here = false } }`.
+To disable cursor-local toggle input, use
+`preview_keymaps = { mappings = { toggle_here = false } }`.
 
 	The session file stores recent pages, bookmarks, and completed-download
 	history. `history_limit` bounds each persisted list. Set `persist = false`

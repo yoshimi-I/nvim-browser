@@ -32,6 +32,8 @@ assert(type(browser.type_point) == "function", "type_point API should exist")
 assert(type(browser.type_here) == "function", "type_here API should exist")
 assert(type(browser.select_point) == "function", "select_point API should exist")
 assert(type(browser.select_here) == "function", "select_here API should exist")
+assert(type(browser.toggle_point) == "function", "toggle_point API should exist")
+assert(type(browser.toggle_here) == "function", "toggle_here API should exist")
 assert(type(browser.type_hint) == "function", "type_hint API should exist")
 assert(type(browser.type_hint_mode) == "function", "type_hint_mode API should exist")
 assert(type(browser.select_hint) == "function", "select_hint API should exist")
@@ -831,6 +833,7 @@ local function with_action_stubs(fn)
     wheel_here = browser.wheel_here,
     type_here = browser.type_here,
     select_here = browser.select_here,
+    toggle_here = browser.toggle_here,
   }
   browser.open = function(target)
     table.insert(action_calls, "open:" .. tostring(target))
@@ -1000,6 +1003,10 @@ local function with_action_stubs(fn)
   end
   browser.select_here = function(choice)
     table.insert(action_calls, "select_here:" .. tostring(choice))
+    return true
+  end
+  browser.toggle_here = function()
+    table.insert(action_calls, "toggle_here")
     return true
   end
   fn()
@@ -1311,6 +1318,19 @@ with_action_stubs(function()
 	    end,
 	  }) == true, "Select at cursor action should run")
 	  assert(action_calls[#action_calls] == "select_here:Canada", "Select at cursor action should call select_here")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Toggle at cursor" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Toggle at cursor action should run")
+	  assert(action_calls[#action_calls] == "toggle_here", "Toggle at cursor action should call toggle_here")
 
 	  action_calls = {}
 	  assert(browser.actions({
@@ -1817,6 +1837,8 @@ local original_terminal_type_point = terminal.type_point
 local original_terminal_type_here = terminal.type_here
 _G.nvim_browser_original_terminal_select_point = terminal.select_point
 _G.nvim_browser_original_terminal_select_here = terminal.select_here
+_G.nvim_browser_original_terminal_toggle_point = terminal.toggle_point
+_G.nvim_browser_original_terminal_toggle_here = terminal.toggle_here
 local original_terminal_stop = terminal.stop
 local original_terminal_input_text = terminal.input_text
 local original_terminal_press_key = terminal.press_key
@@ -3117,6 +3139,21 @@ end
 assert(browser.select_here("Canada") == "selected-here", "select_here should delegate to terminal cursor select")
 assert(_G.nvim_browser_selected_here == "Canada", "select_here should pass choice to terminal")
 
+terminal.toggle_point = function(x, y)
+  _G.nvim_browser_toggled_point = { x = x, y = y }
+  return true
+end
+assert(browser.toggle_point(12.5, 24.25) == true, "toggle_point should delegate to terminal point toggle")
+assert(_G.nvim_browser_toggled_point.x == 12.5, "toggle_point should pass x coordinate to terminal")
+assert(_G.nvim_browser_toggled_point.y == 24.25, "toggle_point should pass y coordinate to terminal")
+
+terminal.toggle_here = function()
+  _G.nvim_browser_toggled_here = true
+  return "toggled-here"
+end
+assert(browser.toggle_here() == "toggled-here", "toggle_here should delegate to terminal cursor toggle")
+assert(_G.nvim_browser_toggled_here == true, "toggle_here should call terminal toggle_here")
+
 local focused_input = nil
 terminal.input_text = function(text)
   focused_input = text
@@ -3840,6 +3877,8 @@ terminal.type_point = original_terminal_type_point
 terminal.type_here = original_terminal_type_here
 terminal.select_point = _G.nvim_browser_original_terminal_select_point
 terminal.select_here = _G.nvim_browser_original_terminal_select_here
+terminal.toggle_point = _G.nvim_browser_original_terminal_toggle_point
+terminal.toggle_here = _G.nvim_browser_original_terminal_toggle_here
 terminal.stop = original_terminal_stop
 terminal.input_text = original_terminal_input_text
 terminal.press_key = original_terminal_press_key

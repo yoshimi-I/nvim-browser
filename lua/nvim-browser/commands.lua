@@ -89,6 +89,7 @@ local command_names = {
   "NBrowserTypeHere",
   "NBrowserSubmitHere",
   "NBrowserSelectHere",
+  "NBrowserToggleHere",
   "NBrowserTypeHintMode",
   "NBrowserSubmitHintMode",
   "NBrowserSelectHintMode",
@@ -347,6 +348,10 @@ function M.register(browser, opts)
 
   local function warn_cursor_select_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: cursor select requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+  end
+
+  local function warn_cursor_toggle_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: cursor toggle requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
   end
 
   local function echo_point_info(response)
@@ -1152,6 +1157,12 @@ function M.register(browser, opts)
   end, {
     nargs = "*",
   })
+
+  vim.api.nvim_create_user_command("NBrowserToggleHere", function()
+    if browser.toggle_here == nil or not browser.toggle_here() then
+      warn_cursor_toggle_unavailable()
+    end
+  end, {})
 
   vim.api.nvim_create_user_command("NBrowserTypeHintMode", function()
     local hints = browser.hints()

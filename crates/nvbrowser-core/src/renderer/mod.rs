@@ -71,6 +71,8 @@ pub trait Renderer {
 
     fn toggle_hint(&mut self, request: ToggleHintRequest) -> Result<InputResult, RendererError>;
 
+    fn toggle_point(&mut self, request: TogglePointRequest) -> Result<InputResult, RendererError>;
+
     fn click_point(&mut self, request: ClickPointRequest) -> Result<InputResult, RendererError>;
 
     fn drag_point(&mut self, request: DragPointRequest) -> Result<InputResult, RendererError>;
@@ -776,6 +778,14 @@ pub struct SelectPointRequest {
     pub choice: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct TogglePointRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub x: f64,
+    pub y: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FindTextRequest {
     pub session_id: SessionId,
@@ -1057,6 +1067,17 @@ impl SelectPointRequest {
     }
 }
 
+impl TogglePointRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId, x: f64, y: f64) -> Self {
+        Self {
+            session_id,
+            page_id,
+            x,
+            y,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ShutdownResult {}
 
@@ -1311,6 +1332,16 @@ mod tests {
         fn toggle_hint(
             &mut self,
             request: ToggleHintRequest,
+        ) -> Result<InputResult, RendererError> {
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn toggle_point(
+            &mut self,
+            request: TogglePointRequest,
         ) -> Result<InputResult, RendererError> {
             Ok(InputResult {
                 session_id: request.session_id,

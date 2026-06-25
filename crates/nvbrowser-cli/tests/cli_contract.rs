@@ -409,7 +409,7 @@ fn doctor_outputs_backend_json_without_launching_chrome() {
     );
     assert_eq!(json["backend"]["user_data_dir"], "/tmp/nvbrowser-profile");
     assert_eq!(
-        json["protocol"]["serve"], 27,
+        json["protocol"]["serve"], 28,
         "doctor JSON should expose the serve protocol version"
     );
 }
@@ -3091,7 +3091,9 @@ fn opt_in_e2e_serve_loop_toggles_checkbox_and_radio_hints() {
   <head><title>NBrowser Toggle E2E Fixture</title></head>
   <body>
     <main>
-      <label><input id="newsletter" type="checkbox" onclick="document.getElementById('out').textContent='newsletter click ' + this.checked"> Newsletter</label>
+      <label id="newsletter-label" style="position:absolute; left:40px; top:40px; font-size:16px;">
+        <input id="newsletter" type="checkbox" onclick="document.getElementById('out').textContent='newsletter click ' + this.checked + ' active ' + document.activeElement.id"> Newsletter
+      </label>
       <input id="standard" type="radio" name="plan" value="standard" aria-labelledby="standard-label" onclick="document.getElementById('out').textContent='plan click ' + this.value">
       <span id="standard-label">Standard Plan</span>
       <p id="out">empty</p>
@@ -3170,6 +3172,34 @@ fn opt_in_e2e_serve_loop_toggles_checkbox_and_radio_hints() {
         "page_text should observe checkbox click handler"
     );
 
+    let unchecked = serve.request(serde_json::json!({
+        "id": 6,
+        "type": "toggle_point",
+        "x": 120.0,
+        "y": 50.0
+    }));
+    assert_eq!(
+        unchecked["status"], "ok",
+        "checkbox toggle_point on label text should succeed; response={unchecked:?}"
+    );
+    assert!(
+        unchecked["hints"]
+            .as_array()
+            .is_some_and(|hints| hints.iter().any(|hint| {
+                hint["kind"] == "checkbox"
+                    && hint["label"] == "Newsletter"
+                    && hint["checked"] == false
+            })),
+        "checkbox hint should report unchecked state after point toggle"
+    );
+    let unchecked_text = serve.request(serde_json::json!({ "id": 7, "type": "page_text" }));
+    assert!(
+        unchecked_text["text"]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("newsletter click false active newsletter")),
+        "page_text should observe label-driven toggle and focused input"
+    );
+
     let radio_hint = checked["hints"]
         .as_array()
         .expect("checked response should include hints")
@@ -3181,7 +3211,7 @@ fn opt_in_e2e_serve_loop_toggles_checkbox_and_radio_hints() {
         .as_u64()
         .expect("radio hint should include id");
     let selected = serve.request(serde_json::json!({
-        "id": 3,
+        "id": 8,
         "type": "toggle_hint",
         "hint_id": radio_hint_id
     }));
@@ -3199,7 +3229,7 @@ fn opt_in_e2e_serve_loop_toggles_checkbox_and_radio_hints() {
             })),
         "radio hint should report checked state after toggle"
     );
-    let selected_text = serve.request(serde_json::json!({ "id": 4, "type": "page_text" }));
+    let selected_text = serve.request(serde_json::json!({ "id": 9, "type": "page_text" }));
     assert!(
         selected_text["text"]["text"]
             .as_str()
@@ -3207,7 +3237,7 @@ fn opt_in_e2e_serve_loop_toggles_checkbox_and_radio_hints() {
         "page_text should observe radio click handler"
     );
 
-    let quit = serve.request(serde_json::json!({ "id": 5, "type": "quit" }));
+    let quit = serve.request(serde_json::json!({ "id": 10, "type": "quit" }));
     assert_eq!(quit["status"], "ok");
     serve.wait_success();
 }
