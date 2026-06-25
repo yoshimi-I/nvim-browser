@@ -1233,27 +1233,6 @@ emit_smoke_report = function(report, opts)
   vim.api.nvim_echo({ { table.concat(report.lines or {}, "\n"), highlight } }, false, {})
 end
 
-local function focused_element_label(focused)
-  if type(focused) ~= "table" then
-    return nil
-  end
-  local kind = focused.kind ~= nil and tostring(focused.kind) or nil
-  if kind == nil or kind == "" then
-    return nil
-  end
-  local label = focused.label ~= nil and focused.label ~= vim.NIL and tostring(focused.label) or nil
-  if label ~= nil then
-    label = label:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-    if label == "" then
-      label = nil
-    end
-  end
-  if label ~= nil then
-    return "focus=" .. kind .. " " .. label
-  end
-  return "focus=" .. kind
-end
-
 local function download_status_label(download)
   if type(download) ~= "table" then
     return nil
@@ -1326,7 +1305,7 @@ local function action_status_message()
   if zoom ~= nil then
     table.insert(parts, zoom)
   end
-  local focused = M.focused_element and focused_element_label(M.focused_element()) or nil
+  local focused = M.focused_element and status_labels.focused_element_label(M.focused_element()) or nil
   if focused ~= nil then
     table.insert(parts, focused)
   end

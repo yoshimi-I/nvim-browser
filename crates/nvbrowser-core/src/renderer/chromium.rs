@@ -1840,7 +1840,6 @@ const ACTIVE_ELEMENT_SCRIPT: &str = r#"
       labelElementText(element),
       element.getAttribute('title'),
       element.getAttribute('placeholder'),
-      passwordLike ? null : element.value,
       element.innerText,
       element.textContent,
       element.getAttribute('href')
@@ -4058,8 +4057,11 @@ mod tests {
     fn active_element_script_redacts_password_values() {
         assert!(ACTIVE_ELEMENT_SCRIPT.contains("const inputType ="));
         assert!(ACTIVE_ELEMENT_SCRIPT.contains("inputType === 'password'"));
-        assert!(ACTIVE_ELEMENT_SCRIPT.contains("passwordLike ? null : element.value"));
         assert!(ACTIVE_ELEMENT_SCRIPT.contains("!passwordLike"));
+        assert!(
+            !ACTIVE_ELEMENT_SCRIPT.contains("passwordLike ? null : element.value,"),
+            "focused labels should not fall back to raw field values"
+        );
     }
 
     #[test]

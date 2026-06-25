@@ -1625,6 +1625,7 @@ local function page_state_needs_capture(response)
     table_field_changed(focused, state.focused_element, "kind")
     or table_field_changed(focused, state.focused_element, "label")
     or table_field_changed(focused, state.focused_element, "value")
+    or table_field_changed(focused, state.focused_element, "checked")
     or table_field_changed(focused, state.focused_element, "focusable")
     or table_field_changed(focused, state.focused_element, "submittable")
   then
@@ -2045,27 +2046,6 @@ local function page_scroll_label(metrics)
   return "scroll " .. percent .. "%"
 end
 
-local function focused_element_label(focused)
-  if type(focused) ~= "table" then
-    return nil
-  end
-  local kind = focused.kind ~= nil and tostring(focused.kind) or nil
-  if kind == nil or kind == "" then
-    return nil
-  end
-  local label = focused.label ~= nil and focused.label ~= vim.NIL and tostring(focused.label) or nil
-  if label ~= nil then
-    label = label:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-    if label == "" then
-      label = nil
-    end
-  end
-  if label ~= nil then
-    return "focus=" .. kind .. " " .. label
-  end
-  return "focus=" .. kind
-end
-
 local function runtime_footer_label(runtime)
   if type(runtime) ~= "table" then
     return nil
@@ -2205,7 +2185,7 @@ local function preview_footer_line(width)
     table.insert(parts, scroll)
   end
 
-  local focused = focused_element_label(state.focused_element)
+  local focused = status_labels.focused_element_label(state.focused_element)
   if focused ~= nil then
     table.insert(parts, focused)
   end
@@ -4802,7 +4782,7 @@ M._test = {
   apply_serve_response = apply_serve_response_metadata,
   apply_payload_to_buffer = apply_payload_to_buffer,
   preview_footer_line = preview_footer_line,
-  focused_element_label = focused_element_label,
+  focused_element_label = status_labels.focused_element_label,
   frame_health_label = frame_health_label,
   append_preview_footer = append_preview_footer,
   set_pending_operation = function(value)

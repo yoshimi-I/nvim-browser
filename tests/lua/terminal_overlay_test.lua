@@ -5356,8 +5356,85 @@ end), "stable quiet metadata should still apply browser metadata")
 vim.wait(50)
 assert(#fake_timers == _G.nvim_browser_quiet_stable_timer_count, "unchanged quiet metadata without payload should not schedule adaptive capture")
 
+sent_requests = {}
+assert(terminal.refresh() == true, "checkbox baseline should use a real capture request")
+_G.nvim_browser_checkbox_baseline_request = last_request_of_type("capture")
 serve_stdout(nil, { vim.json.encode({
-  id = _G.nvim_browser_stable_quiet_request.id + 1,
+  id = _G.nvim_browser_checkbox_baseline_request.id,
+  status = "ok",
+  payload = "checkbox baseline frame",
+  url = "https://example.com/checkbox",
+  title = "Checkbox",
+  page = {
+    scroll_x = 0,
+    scroll_y = 0,
+    viewport_width = 450,
+    viewport_height = 165,
+    document_width = 450,
+    document_height = 165,
+  },
+  focused = {
+    kind = "checkbox",
+    label = "Newsletter",
+    checked = false,
+    focusable = true,
+    submittable = true,
+  },
+  runtime = {
+    protocol_version = 15,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 450, height = 165, device_scale_factor = 1 },
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Checkbox" and terminal.state().focused_element.checked == false
+end), "test setup should apply unchecked checkbox focus metadata")
+assert(
+  terminal._test.preview_footer_line(120):find("focus=checkbox Newsletter unchecked", 1, true),
+  "preview footer should show unchecked checkbox focus state"
+)
+sent_requests = {}
+_G.nvim_browser_checked_timer_count = #fake_timers
+assert(terminal.input_text("toggle metadata", { capture = false, resize = false }) == true, "checked quiet input should send a quiet request")
+_G.nvim_browser_checked_request = last_request_of_type("text_input")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_checked_request.id,
+  status = "ok",
+  url = "https://example.com/checkbox",
+  title = "Checkbox",
+  page = {
+    scroll_x = 0,
+    scroll_y = 0,
+    viewport_width = 450,
+    viewport_height = 165,
+    document_width = 450,
+    document_height = 165,
+  },
+  focused = {
+    kind = "checkbox",
+    label = "Newsletter",
+    checked = true,
+    focusable = true,
+    submittable = true,
+  },
+}), "" })
+assert(vim.wait(200, function()
+  return terminal.state().focused_element.checked == true
+end), "checked quiet metadata should update focused checkbox state")
+assert(
+  terminal._test.preview_footer_line(120):find("focus=checkbox Newsletter checked", 1, true),
+  "preview footer should show checked checkbox focus state"
+)
+assert(#fake_timers > _G.nvim_browser_checked_timer_count, "checked-only quiet metadata changes should schedule adaptive capture")
+
+sent_requests = {}
+assert(terminal.refresh() == true, "DOM epoch baseline should use a real capture request")
+_G.nvim_browser_dom_epoch_baseline_request = last_request_of_type("capture")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_dom_epoch_baseline_request.id,
   status = "ok",
   payload = "dom epoch baseline frame",
   url = "https://example.com/dom-epoch-baseline",
@@ -5392,7 +5469,7 @@ end), "test setup should apply a captured DOM epoch baseline with hints")
 _G.nvim_browser_dom_epoch_stale_geometry = terminal.state().rendered_frame_geometry
 vim.fn.setreg("b", "before-same-dom")
 terminal._test.apply_serve_response({
-  id = _G.nvim_browser_stable_quiet_request.id + 2,
+  id = _G.nvim_browser_dom_epoch_baseline_request.id,
   status = "ok",
   url = "https://example.com/dom-epoch-baseline",
   title = "DOM Epoch Baseline",

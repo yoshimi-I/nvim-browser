@@ -81,27 +81,6 @@ function M.register(browser, opts)
     return table.concat(parts, " ")
   end
 
-  local function focused_element_label(focused)
-    if type(focused) ~= "table" then
-      return nil
-    end
-    local kind = focused.kind ~= nil and tostring(focused.kind) or nil
-    if kind == nil or kind == "" then
-      return nil
-    end
-    local label = focused.label ~= nil and focused.label ~= vim.NIL and tostring(focused.label) or nil
-    if label ~= nil then
-      label = label:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-      if label == "" then
-        label = nil
-      end
-    end
-    if label ~= nil then
-      return "focus=" .. kind .. " " .. label
-    end
-    return "focus=" .. kind
-  end
-
   local function download_status_label(download)
     if type(download) ~= "table" then
       return nil
@@ -1134,7 +1113,7 @@ function M.register(browser, opts)
     local scroll = browser.page_metrics and page_scroll_label(browser.page_metrics()) or nil
     local zoom = browser.zoom_scale and status_labels.zoom_label(browser.zoom_scale()) or nil
     local runtime = browser.runtime_metadata and runtime_status_label(browser.runtime_metadata()) or nil
-    local focused = browser.focused_element and focused_element_label(browser.focused_element()) or nil
+    local focused = browser.focused_element and status_labels.focused_element_label(browser.focused_element()) or nil
     local download = browser.latest_download and download_status_label(browser.latest_download()) or nil
     local dialog = browser.latest_dialog and dialog_status_label(browser.latest_dialog()) or nil
     local frame = browser.frame_health and status_labels.frame_health_label(browser.frame_health()) or nil

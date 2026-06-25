@@ -63,4 +63,65 @@ function M.runtime_output_label(output, label)
   return output
 end
 
+local function normalize_text(value)
+  if value == nil or value == vim.NIL then
+    return nil
+  end
+  value = tostring(value):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+  if value == "" then
+    return nil
+  end
+  return value
+end
+
+local function truncate_chars(value, max_chars)
+  max_chars = math.floor(tonumber(max_chars) or 40)
+  if max_chars <= 0 then
+    return nil
+  end
+  if vim.fn.strchars(value) <= max_chars then
+    return value
+  end
+  if max_chars <= 3 then
+    return vim.fn.strcharpart(value, 0, max_chars)
+  end
+  return vim.fn.strcharpart(value, 0, max_chars - 3) .. "..."
+end
+
+local function display_kind(kind)
+  kind = normalize_text(kind)
+  if kind == nil then
+    return nil
+  end
+  if kind == "text_area" then
+    return "textarea"
+  end
+  return kind
+end
+
+function M.focused_element_label(focused, opts)
+  if type(focused) ~= "table" then
+    return nil
+  end
+  local kind = display_kind(focused.kind)
+  if kind == nil then
+    return nil
+  end
+
+  opts = opts or {}
+  local max_detail_chars = opts.max_detail_chars or 40
+  local detail = normalize_text(focused.label)
+  if detail ~= nil then
+    detail = truncate_chars(detail, max_detail_chars)
+  end
+  if focused.checked ~= nil and focused.checked ~= vim.NIL and (kind == "checkbox" or kind == "radio") then
+    local checked = focused.checked == true and "checked" or "unchecked"
+    detail = detail ~= nil and (detail .. " " .. checked) or checked
+  end
+  if detail ~= nil and detail ~= "" then
+    return "focus=" .. kind .. " " .. detail
+  end
+  return "focus=" .. kind
+end
+
 return M
