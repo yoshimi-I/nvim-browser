@@ -1274,6 +1274,13 @@ smoke_report = function(status, reason, details)
   if (output == "kitty" or output == "kitty-unicode") and tonumber(terminal_state.terminal_graphics_egress_count) ~= nil then
     if tonumber(terminal_state.terminal_graphics_egress_count) > 0 then
       table.insert(lines, "terminal graphics: ok")
+      if output == "kitty-unicode" then
+        if terminal_state.last_terminal_graphics_egress_is_kitty_unicode == true then
+          table.insert(lines, "kitty unicode payload: ok")
+        else
+          table.insert(lines, "kitty unicode payload: not observed")
+        end
+      end
     else
       table.insert(lines, "terminal graphics: none")
     end

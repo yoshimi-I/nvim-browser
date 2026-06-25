@@ -2050,7 +2050,7 @@ end
 terminal.open({ "nvbrowser", "serve", "--output", "kitty-unicode", "--url", "https://example.com/tmux" })
 _G.nvim_browser_serve_egress_payloads = {}
 _G.nvim_browser_serve_egress_events = {}
-_G.nvim_browser_raw_unicode_payload = "\27_Ga=T,f=100,m=0;unicode-frame\27\\"
+_G.nvim_browser_raw_unicode_payload = "\27_Ga=T,q=2,U=1,i=1,c=10,r=5,f=100,s=100,v=100,m=0;unicode-frame\27\\"
 _G.nvim_browser_tmx_preview_geometry = terminal.state().current_preview_geometry
 serve_stdout(nil, { vim.json.encode({
   id = 1,
@@ -2115,15 +2115,49 @@ terminal._test.apply_serve_response({
   },
 })
 assert(terminal.state().calibration_state == nil, "non-calibration page_text should clear stale calibration state")
+assert(
+  terminal._test.is_kitty_unicode_payload("\27_Ga=T,f=100,U=1,m=0;unicode-frame\27\\") == true,
+  "raw Kitty Unicode virtual placement payloads should be classified as Kitty Unicode"
+)
+assert(
+  terminal._test.is_kitty_unicode_payload("\27_Ga=T,f=100,U=1,m=1;chunk-a\27\\\27_Gm=0;chunk-b\27\\") == true,
+  "chunked Kitty Unicode virtual placement payloads should be classified as Kitty Unicode"
+)
+assert(
+  terminal._test.is_kitty_unicode_payload("\27Ptmux;\27\27_Ga=T,f=100,U=1,m=0;unicode-frame\27\27\\\27\\") == true,
+  "tmux passthrough wrapped Kitty Unicode payloads should be classified as Kitty Unicode"
+)
+assert(
+  terminal._test.is_kitty_unicode_payload("\27_Ga=d\27\\\27_Ga=T,f=100,U=1,m=0;unicode-frame\27\\") == true,
+  "a later valid Kitty Unicode payload should still be classified after a semicolon-free Kitty command"
+)
+assert(
+  terminal._test.is_kitty_unicode_payload("\27_Ga=d\27\\,U=1;plain-text") == false,
+  "Kitty Unicode classification should not read past a semicolon-free Kitty command boundary"
+)
+assert(
+  terminal._test.is_kitty_unicode_payload("\27_Ga=T,f=100,m=0;plain-frame\27\\") == false,
+  "plain Kitty graphics payloads without Unicode virtual placement should not be classified as Kitty Unicode"
+)
+assert(terminal._test.is_kitty_unicode_payload("plain text") == false, "plain text should not be classified as Kitty Unicode")
+assert(terminal._test.is_kitty_unicode_payload("") == false, "empty payloads should not be classified as Kitty Unicode")
+assert(terminal._test.is_kitty_unicode_payload(nil) == false, "nil payloads should not be classified as Kitty Unicode")
 assert(#_G.nvim_browser_serve_egress_payloads == 1, "kitty-unicode serve frames should emit exactly one terminal payload")
 assert(terminal.state().terminal_graphics_egress_count > 0, "kitty-unicode serve frames should count terminal graphics egress")
+assert(
+  terminal.state().last_terminal_graphics_egress_is_kitty_unicode == true,
+  "kitty-unicode serve frames should expose the last terminal graphics egress classification"
+)
 _G.nvim_browser_graphics_egress_count_after_frame = terminal.state().terminal_graphics_egress_count
 _G.nvim_browser_wrapped_unicode_payload = _G.nvim_browser_serve_egress_payloads[1]
 _G.nvim_browser_assert_redraw_before_payload("unicode-frame", "kitty-unicode serve frame")
 assert(nvim_browser_count_substrings(_G.nvim_browser_wrapped_unicode_payload, "\27Ptmux;") == 1, "serve payload should be wrapped in tmux passthrough exactly once")
+assert(_G.nvim_browser_wrapped_unicode_payload:find("unicode-frame", 1, true), "tmux-wrapped serve payload should preserve frame bytes")
+assert(_G.nvim_browser_wrapped_unicode_payload:find("\27\27_G", 1, true), "tmux-wrapped serve payload should double Kitty start escapes")
+assert(_G.nvim_browser_wrapped_unicode_payload:find("\27\27\\", 1, true), "tmux-wrapped serve payload should double Kitty end escapes")
 assert(
-  _G.nvim_browser_wrapped_unicode_payload == "\27Ptmux;\27\27_Ga=T,f=100,m=0;unicode-frame\27\27\\\27\\",
-  "serve payload should double raw Kitty escapes inside the tmux passthrough wrapper"
+  terminal._test.is_kitty_unicode_payload(_G.nvim_browser_wrapped_unicode_payload) == true,
+  "tmux-wrapped serve payload should remain classifiable as Kitty Unicode"
 )
 _G.nvim_browser_serve_egress_payloads = {}
 _G.nvim_browser_serve_egress_events = {}
@@ -2202,7 +2236,7 @@ _G.nvim_browser_serve_egress_events = {}
 terminal.open({ "nvbrowser", "browse", "https://example.com/capture", "--output", "kitty-unicode" })
 _G.nvim_browser_serve_egress_payloads = {}
 _G.nvim_browser_serve_egress_events = {}
-serve_stdout(nil, { "\27_Ga=T,f=100,m=0;browse-unicode-frame\27\\", "" })
+serve_stdout(nil, { "\27_Ga=T,q=2,U=1,i=1,c=10,r=5,f=100,s=100,v=100,m=0;browse-unicode-frame\27\\", "" })
 serve_exit(nil, 0)
 assert(vim.wait(1000, function()
   for _, payload in ipairs(_G.nvim_browser_serve_egress_payloads) do

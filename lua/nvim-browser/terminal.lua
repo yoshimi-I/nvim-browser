@@ -11,6 +11,7 @@ local state = {
   last_payload = nil,
   last_payload_is_unicode = false,
   terminal_graphics_egress_count = 0,
+  last_terminal_graphics_egress_is_kitty_unicode = false,
   suppress_focus_replay = false,
   focus_replay_scheduled = false,
   has_rendered_frame = false,
@@ -2539,6 +2540,41 @@ local function cursor_position_escape(winid)
   return ("\x1b[%d;%dH"):format(row, column)
 end
 
+local function is_kitty_unicode_payload(payload)
+  if type(payload) ~= "string" or payload == "" then
+    return false
+  end
+
+  local normalized = payload:gsub("\x1b\x1b", "\x1b")
+  local offset = 1
+  while true do
+    local command_start = normalized:find("\x1b_G", offset, true)
+    if command_start == nil then
+      break
+    end
+    local params_start = command_start + 3
+    local params_end = normalized:find(";", params_start, true)
+    local command_end = normalized:find("\x1b\\", params_start, true)
+    if params_end ~= nil and (command_end == nil or params_end < command_end) then
+      local params = normalized:sub(params_start, params_end - 1)
+      if ("," .. params .. ","):find(",U=1,", 1, true) ~= nil then
+        return true
+      end
+      offset = params_end + 1
+    elseif command_end ~= nil then
+      offset = command_end + 2
+    else
+      break
+    end
+  end
+  return false
+end
+
+local function record_terminal_graphics_egress(payload)
+  state.terminal_graphics_egress_count = state.terminal_graphics_egress_count + 1
+  state.last_terminal_graphics_egress_is_kitty_unicode = is_kitty_unicode_payload(payload)
+end
+
 local function emit_terminal_graphics(payload, winid)
   if payload == nil or payload == "" then
     return
@@ -2551,7 +2587,7 @@ local function emit_terminal_graphics(payload, winid)
   send_terminal_escape(kitty_cleanup_escape())
   vim.api.nvim_chan_send(vim.v.stderr, cursor_position_escape(winid))
   send_terminal_escape(payload)
-  state.terminal_graphics_egress_count = state.terminal_graphics_egress_count + 1
+  record_terminal_graphics_egress(payload)
 end
 
 local function send_kitty_unicode_frame(payload)
@@ -2560,7 +2596,7 @@ local function send_kitty_unicode_frame(payload)
   end
   vim.cmd("redraw")
   send_terminal_escape(payload)
-  state.terminal_graphics_egress_count = state.terminal_graphics_egress_count + 1
+  record_terminal_graphics_egress(payload)
 end
 
 local function preview_has_current_focus()
@@ -2683,6 +2719,7 @@ function M.open(command)
   state.last_payload = nil
   state.last_payload_is_unicode = false
   state.terminal_graphics_egress_count = 0
+  state.last_terminal_graphics_egress_is_kitty_unicode = false
   state.has_rendered_frame = false
   state.last_target = command_target(command)
   state.stream_buffer = ""
@@ -3161,6 +3198,7 @@ function M.close()
   state.last_payload = nil
   state.last_payload_is_unicode = false
   state.terminal_graphics_egress_count = 0
+  state.last_terminal_graphics_egress_is_kitty_unicode = false
   state.last_target = nil
   state.stream_buffer = ""
   state.mode = nil
@@ -4796,6 +4834,7 @@ function M.state()
     has_payload = state.last_payload ~= nil,
     last_payload_is_unicode = state.last_payload_is_unicode,
     terminal_graphics_egress_count = state.terminal_graphics_egress_count,
+    last_terminal_graphics_egress_is_kitty_unicode = state.last_terminal_graphics_egress_is_kitty_unicode,
     mode = state.mode,
     serve_output = state.serve_output,
     serve_output_label = state.serve_output_label,
@@ -4894,6 +4933,7 @@ M._test = {
   end,
   kitty_cleanup_escape = kitty_cleanup_escape,
   terminal_escape = terminal_escape,
+  is_kitty_unicode_payload = is_kitty_unicode_payload,
   set_last_find_found = function(value)
     state.last_find_found = value
   end,

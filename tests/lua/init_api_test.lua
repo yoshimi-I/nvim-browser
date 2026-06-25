@@ -1873,6 +1873,7 @@ terminal.state = function()
     status = "ok",
     serve_output = "kitty-unicode",
     terminal_graphics_egress_count = 1,
+    last_terminal_graphics_egress_is_kitty_unicode = true,
     runtime_metadata = {
       output = "kitty-unicode",
       renderer = "chromium-cdp",
@@ -1903,6 +1904,10 @@ assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok =
 _G.nvim_browser_non_fallback_smoke_report_lines = table.concat(_G.nvim_browser_smoke_report.lines, "\n")
 assert(not _G.nvim_browser_non_fallback_smoke_report_lines:find("reader: ok", 1, true), "non-fallback smoke report should not include reader status")
 assert(_G.nvim_browser_non_fallback_smoke_report_lines:find("terminal graphics: ok", 1, true), "kitty-unicode smoke report should include terminal graphics egress status")
+assert(
+  _G.nvim_browser_non_fallback_smoke_report_lines:find("kitty unicode payload: ok", 1, true),
+  "kitty-unicode smoke report should include Kitty Unicode payload classification status"
+)
 
 _G.nvim_browser_smoke_report = nil
 _G.nvim_browser_smoke_title = _G.nvim_browser_smoke_fixture_title

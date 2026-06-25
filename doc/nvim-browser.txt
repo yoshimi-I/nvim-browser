@@ -746,8 +746,10 @@ COMMANDS                                           *nvim-browser-commands*
 	was received. The report includes the effective output mode, runtime
 	metadata, frame geometry, and frame health. Kitty graphics sessions also
 	report "terminal graphics: ok" after a frame payload is sent to the
-	terminal. Inside Zellij with Kitty graphics configured, a healthy smoke
-	report shows "output: ANSI fallback" and "reader: ok".
+	terminal. Kitty Unicode sessions additionally report
+	"kitty unicode payload: ok" when the last graphics egress was a Unicode
+	placeholder image payload. Inside Zellij with Kitty graphics configured, a
+	healthy smoke report shows "output: ANSI fallback" and "reader: ok".
 
 							*:NBrowserCalibrate*
 :NBrowserCalibrate [cell_width_px cell_height_px]
