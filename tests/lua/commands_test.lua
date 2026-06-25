@@ -19,6 +19,35 @@ local core_command_names = commands.core_command_names()
 for _, name in ipairs(essential_commands) do
   assert(vim.tbl_contains(core_command_names, name), "core lazy command list should include " .. name)
 end
+assert(type(commands.command_names) == "function", "commands should expose the full user command list for lazy.nvim")
+local lazy_command_names = commands.command_names()
+for _, name in ipairs({
+  "NBrowserHistory",
+  "NBrowserTextMode",
+  "NBrowserSubmitFocused",
+  "NBrowserReader",
+  "NBrowserCalibrateHere",
+  "NBrowserOpenDownload",
+}) do
+  assert(vim.tbl_contains(lazy_command_names, name), "full lazy command list should include " .. name)
+end
+_G.nvim_browser_read_doc = function(path)
+  return table.concat(vim.fn.readfile(root .. "/" .. path), "\n")
+end
+local function extract_lazy_cmd_block(text)
+  local block = text:match("cmd%s*=%s*{%s*(.-)%s*},%s*\n%s*config%s*=")
+  assert(block, "lazy.nvim cmd block should be present")
+
+  local names = {}
+  for name in block:gmatch('"([^"]+)"') do
+    table.insert(names, name)
+  end
+  return names
+end
+for _, path in ipairs({ "README.md", "doc/nvim-browser.txt" }) do
+  local text = _G.nvim_browser_read_doc(path)
+  assert(vim.deep_equal(extract_lazy_cmd_block(text), lazy_command_names), path .. " lazy cmd list should match commands.command_names()")
+end
 
 local clicked = nil
 local followed = nil
@@ -588,6 +617,14 @@ commands.register(browser, {
 local registered_commands = vim.api.nvim_get_commands({})
 for _, name in ipairs(core_command_names) do
   assert(registered_commands[name] ~= nil, "registered commands should include core lazy command " .. name)
+end
+for _, name in ipairs(lazy_command_names) do
+  assert(registered_commands[name] ~= nil, "registered commands should include full lazy command " .. name)
+end
+for name, _ in pairs(registered_commands) do
+  if name:match("^NBrowser") then
+    assert(vim.tbl_contains(lazy_command_names, name), "full lazy command list should include registered command " .. name)
+  end
 end
 commands.register(browser, {
   input = function()
