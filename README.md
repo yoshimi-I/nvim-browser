@@ -72,6 +72,17 @@ With lazy.nvim:
   "yoshimi-I/nvim-browser",
   tag = "v0.1.3",
   build = "cargo build --release",
+  cmd = {
+    "NBrowserOpen",
+    "NBrowserAddress",
+    "NBrowserOpenUnderCursor",
+    "NBrowserRefresh",
+    "NBrowserReload",
+    "NBrowserDoctor",
+    "NBrowserStatus",
+    "NBrowserToggle",
+    "NBrowserClose",
+  },
   config = function()
     require("nvim-browser").setup({
       graphics = "auto",
@@ -79,6 +90,10 @@ With lazy.nvim:
   end,
 }
 ```
+
+If `:NBrowserOpen` reports `E492: Not an editor command`, the plugin has not
+been loaded and lazy.nvim has no command stub for it. Add the `cmd` list above
+to the plugin spec, then restart Neovim or reload the lazy.nvim spec.
 
 The plugin looks for `target/release/nvbrowser` in the plugin checkout first,
 then `target/debug/nvbrowser`, then `nvbrowser` on `$PATH`. To use a binary from

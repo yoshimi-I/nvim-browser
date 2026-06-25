@@ -1,6 +1,22 @@
 local M = {}
 local status_labels = require("nvim-browser.status")
 
+local core_command_names = {
+  "NBrowserOpen",
+  "NBrowserAddress",
+  "NBrowserOpenUnderCursor",
+  "NBrowserRefresh",
+  "NBrowserReload",
+  "NBrowserDoctor",
+  "NBrowserStatus",
+  "NBrowserToggle",
+  "NBrowserClose",
+}
+
+function M.core_command_names()
+  return vim.list_extend({}, core_command_names)
+end
+
 function M.register(browser, opts)
   opts = opts or {}
   local input = opts.input or vim.fn.input

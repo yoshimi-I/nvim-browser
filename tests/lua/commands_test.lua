@@ -3,11 +3,28 @@ package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.pa
 
 local commands = require("nvim-browser.commands")
 
+local essential_commands = {
+  "NBrowserOpen",
+  "NBrowserAddress",
+  "NBrowserOpenUnderCursor",
+  "NBrowserRefresh",
+  "NBrowserReload",
+  "NBrowserDoctor",
+  "NBrowserStatus",
+  "NBrowserToggle",
+  "NBrowserClose",
+}
+local core_command_names = commands.core_command_names()
+for _, name in ipairs(essential_commands) do
+  assert(vim.tbl_contains(core_command_names, name), "core lazy command list should include " .. name)
+end
+
 local clicked = nil
 local followed = nil
 local prompted = nil
 local prompt_default = nil
 local warnings = {}
+local opened = nil
 local addressed = nil
 local opened_under_cursor = false
 local history_picked = false
@@ -63,6 +80,10 @@ local selected_region = nil
 local yanked_region = nil
 local opened_download = nil
 local browser = {
+  open = function(target)
+    opened = target or true
+    return true
+  end,
   hints = function()
     return {
       { id = 1, hint_label = "a", kind = "link", label = "Docs", href = "https://example.com/docs", x = 10, y = 20 },
@@ -555,6 +576,22 @@ commands.register(browser, {
     on_choice(items[1])
   end,
 })
+local registered_commands = vim.api.nvim_get_commands({})
+for _, name in ipairs(core_command_names) do
+  assert(registered_commands[name] ~= nil, "registered commands should include core lazy command " .. name)
+end
+commands.register(browser, {
+  input = function()
+    return "s"
+  end,
+  select = function(items, opts, on_choice)
+    prompted = opts.prompt
+    on_choice(items[1])
+  end,
+})
+opened = nil
+vim.cmd("NBrowserOpen https://example.com")
+assert(opened == "https://example.com", "NBrowserOpen should still delegate after repeated command registration")
 vim.cmd("NBrowserHints")
 
 assert(echoed:match("^a%s+1%s+link%s+Docs%s+%->%s+https://example%.com/docs%s+@%s+10,20"), "NBrowserHints should show keyboard label before numeric id and href")
