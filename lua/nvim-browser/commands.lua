@@ -121,6 +121,15 @@ function M.register(browser, opts)
     return label
   end
 
+  local function dialog_list_label(dialog, index)
+    local label = dialog_status_label(dialog)
+    if label == nil then
+      return nil
+    end
+    label = label:gsub("^dialog=", "")
+    return tostring(index) .. ". " .. label
+  end
+
   local function warn_hint_input_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: hint input failed, stale, or browser session is inactive", "WarningMsg" } }, false, {})
   end
@@ -1157,6 +1166,27 @@ function M.register(browser, opts)
     end
     if #lines == 0 then
       vim.api.nvim_echo({ { "nvim-browser: no completed downloads" } }, false, {})
+      return
+    end
+    vim.api.nvim_echo({ { table.concat(lines, "\n") } }, false, {})
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserDialogs", function()
+    local dialogs = browser.dialogs ~= nil and browser.dialogs() or {}
+    if type(dialogs) ~= "table" or #dialogs == 0 then
+      vim.api.nvim_echo({ { "nvim-browser: no browser dialogs recorded" } }, false, {})
+      return
+    end
+
+    local lines = {}
+    for index, dialog in ipairs(dialogs) do
+      local label = dialog_list_label(dialog, index)
+      if label ~= nil and label ~= "" then
+        table.insert(lines, label)
+      end
+    end
+    if #lines == 0 then
+      vim.api.nvim_echo({ { "nvim-browser: no browser dialogs recorded" } }, false, {})
       return
     end
     vim.api.nvim_echo({ { table.concat(lines, "\n") } }, false, {})

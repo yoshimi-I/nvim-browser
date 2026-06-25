@@ -419,6 +419,12 @@ local browser = {
       { path = "/tmp/downloads/archive.zip", suggested_filename = "archive.zip", status = "completed" },
     }
   end,
+  dialogs = function()
+    return {
+      { kind = "alert", message = "  first\nnotice  ", action = "accepted" },
+      { kind = "confirm", message = "continue?", action = "dismissed" },
+    }
+  end,
   open_download = function(index, opts)
     opened_download = { index = index, has_select = type(opts) == "table" and type(opts.select) == "function" }
     return true
@@ -764,6 +770,10 @@ assert(echoed:match("renderer=chromium%-cdp"), "NBrowserStatus should include ru
 vim.cmd("NBrowserDownloads")
 assert(echoed:match("1%.%s+report%.pdf%s+/tmp/downloads/report%.pdf"), "NBrowserDownloads should list indexed download filenames and paths")
 assert(echoed:match("2%.%s+archive%.zip%s+/tmp/downloads/archive%.zip"), "NBrowserDownloads should list multiple indexed downloads")
+
+vim.cmd("NBrowserDialogs")
+assert(echoed:find("1. alert accepted: first notice", 1, true), "NBrowserDialogs should list normalized alert dialog messages")
+assert(echoed:find("2. confirm dismissed: continue?", 1, true), "NBrowserDialogs should list confirm dialog actions and messages")
 
 vim.cmd("NBrowserOpenDownload 2")
 assert(opened_download.index == "2", "NBrowserOpenDownload should pass an explicit index to browser.open_download")
@@ -1499,6 +1509,9 @@ local failed_browser = {
   downloads = function()
     return {}
   end,
+  dialogs = function()
+    return {}
+  end,
   open_download = function()
     return false
   end,
@@ -1550,6 +1563,9 @@ assert(warnings[#warnings] == "nvim-browser: browser selection yank failed or no
 
 vim.cmd("NBrowserDownloads")
 assert(echoed == "nvim-browser: no completed downloads", "NBrowserDownloads should report an empty download history")
+
+vim.cmd("NBrowserDialogs")
+assert(echoed == "nvim-browser: no browser dialogs recorded", "NBrowserDialogs should report an empty dialog history")
 
 vim.cmd("NBrowserOpenDownload")
 assert(warnings[#warnings] == "nvim-browser: no completed download could be opened", "NBrowserOpenDownload should warn when no download can be opened")

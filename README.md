@@ -202,7 +202,8 @@ downloads are persisted in the normal nvim-browser session file when
 cancellation, or filename prompts.
 JavaScript dialogs are auto-handled so Chromium does not block: alerts are
 accepted, confirm/prompt/beforeunload dialogs are dismissed, and the latest
-handled dialog is reported as `dialog=confirm dismissed: message`.
+handled dialog is reported as `dialog=confirm dismissed: message`. The current
+browser session's handled dialog history is available with `:NBrowserDialogs`.
 
 Active browser previews refresh lightweight page state every 1500ms by default
 so URL, title, scroll, focus, and download metadata stay current without
@@ -369,6 +370,7 @@ Then run:
 :NBrowserCurrentTitle
 :NBrowserStatus
 :NBrowserDownloads
+:NBrowserDialogs
 :NBrowserOpenDownload
 :NBrowserReader
 :NBrowserReaderFollow
@@ -428,6 +430,8 @@ labels after captured browser interactions. Non-default zoom is reported as
 `zoom=125%`.
 `:NBrowserDownloads` lists completed downloads reported during the current and
 persisted browser sessions, including a 1-based index, filename, and full path.
+`:NBrowserDialogs` lists handled JavaScript dialogs recorded in the current
+browser session, including a 1-based index, kind, action, and normalized message.
 `:NBrowserOpenDownload` opens a completed download by index or with a picker.
 
 While a browser session is idle, nvim-browser periodically sends a lightweight

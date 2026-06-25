@@ -2403,6 +2403,27 @@ function M.latest_dialog()
   return terminal.state().latest_dialog
 end
 
+local function copy_dialogs(dialogs)
+  local copy = {}
+  if type(dialogs) ~= "table" then
+    return copy
+  end
+  for _, dialog in ipairs(dialogs) do
+    local item = {}
+    if type(dialog) == "table" then
+      for key, value in pairs(dialog) do
+        item[key] = value
+      end
+    end
+    table.insert(copy, item)
+  end
+  return copy
+end
+
+function M.dialogs()
+  return copy_dialogs(terminal.state().dialog_history)
+end
+
 local function copy_downloads(downloads)
   local copy = {}
   if type(downloads) ~= "table" then

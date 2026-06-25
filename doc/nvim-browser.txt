@@ -86,6 +86,9 @@ downloads from one interaction response and keeps a bounded, persisted 1-based
 list available via :NBrowserDownloads and :NBrowserOpenDownload when session
 persistence is enabled; it does not provide progress UI, cancellation, or
 filename prompts.
+JavaScript dialogs are auto-handled so Chromium does not block. The latest
+handled dialog appears in :NBrowserStatus, and the current browser session's
+handled dialog history is available with :NBrowserDialogs.
 
 If the terminal font cell size makes previews look stretched or click targets
 feel offset, tune the viewport cell pixels:
@@ -575,6 +578,13 @@ COMMANDS                                           *nvim-browser-commands*
 	sessions, including a 1-based index, filename, and full path. The list is
 	bounded by the session history limit and is saved in the normal
 	nvim-browser session file when session persistence is enabled.
+
+							*:NBrowserDialogs*
+:NBrowserDialogs
+	List handled JavaScript dialogs recorded in the current browser session,
+	including a 1-based index, dialog kind, handled action, and normalized
+	message. Dialog history is read-only and is cleared when the browser session
+	is closed or replaced.
 
 							*:NBrowserOpenDownload*
 :NBrowserOpenDownload [index]

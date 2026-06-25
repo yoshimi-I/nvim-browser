@@ -47,6 +47,7 @@ assert(type(browser.yank_page_text) == "function", "page text yank API should ex
 assert(type(browser.screenshot) == "function", "active browser screenshot API should exist")
 assert(type(browser.downloads) == "function", "download history API should exist")
 assert(type(browser.open_download) == "function", "open download API should exist")
+assert(type(browser.dialogs) == "function", "dialog history API should exist")
 assert(type(browser.start_text_mode) == "function", "interactive browser text mode API should exist")
 assert(type(browser.address) == "function", "address API should exist")
 assert(type(browser.resolve_address_target) == "function", "address target resolver should exist")
@@ -2506,6 +2507,21 @@ assert(
   terminal_download_history[1].path == "/tmp/downloads/report.pdf",
   "downloads should return a defensive copy of terminal metadata"
 )
+
+terminal._test.apply_serve_response({
+  id = 9101,
+  status = "ok",
+  dialogs = {
+    { kind = "alert", message = "first notice", action = "accepted" },
+    { kind = "confirm", message = "continue?", action = "dismissed" },
+  },
+})
+_G.nvim_browser_dialog_history = browser.dialogs()
+assert(#_G.nvim_browser_dialog_history == 2, "dialogs should expose recorded browser dialog history")
+assert(_G.nvim_browser_dialog_history[1].kind == "alert", "dialogs should preserve recorded order")
+assert(_G.nvim_browser_dialog_history[2].message == "continue?", "dialogs should preserve dialog messages")
+_G.nvim_browser_dialog_history[1].message = "mutated"
+assert(browser.dialogs()[1].message == "first notice", "dialogs should return defensive copies")
 
 opened_download_target = nil
 original_browser_open_for_download = browser.open
