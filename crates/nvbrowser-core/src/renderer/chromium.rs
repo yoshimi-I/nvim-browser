@@ -2237,9 +2237,23 @@ const MARKDOWN_SCRIPT_SETTLE_SCRIPT: &str = r#"
 (() => new Promise((resolve) => {
   const maxMs = 2500;
   const root = document.documentElement;
-  const state = () => root && root.dataset ? root.dataset.nvbrowserMermaid : undefined;
-  if (state() !== 'pending') {
-    resolve(state() || 'none');
+  const markers = [
+    { key: 'nvbrowserMermaid', attr: 'data-nvbrowser-mermaid' },
+    { key: 'nvbrowserKatex', attr: 'data-nvbrowser-katex' }
+  ];
+  const state = (marker) => root && root.dataset ? root.dataset[marker.key] : undefined;
+  const isSettledState = (value) => value === undefined || value === 'ready' || value === 'error';
+  const pending = () => markers.filter((marker) => !isSettledState(state(marker)));
+  const summary = () => markers.map((marker) => `${marker.key}:${state(marker) || 'none'}`).join(',');
+  const markError = (marker) => {
+    if (marker.key === 'nvbrowserMermaid') {
+      root.dataset.nvbrowserMermaid = 'error';
+    } else if (marker.key === 'nvbrowserKatex') {
+      root.dataset.nvbrowserKatex = 'error';
+    }
+  };
+  if (pending().length === 0) {
+    resolve(summary());
     return;
   }
   let observer = null;
@@ -2254,17 +2268,16 @@ const MARKDOWN_SCRIPT_SETTLE_SCRIPT: &str = r#"
     resolve(value);
   };
   observer = new MutationObserver(() => {
-    const value = state();
-    if (value === 'ready' || value === 'error') {
-      finish(value);
+    if (pending().length === 0) {
+      finish(summary());
     }
   });
-  observer.observe(root, { attributes: true, attributeFilter: ['data-nvbrowser-mermaid'] });
+  observer.observe(root, { attributes: true, attributeFilter: markers.map((marker) => marker.attr) });
   timer = setTimeout(() => {
-    if (state() === 'pending') {
-      root.dataset.nvbrowserMermaid = 'error';
+    for (const marker of pending()) {
+      markError(marker);
     }
-    finish(state() || 'timeout');
+    finish(summary() || 'timeout');
   }, maxMs);
 }))()
 "#;
@@ -4456,5 +4469,12 @@ mod tests {
         assert!(MARKDOWN_SCRIPT_SETTLE_SCRIPT.contains("error"));
         assert!(MARKDOWN_SCRIPT_SETTLE_SCRIPT.contains("maxMs = 2500"));
         assert!(MARKDOWN_SCRIPT_SETTLE_SCRIPT.contains("root.dataset.nvbrowserMermaid = 'error'"));
+    }
+
+    #[test]
+    fn markdown_script_settle_waits_for_katex_completion_marker() {
+        assert!(MARKDOWN_SCRIPT_SETTLE_SCRIPT.contains("nvbrowserKatex"));
+        assert!(MARKDOWN_SCRIPT_SETTLE_SCRIPT.contains("data-nvbrowser-katex"));
+        assert!(MARKDOWN_SCRIPT_SETTLE_SCRIPT.contains("root.dataset.nvbrowserKatex = 'error'"));
     }
 }

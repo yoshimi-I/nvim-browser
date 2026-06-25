@@ -26,7 +26,7 @@ This repository is an early MVP scaffold. Today it includes:
 - browser element hints overlaid on cursor-addressable previews
 - persistent Neovim preview surface reuse
 - current URL, title, scroll progress, status, runtime diagnostics, preview footer, lightweight live state refresh, and preview buffer naming from the active browser session
-- Markdown preview support for Mermaid fenced diagrams
+- Markdown preview support for Mermaid fenced diagrams and KaTeX math
 - CLI integration tests for backend command contracts
 - initial OSS packaging and CI
 
@@ -34,7 +34,7 @@ Planned next steps:
 
 - terminal-multiplexer graphics passthrough support and documentation
 - richer browser interaction for links and form controls
-- KaTeX and richer document preview features
+- richer document preview features
 
 ## Architecture
 
@@ -374,10 +374,11 @@ Then run:
 
 Markdown files are rendered with a docs-oriented browser shell and a local
 `<base>` path so relative images can resolve from the Markdown file directory.
-Fenced `mermaid` blocks are promoted to Mermaid diagrams. When a Markdown file
-contains at least one Mermaid block, the generated preview imports Mermaid
-`10.9.3` from `cdn.jsdelivr.net`; Markdown files without Mermaid blocks do not
-load that script.
+Fenced `mermaid` blocks are promoted to Mermaid diagrams, and inline/display
+math is rendered with KaTeX. When a Markdown file contains at least one Mermaid
+block, the generated preview imports Mermaid `10.9.3` from `cdn.jsdelivr.net`.
+When it contains math, it imports KaTeX `0.16.11` and the KaTeX auto-render
+helper. Plain Markdown files without diagrams or math do not load those assets.
 HTML, SVG, PDF, and raster image files are opened through Chromium using
 `file://` URLs. The standalone `nvbrowser show-image` CLI still supports
 `original`, `contain`, `width`, and `height` fit modes.

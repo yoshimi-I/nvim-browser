@@ -101,6 +101,30 @@ not a diagram
 }
 
 #[test]
+fn render_md_outputs_katex_assets_when_needed() {
+    let directory = tempdir().expect("tempdir should be created");
+    let markdown_path = directory.path().join("math.md");
+    std::fs::write(&markdown_path, "Inline $E=mc^2$.\n\n$$\na^2+b^2=c^2\n$$\n")
+        .expect("markdown fixture should be written");
+
+    let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+    command
+        .arg("render-md")
+        .arg(markdown_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("katex.min.css"))
+        .stdout(predicate::str::contains("auto-render"))
+        .stdout(predicate::str::contains(
+            "renderMathInElement(document.body",
+        ))
+        .stdout(predicate::str::contains(
+            r#"data-nvbrowser-katex="pending""#,
+        ));
+}
+
+#[test]
 fn show_image_outputs_kitty_escape() {
     let directory = tempdir().expect("tempdir should be created");
     let image_path = directory.path().join("pixel.png");

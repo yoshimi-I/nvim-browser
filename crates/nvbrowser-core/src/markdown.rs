@@ -7,16 +7,20 @@ pub fn render_markdown_document(markdown: &str) -> String {
 pub fn render_markdown_document_with_base_url(markdown: &str, base_href: Option<&str>) -> String {
     let raw_body = markdown_to_html(markdown, &Options::default());
     let (body, has_mermaid) = promote_mermaid_code_blocks(&raw_body);
+    let has_math = contains_markdown_math(markdown);
     let base = base_href
         .filter(|href| !href.is_empty())
         .map(|href| format!(r#"<base href="{href}">"#))
         .unwrap_or_default();
     let mermaid_assets = if has_mermaid { mermaid_assets() } else { "" };
-    let html_attrs = if has_mermaid {
-        r#" data-nvbrowser-mermaid="pending""#
-    } else {
-        ""
-    };
+    let katex_assets = if has_math { katex_assets() } else { "" };
+    let mut html_attrs = String::new();
+    if has_mermaid {
+        html_attrs.push_str(r#" data-nvbrowser-mermaid="pending""#);
+    }
+    if has_math {
+        html_attrs.push_str(r#" data-nvbrowser-katex="pending""#);
+    }
     format!(
         r#"<!doctype html>
 <html{html_attrs}>
@@ -53,6 +57,7 @@ code {{
 }}
 </style>
 {mermaid_assets}
+{katex_assets}
 </head>
 <body>
 {body}</body>
@@ -87,6 +92,78 @@ fn promote_mermaid_code_blocks(html: &str) -> (String, bool) {
     (output, promoted)
 }
 
+fn contains_markdown_math(markdown: &str) -> bool {
+    let mut in_fence = false;
+    for line in markdown.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        if line.starts_with("    ") || line.starts_with('\t') {
+            continue;
+        }
+        let visible_line = line_without_code_spans(line);
+        let trimmed_visible = visible_line.trim_start();
+        if trimmed_visible.starts_with("$$")
+            || trimmed_visible.contains("\\[")
+            || trimmed_visible.contains("\\(")
+        {
+            return true;
+        }
+        let mut previous_was_escape = false;
+        let mut open_inline = false;
+        for character in visible_line.chars() {
+            if previous_was_escape {
+                previous_was_escape = false;
+                continue;
+            }
+            if character == '\\' {
+                previous_was_escape = true;
+                continue;
+            }
+            if character == '$' {
+                if open_inline {
+                    return true;
+                }
+                open_inline = true;
+            }
+        }
+    }
+    false
+}
+
+fn line_without_code_spans(line: &str) -> String {
+    let mut output = String::with_capacity(line.len());
+    let mut code_delimiter_width = None;
+    let characters = line.chars().collect::<Vec<_>>();
+    let mut index = 0usize;
+    while index < characters.len() {
+        let character = characters[index];
+        if character == '`' {
+            let mut run_width = 1usize;
+            while index + run_width < characters.len() && characters[index + run_width] == '`' {
+                run_width += 1;
+            }
+            match code_delimiter_width {
+                Some(width) if width == run_width => code_delimiter_width = None,
+                Some(_) => {}
+                None => code_delimiter_width = Some(run_width),
+            }
+            index += run_width;
+            continue;
+        }
+        if code_delimiter_width.is_none() {
+            output.push(character);
+        }
+        index += 1;
+    }
+    output
+}
+
 fn mermaid_assets() -> &'static str {
     r#"<script type="module">
 document.documentElement.dataset.nvbrowserMermaid = "pending";
@@ -99,6 +176,32 @@ try {
   document.documentElement.dataset.nvbrowserMermaid = "error";
   console.error("nvim-browser Mermaid render failed", error);
 }
+</script>"#
+}
+
+fn katex_assets() -> &'static str {
+    r#"<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script>
+document.documentElement.dataset.nvbrowserKatex = "pending";
+window.addEventListener("load", () => {
+  try {
+    renderMathInElement(document.body, {
+      delimiters: [
+        { left: "$$", right: "$$", display: true },
+        { left: "\\[", right: "\\]", display: true },
+        { left: "$", right: "$", display: false },
+        { left: "\\(", right: "\\)", display: false }
+      ],
+      throwOnError: false
+    });
+    document.documentElement.dataset.nvbrowserKatex = "ready";
+  } catch (error) {
+    document.documentElement.dataset.nvbrowserKatex = "error";
+    console.error("nvim-browser KaTeX render failed", error);
+  }
+});
 </script>"#
 }
 
@@ -169,5 +272,64 @@ fn main() {}
         assert!(!html.contains("https://cdn.jsdelivr.net/npm/mermaid"));
         assert!(!html.contains("mermaid.initialize"));
         assert!(html.contains(r#"<code class="language-rust">fn main() {}"#));
+    }
+
+    #[test]
+    fn render_markdown_document_includes_katex_assets_for_inline_and_display_math() {
+        let html = render_markdown_document(
+            r#"Inline math $E=mc^2$.
+
+$$
+\int_0^1 x^2 dx
+$$
+"#,
+        );
+
+        assert!(html.contains("katex"));
+        assert!(html.contains("katex.min.css"));
+        assert!(html.contains("auto-render"));
+        assert!(html.contains("renderMathInElement(document.body"));
+        assert!(html.contains(r#"data-nvbrowser-katex="pending""#));
+    }
+
+    #[test]
+    fn render_markdown_document_omits_katex_assets_without_math() {
+        let html = render_markdown_document("# Plain\n\nNo math here.");
+
+        assert!(!html.contains("katex.min.css"));
+        assert!(!html.contains("renderMathInElement"));
+        assert!(!html.contains("data-nvbrowser-katex"));
+    }
+
+    #[test]
+    fn render_markdown_document_omits_katex_assets_for_code_dollars() {
+        let html = render_markdown_document(
+            r#"Use `$HOME` and `$PATH`, or ``$OLDPWD $PWD``.
+
+    echo "$HOME $PATH"
+"#,
+        );
+
+        assert!(!html.contains("katex.min.css"));
+        assert!(!html.contains("renderMathInElement"));
+        assert!(!html.contains("data-nvbrowser-katex"));
+    }
+
+    #[test]
+    fn render_markdown_document_can_include_mermaid_and_katex_assets_together() {
+        let html = render_markdown_document(
+            r#"```mermaid
+graph TD
+  A --> B
+```
+
+Inline $x+y$.
+"#,
+        );
+
+        assert!(html.contains("mermaid@"));
+        assert!(html.contains("katex"));
+        assert!(html.contains(r#"data-nvbrowser-mermaid="pending""#));
+        assert!(html.contains(r#"data-nvbrowser-katex="pending""#));
     }
 }

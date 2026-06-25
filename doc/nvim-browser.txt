@@ -13,7 +13,8 @@ INTRODUCTION                                           *nvim-browser-intro*
 
 nvim-browser is an experimental browser runtime for Neovim. The first backend
 is a Rust binary that classifies web targets, renders styled Markdown
-documents, and drives local HTML/SVG/PDF previews through Chromium/CDP.
+documents with Mermaid and KaTeX support, and drives local HTML/SVG/PDF previews
+through Chromium/CDP.
 PDF quality and behavior come from Chrome's built-in PDF viewer.
 The long-term renderer target is Chromium/CDP output displayed inside Ghostty
 through terminal graphics.
@@ -129,7 +130,8 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserOpen [target]
         Open a URL or file target in the browser preview surface. Markdown files
         are rendered through a browser-styled HTML shell with local relative
-        asset support. HTML files, SVG files, PDF files, and HTTP/HTTPS URLs
+        asset support, Mermaid fenced diagrams, and KaTeX math. HTML files,
+        SVG files, PDF files, and HTTP/HTTPS URLs
         start a Chromium-backed browser session for the current POC. PDF
         rendering uses Chrome's built-in PDF viewer. Raster image files are
         opened through Chromium using file:// URLs so they reuse the same
