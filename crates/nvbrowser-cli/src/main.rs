@@ -2462,14 +2462,18 @@ fn ansi_edge_sample_rgb(
         }
     }
 
+    let contrast = max_luma.saturating_sub(min_luma);
+    if contrast <= 8 {
+        return brightest;
+    }
+
     let sampled_luma = luma(sampled);
-    if max_luma.saturating_sub(min_luma) >= 160 {
-        if sampled_luma < 128 {
+    if contrast >= 96 {
+        let midpoint = min_luma + contrast / 2;
+        if sampled_luma <= midpoint.saturating_add(32) {
             return darkest;
         }
-        if sampled_luma > 160 {
-            return brightest;
-        }
+        return brightest;
     }
     sampled
 }
@@ -3330,6 +3334,31 @@ mod tests {
         assert!(
             output.contains("38;2;255;255;255") || output.contains("48;2;255;255;255"),
             "ANSI downsampling should preserve light page background; got {output:?}"
+        );
+    }
+
+    #[test]
+    fn ansi_halfblocks_preserve_mid_contrast_browser_ui_edges() {
+        let background = Rgba([244, 244, 244, 255]);
+        let link_blue = Rgba([70, 80, 180, 255]);
+        let mut image = image::RgbaImage::from_pixel(12, 6, background);
+        for x in 1..11 {
+            image.put_pixel(x, 1, link_blue);
+        }
+        for y in 2..5 {
+            image.put_pixel(2, y, link_blue);
+            image.put_pixel(9, y, link_blue);
+        }
+
+        let output = image_to_ansi_halfblocks(&DynamicImage::ImageRgba8(image), 3, Some(4));
+
+        assert!(
+            output.contains("38;2;70;80;180") || output.contains("48;2;70;80;180"),
+            "ANSI downsampling should preserve mid-contrast browser UI strokes; got {output:?}"
+        );
+        assert!(
+            output.contains("38;2;244;244;244") || output.contains("48;2;244;244;244"),
+            "ANSI downsampling should preserve light browser UI background; got {output:?}"
         );
     }
 
