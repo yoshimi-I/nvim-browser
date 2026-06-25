@@ -2701,9 +2701,12 @@ function M.open(command)
           return
         end
 
-        local should_adaptively_capture = state.live_refresh_request_id == response.id
-          and state.live_refresh_request_type == "page_state"
+        local should_adaptively_capture = response.status == "ok"
           and page_state_needs_capture(response)
+          and (
+            state.live_refresh_request_id ~= response.id
+            or state.live_refresh_request_type == "page_state"
+          )
 
         apply_serve_response_metadata(response)
         state.latest_applied_response_id = math.max(state.latest_applied_response_id, response.id)
@@ -2715,7 +2718,20 @@ function M.open(command)
         if response.status == "ok" and not has_payload and not has_hints and not has_hint_error then
           refresh_preview_footer(bufnr, valid_preview_geometry())
           if should_adaptively_capture then
-            schedule_adaptive_capture()
+            local newer_full_capture_in_flight = state.live_refresh_request_type == "capture"
+              and state.live_refresh_request_id ~= nil
+              and response.id ~= nil
+              and state.live_refresh_request_id > response.id
+            if
+              not newer_full_capture_in_flight
+              and state.live_refresh_request_id ~= nil
+              and state.live_refresh_request_id ~= response.id
+            then
+              cancel_in_flight_capture()
+            end
+            if not newer_full_capture_in_flight then
+              schedule_adaptive_capture()
+            end
           end
           return
         end

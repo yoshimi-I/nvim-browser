@@ -5064,6 +5064,8 @@ end
 assert(text_input_seen, "focused text input should emit a text_input JSONL request")
 assert(shifted_tab_seen, "modified key presses should emit modifiers in the key_press JSONL request")
 
+terminal.configure({ live_refresh = { enabled = true, interval_ms = 1500 } })
+_G.nvim_browser_quiet_live_timer = nvim_browser_latest_timer()
 terminal._test.apply_serve_response({
   id = 500,
   status = "ok",
@@ -5136,9 +5138,203 @@ assert(terminal.state().focused_element.value == "quiet metadata", "quiet metada
 assert(terminal.state().page_metrics.scroll_y == 80, "quiet metadata should update page metrics")
 assert(terminal.state().rendered_frame_geometry == quiet_geometry, "quiet metadata without payload should keep current frame geometry")
 assert(#terminal.state().element_hints == 1, "quiet metadata without payload should keep current hints")
+_G.nvim_browser_quiet_adaptive_timer = nvim_browser_latest_timer()
+assert(
+  _G.nvim_browser_quiet_adaptive_timer.starts[1].timeout == 100,
+  "changed quiet metadata without payload should schedule a debounced full-frame capture"
+)
+sent_requests = {}
+assert(terminal.input_text("quiet metadata again", { capture = false, resize = false }) == true, "second quiet input should send a quiet text request")
+_G.nvim_browser_second_quiet_request = last_request_of_type("text_input")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_second_quiet_request.id,
+  status = "ok",
+  url = "https://example.com/after-quiet",
+  title = "After Quiet Again",
+  page = {
+    scroll_x = 0,
+    scroll_y = 81,
+    viewport_width = 450,
+    viewport_height = 165,
+    document_width = 450,
+    document_height = 900,
+  },
+  focused = {
+    kind = "input",
+    label = "Search",
+    value = "quiet metadata again",
+    focusable = true,
+    submittable = true,
+  },
+}), "" })
+assert(vim.wait(200, function()
+  return terminal.state().current_title == "After Quiet Again"
+end), "second changed quiet metadata should apply browser metadata")
+_G.nvim_browser_second_quiet_adaptive_timer = nvim_browser_latest_timer()
+assert(
+  _G.nvim_browser_second_quiet_adaptive_timer ~= _G.nvim_browser_quiet_adaptive_timer,
+  "second changed quiet metadata should replace the previous adaptive capture debounce"
+)
+_G.nvim_browser_quiet_adaptive_timer.callback()
+vim.wait(50)
+assert(last_request_of_type("capture") == nil, "replaced quiet adaptive capture timers should not send duplicate captures")
+_G.nvim_browser_second_quiet_adaptive_timer.callback()
+assert(vim.wait(1000, function()
+  local capture = last_request_of_type("capture")
+  return capture ~= nil and terminal.state().live_refresh_request_id == capture.id
+end), "quiet metadata adaptive capture timer should send one tracked full-frame capture")
+terminal._test.clear_in_flight_capture()
+
+sent_requests = {}
+_G.nvim_browser_quiet_live_timer.callback()
+assert(vim.wait(1000, function()
+  _G.nvim_browser_quiet_page_state_id = terminal.state().live_refresh_request_id
+  return _G.nvim_browser_quiet_page_state_id ~= nil and last_request_of_type("page_state") ~= nil
+end), "test setup should leave a live page-state request in flight")
+_G.nvim_browser_quiet_race_timer_count = #fake_timers
+sent_requests = {}
+assert(terminal.input_text("quiet metadata race", { capture = false, resize = false }) == true, "quiet input should work while page-state is in flight")
+_G.nvim_browser_quiet_race_request = last_request_of_type("text_input")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_quiet_race_request.id,
+  status = "ok",
+  url = "https://example.com/after-quiet",
+  title = "After Quiet Race",
+  page = {
+    scroll_x = 0,
+    scroll_y = 81,
+    viewport_width = 450,
+    viewport_height = 165,
+    document_width = 450,
+    document_height = 900,
+  },
+  focused = {
+    kind = "input",
+    label = "Search",
+    value = "quiet metadata race",
+    focusable = true,
+    submittable = true,
+  },
+}), "" })
+assert(vim.wait(200, function()
+  return terminal.state().current_title == "After Quiet Race"
+end), "quiet metadata should apply even when page-state is in flight")
+assert(#fake_timers > _G.nvim_browser_quiet_race_timer_count, "changed quiet metadata should schedule capture even when page-state is in flight")
+_G.nvim_browser_quiet_race_adaptive_timer = nvim_browser_latest_timer()
+sent_requests = {}
+_G.nvim_browser_quiet_race_adaptive_timer.callback()
+assert(vim.wait(1000, function()
+  local capture = last_request_of_type("capture")
+  return capture ~= nil and terminal.state().live_refresh_request_id == capture.id
+end), "quiet metadata race adaptive capture timer should send one tracked full-frame capture")
+terminal._test.clear_in_flight_capture()
+
+sent_requests = {}
+assert(terminal.input_text("quiet metadata before capture", { capture = false, resize = false }) == true, "quiet input should send before a newer capture")
+_G.nvim_browser_quiet_before_capture_request = last_request_of_type("text_input")
+assert(terminal.refresh() == true, "test setup should start a newer full capture")
+_G.nvim_browser_newer_capture_request = last_request_of_type("capture")
+assert(
+  _G.nvim_browser_newer_capture_request.id > _G.nvim_browser_quiet_before_capture_request.id,
+  "test setup should make the in-flight capture newer than the quiet response"
+)
+_G.nvim_browser_newer_capture_timer_count = #fake_timers
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_quiet_before_capture_request.id,
+  status = "ok",
+  url = "https://example.com/after-quiet",
+  title = "After Newer Capture",
+  page = {
+    scroll_x = 0,
+    scroll_y = 82,
+    viewport_width = 450,
+    viewport_height = 165,
+    document_width = 450,
+    document_height = 900,
+  },
+  focused = {
+    kind = "input",
+    label = "Search",
+    value = "quiet metadata before capture",
+    focusable = true,
+    submittable = true,
+  },
+}), "" })
+assert(vim.wait(200, function()
+  return terminal.state().current_title == "After Newer Capture"
+end), "quiet metadata should apply while a newer full capture is in flight")
+assert(
+  terminal.state().live_refresh_request_id == _G.nvim_browser_newer_capture_request.id,
+  "quiet metadata should keep a newer in-flight full capture alive"
+)
+assert(#fake_timers == _G.nvim_browser_newer_capture_timer_count, "quiet metadata should not schedule another capture when a newer full capture is in flight")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_newer_capture_request.id,
+  status = "ok",
+  payload = "newer capture frame",
+  url = "https://example.com/after-quiet",
+  title = "After Newer Capture",
+  page = {
+    scroll_x = 0,
+    scroll_y = 82,
+    viewport_width = 450,
+    viewport_height = 165,
+    document_width = 450,
+    document_height = 900,
+  },
+  focused = {
+    kind = "input",
+    label = "Search",
+    value = "quiet metadata before capture",
+    focusable = true,
+    submittable = true,
+  },
+  runtime = {
+    protocol_version = 15,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = 50, rows = 11 },
+    viewport = { width = 450, height = 165, device_scale_factor = 1 },
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id == nil and terminal.state().rendered_frame_url == "https://example.com/after-quiet"
+end), "newer full capture should still be allowed to replace the frame")
+
+sent_requests = {}
+_G.nvim_browser_quiet_stable_timer_count = #fake_timers
+assert(terminal.input_text("same quiet metadata", { capture = false, resize = false }) == true, "stable quiet input should send a quiet text request")
+_G.nvim_browser_stable_quiet_request = last_request_of_type("text_input")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_stable_quiet_request.id,
+  status = "ok",
+  url = "https://example.com/after-quiet",
+  title = "After Newer Capture",
+  page = {
+    scroll_x = 0,
+    scroll_y = 82,
+    viewport_width = 450,
+    viewport_height = 165,
+    document_width = 450,
+    document_height = 900,
+  },
+  focused = {
+    kind = "input",
+    label = "Search",
+    value = "quiet metadata before capture",
+    focusable = true,
+    submittable = true,
+  },
+}), "" })
+assert(vim.wait(200, function()
+  return terminal.state().current_title == "After Newer Capture"
+end), "stable quiet metadata should still apply browser metadata")
+vim.wait(50)
+assert(#fake_timers == _G.nvim_browser_quiet_stable_timer_count, "unchanged quiet metadata without payload should not schedule adaptive capture")
 
 serve_stdout(nil, { vim.json.encode({
-  id = quiet_request.id + 1,
+  id = _G.nvim_browser_stable_quiet_request.id + 1,
   status = "ok",
   payload = "dom epoch baseline frame",
   url = "https://example.com/dom-epoch-baseline",
@@ -5173,7 +5369,7 @@ end), "test setup should apply a captured DOM epoch baseline with hints")
 _G.nvim_browser_dom_epoch_stale_geometry = terminal.state().rendered_frame_geometry
 vim.fn.setreg("b", "before-same-dom")
 terminal._test.apply_serve_response({
-  id = quiet_request.id + 2,
+  id = _G.nvim_browser_stable_quiet_request.id + 2,
   status = "ok",
   url = "https://example.com/dom-epoch-baseline",
   title = "DOM Epoch Baseline",
@@ -5197,6 +5393,11 @@ serve_stdout(nil, { vim.json.encode({
 assert(vim.wait(200, function()
   return terminal.state().dom_epoch == 11
 end), "quiet DOM epoch changes should update DOM metadata")
+_G.nvim_browser_quiet_dom_epoch_adaptive_timer = nvim_browser_latest_timer()
+assert(
+  _G.nvim_browser_quiet_dom_epoch_adaptive_timer ~= _G.nvim_browser_quiet_adaptive_timer,
+  "quiet DOM epoch changes without payload should schedule adaptive capture"
+)
 assert(#terminal.state().element_hints == 1, "quiet DOM epoch changes should leave stale hints visible until capture")
 vim.fn.setreg("b", "preserve-stale-dom")
 assert(terminal.yank_hint_url("a", "b") == false, "advanced DOM epoch should make old hint hrefs unavailable")
@@ -5204,6 +5405,12 @@ assert(vim.fn.getreg("b") == "preserve-stale-dom", "stale DOM hints should not m
 sent_requests = {}
 assert(terminal.click_hint("a") == false, "advanced DOM epoch should make old hint actions unavailable")
 assert(last_request_of_type("click_hint") == nil, "advanced DOM epoch should not send old backend hint ids")
+_G.nvim_browser_quiet_dom_epoch_adaptive_timer.callback()
+assert(vim.wait(1000, function()
+  local capture = last_request_of_type("capture")
+  return capture ~= nil and terminal.state().live_refresh_request_id == capture.id
+end), "quiet DOM epoch adaptive capture timer should send one tracked full-frame capture")
+terminal._test.clear_in_flight_capture()
 
 serve_stdout(nil, { vim.json.encode({
   id = _G.nvim_browser_stale_dom_request.id + 1,
