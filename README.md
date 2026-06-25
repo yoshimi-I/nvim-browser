@@ -281,6 +281,18 @@ cargo test
 for test in tests/lua/*_test.lua; do nvim --headless -u NONE -l "$test"; done
 ```
 
+Run the opt-in Neovim smoke test against real Chromium/CDP:
+
+```sh
+NVBROWSER_NVIM_E2E=1 nvim --headless -u NONE -l tests/lua/nvim_smoke_e2e_test.lua
+```
+
+The smoke opens a deterministic local HTML fixture through `:NBrowserOpen`,
+verifies a healthy ANSI frame through plugin state, and checks that
+`ZELLIJ=1` plus explicit Kitty graphics resolves to the Zellij-safe ANSI path.
+It is skipped unless `NVBROWSER_NVIM_E2E=1` is set, and it skips when a compatible
+`nvbrowser` binary or Chromium backend is unavailable.
+
 Try the backend:
 
 ```sh
