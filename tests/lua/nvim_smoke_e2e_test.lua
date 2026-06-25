@@ -212,7 +212,12 @@ local function common_ready(profile)
   if smoke_echo == nil or smoke_echo:find("nvim-browser smoke", 1, true) == nil then
     return false
   end
-  for _, line in ipairs({ "status: ok", "interaction: ok", "focus: ok", "input: ok", "submit: ok" }) do
+  for _, line in ipairs({ "status: ok", "interaction: ok", "input: ok", "submit: ok" }) do
+    if smoke_echo:find(line, 1, true) == nil then
+      return false
+    end
+  end
+  for _, line in ipairs({ "hints: ok", "cursor: ok", "hint input: ok" }) do
     if smoke_echo:find(line, 1, true) == nil then
       return false
     end
@@ -279,9 +284,23 @@ local function assert_common(profile, state, stderr_chunks)
   profile_assert(profile, frame_cells_line ~= nil, profile.name .. ": runtime should expose numeric frame cell geometry")
   profile_assert(profile, smoke_echo:find(frame_cells_line, 1, true), profile.name .. ": smoke report should show runtime frame cells")
   profile_assert(profile, smoke_echo:find("interaction: ok", 1, true), profile.name .. ": smoke report should show a completed interaction loop")
-  profile_assert(profile, smoke_echo:find("focus: ok", 1, true), profile.name .. ": smoke report should show focused input")
+  profile_assert(profile, smoke_echo:find("hints: ok", 1, true), profile.name .. ": smoke report should show hint discovery")
+  profile_assert(profile, smoke_echo:find("cursor: ok", 1, true), profile.name .. ": smoke report should show cursor placement")
+  profile_assert(profile, smoke_echo:find("hint input: ok", 1, true), profile.name .. ": smoke report should show hint-backed input")
   profile_assert(profile, smoke_echo:find("input: ok", 1, true), profile.name .. ": smoke report should show typed text")
   profile_assert(profile, smoke_echo:find("submit: ok", 1, true), profile.name .. ": smoke report should show submitted fixture state")
+  local smoke_input_hint = nil
+  for _, hint in ipairs(state.element_hints or {}) do
+    if (hint.kind == "input" or hint.kind == "textarea") and hint.label == "Smoke input" then
+      smoke_input_hint = hint
+      break
+    end
+  end
+  profile_assert(profile, smoke_input_hint ~= nil, profile.name .. ": smoke should expose the input hint")
+  profile_assert(profile, tonumber(smoke_input_hint.x) ~= nil, profile.name .. ": smoke input hint should expose x")
+  profile_assert(profile, tonumber(smoke_input_hint.y) ~= nil, profile.name .. ": smoke input hint should expose y")
+  profile_assert(profile, tonumber(smoke_input_hint.width) ~= nil, profile.name .. ": smoke input hint should expose width")
+  profile_assert(profile, tonumber(smoke_input_hint.height) ~= nil, profile.name .. ": smoke input hint should expose height")
 
   if profile.expect_reader then
     profile_assert(profile, smoke_echo:find("reader: ok", 1, true), profile.name .. ": smoke report should show ANSI fallback reader health")

@@ -713,6 +713,71 @@ local smoke_focused_input_ready
 local smoke_output_label
 local smoke_report
 local emit_smoke_report
+local find_smoke_input_hint
+local smoke_cursor_for_hint
+local smoke_place_cursor_on_hint
+
+find_smoke_input_hint = function()
+  for _, hint in ipairs(M.hints() or {}) do
+    if (hint.kind == "input" or hint.kind == "textarea") and hint.label == "Smoke input" then
+      return hint
+    end
+  end
+  return nil
+end
+
+smoke_cursor_for_hint = function(hint, geometry)
+  if type(hint) ~= "table" or type(geometry) ~= "table" then
+    return nil, "missing hint geometry"
+  end
+  local x = tonumber(hint.x)
+  local y = tonumber(hint.y)
+  local width = tonumber(hint.width)
+  local height = tonumber(hint.height)
+  local frame_width = tonumber(geometry.width)
+  local frame_height = tonumber(geometry.height)
+  local columns = tonumber(geometry.columns)
+  local rows = tonumber(geometry.rows)
+  if
+    x == nil
+    or y == nil
+    or width == nil
+    or height == nil
+    or frame_width == nil
+    or frame_height == nil
+    or columns == nil
+    or rows == nil
+  then
+    return nil, "incomplete hint geometry"
+  end
+  if width <= 0 or height <= 0 or frame_width <= 0 or frame_height <= 0 or columns <= 0 or rows <= 0 then
+    return nil, "invalid frame geometry"
+  end
+  local center_x = x + (width / 2)
+  local center_y = y + (height / 2)
+  local column = math.floor((center_x / frame_width) * columns + 0.5)
+  local row = math.floor((center_y / frame_height) * rows + 0.5)
+  column = math.min(columns, math.max(1, column))
+  row = math.min(rows, math.max(1, row))
+  return { row = row, column = column }, nil
+end
+
+smoke_place_cursor_on_hint = function(hint)
+  local terminal_state = terminal.state()
+  local cursor, reason = smoke_cursor_for_hint(hint, terminal_state.rendered_frame_geometry)
+  if cursor == nil then
+    return false, reason
+  end
+  local winid = terminal_state.winid
+  if winid == nil or not vim.api.nvim_win_is_valid(winid) then
+    return false, "preview window invalid"
+  end
+  local ok, err = pcall(vim.api.nvim_win_set_cursor, winid, { cursor.row, cursor.column - 1 })
+  if not ok then
+    return false, "cursor placement failed: " .. tostring(err)
+  end
+  return true, nil
+end
 
 function M.smoke(opts)
   opts = opts or {}
@@ -722,10 +787,14 @@ function M.smoke(opts)
   local deadline = clock.now() + timeout_ms
   local last_reason = nil
   local interaction_text = opts.interaction_text or "nvim-browser interaction"
-  local input_selector = "#nvim-browser-smoke-input"
   local stage = "render"
+  local initial_hints = nil
   local details = {
     interaction = false,
+    hints = false,
+    cursor = false,
+    point_click = false,
+    hint_input = false,
     focus = false,
     input = false,
     submit = false,
@@ -744,42 +813,67 @@ function M.smoke(opts)
     if stage == "render" then
       ready, reason = smoke_is_ready("nvim-browser smoke")
       if ready then
-        stage = "focus"
-        if not M.focus_selector(input_selector) then
-          fail("focus: request failed")
+        local input_hint = find_smoke_input_hint()
+        if input_hint == nil then
+          fail("hints: missing Smoke input hint")
           return
         end
+        initial_hints = terminal.state().element_hints
+        details.hints = true
+        local cursor_ok, cursor_reason = smoke_place_cursor_on_hint(input_hint)
+        if not cursor_ok then
+          fail("cursor: " .. tostring(cursor_reason))
+          return
+        end
+        details.cursor = true
+        if not M.click_here() then
+          fail("cursor click: request failed")
+          return
+        end
+        details.point_click = true
+        stage = "click_wait"
         vim.defer_fn(poll, interval_ms)
         return
       end
       reason = "render: " .. tostring(reason)
-    elseif stage == "focus" then
-      ready, reason = smoke_focused_input_ready("Smoke input")
-      if ready then
-        details.focus = true
-        stage = "input"
-        if not M.input_text(interaction_text) then
-          fail("input: request failed")
+    elseif stage == "click_wait" then
+      local terminal_state = terminal.state()
+      if terminal_state.pending_operation == nil then
+        if terminal_state.element_hints == initial_hints then
+          reason = "hints: waiting for fresh Smoke input hint"
+        else
+          ready = smoke_focused_input_ready("Smoke input")
+          if ready then
+            details.focus = true
+          end
+          stage = "input"
+          local input_hint = find_smoke_input_hint()
+          if input_hint == nil then
+            fail("hints: missing Smoke input hint")
+            return
+          end
+          local hint_identifier = input_hint.hint_label or input_hint.id
+          local typed = M.type_hint(hint_identifier, interaction_text, { submit = true })
+          if not typed then
+            fail("hint input: request failed")
+            return
+          end
+          details.input = true
+          details.hint_input = true
+          stage = "input_wait"
+          vim.defer_fn(poll, interval_ms)
           return
         end
-        details.input = true
-        stage = "input_wait"
-        vim.defer_fn(poll, interval_ms)
-        return
       end
-      reason = "focus: " .. tostring(reason)
+      reason = reason or "click: operation pending"
     elseif stage == "input_wait" then
       local terminal_state = terminal.state()
-      if terminal_state.pending_operation == nil
-        and terminal_state.dom_epoch ~= nil
-        and terminal_state.rendered_frame_dom_epoch ~= nil
-        and terminal_state.dom_epoch == terminal_state.rendered_frame_dom_epoch
-      then
+      if terminal_state.pending_operation == nil then
         stage = "submitted"
         vim.defer_fn(poll, interval_ms)
         return
       end
-      reason = "input: waiting for fresh hints"
+      reason = "input: operation pending"
     elseif stage == "submitted" then
       ready, reason = smoke_is_ready("nvim-browser smoke submitted: " .. interaction_text)
       if ready then
@@ -1261,6 +1355,18 @@ smoke_report = function(status, reason, details)
   end
   if details.interaction == true then
     table.insert(lines, "interaction: ok")
+  end
+  if details.hints == true then
+    table.insert(lines, "hints: ok")
+  end
+  if details.cursor == true then
+    table.insert(lines, "cursor: ok")
+  end
+  if details.point_click == true then
+    table.insert(lines, "point click: ok")
+  end
+  if details.hint_input == true then
+    table.insert(lines, "hint input: ok")
   end
   if details.focus == true then
     table.insert(lines, "focus: ok")

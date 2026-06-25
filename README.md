@@ -379,7 +379,9 @@ waits for the auto-opened Reader buffer and reports `reader: ok`; the Kitty
 Unicode profile verifies `terminal graphics: ok` and
 `kitty unicode payload: ok`. Both profiles report `frame cells:` from runtime
 metadata so viewport cell geometry stays visible alongside rendered frame
-pixels.
+pixels. The smoke also verifies that browser hints expose geometry, that the
+preview cursor can be placed over the input hint, that a cursor click can be
+sent from the preview, and that hinted input can submit the fixture.
 It is skipped unless `NVBROWSER_NVIM_E2E=1` is set, and it skips when a compatible
 `nvbrowser` binary or Chromium backend is unavailable.
 

@@ -1745,6 +1745,9 @@ _G.nvim_browser_original_terminal_focus_selector_for_smoke = terminal.focus_sele
 _G.nvim_browser_original_terminal_input_text_for_smoke = terminal.input_text
 _G.nvim_browser_original_terminal_submit_focused_for_smoke = terminal.submit_focused
 _G.nvim_browser_original_terminal_click_hint_for_smoke = terminal.click_hint
+_G.nvim_browser_original_terminal_click_here_for_smoke = terminal.click_here
+_G.nvim_browser_original_terminal_type_here_for_smoke = terminal.type_here
+_G.nvim_browser_original_terminal_type_hint_for_smoke = terminal.type_hint
 _G.nvim_browser_original_defer_fn_for_smoke = vim.defer_fn
 _G.nvim_browser_smoke_opened_command = nil
 _G.nvim_browser_smoke_fixture_url = vim.uri_from_fname(root .. "/data/html/smoke.html")
@@ -1754,6 +1757,12 @@ _G.nvim_browser_smoke_title = _G.nvim_browser_smoke_fixture_title
 _G.nvim_browser_smoke_focused = nil
 _G.nvim_browser_smoke_calls = {}
 _G.nvim_browser_smoke_reader_bufnr = nil
+_G.nvim_browser_smoke_winid = vim.api.nvim_get_current_win()
+_G.nvim_browser_smoke_preview_lines = {}
+for _ = 1, 25 do
+  table.insert(_G.nvim_browser_smoke_preview_lines, string.rep(" ", 100))
+end
+vim.api.nvim_buf_set_lines(0, 0, -1, false, _G.nvim_browser_smoke_preview_lines)
 terminal.open = function(command)
   _G.nvim_browser_smoke_opened_command = command
 end
@@ -1775,16 +1784,17 @@ terminal.state = function()
       cells = { columns = 80, rows = 20 },
       viewport = { width = 800, height = 400 },
     },
-    rendered_frame_geometry = { width = 80, height = 20 },
+    rendered_frame_geometry = { columns = 80, rows = 20, width = 800, height = 400 },
     rendered_frame_url = _G.nvim_browser_smoke_fixture_url,
     dom_epoch = 1,
     rendered_frame_dom_epoch = 1,
     frame_health = { stale = false, refresh_pending = false },
     focused_element = _G.nvim_browser_smoke_focused,
     reader_bufnr = _G.nvim_browser_smoke_reader_bufnr,
+    winid = _G.nvim_browser_smoke_winid,
     element_hints = {
-      { id = 1, kind = "input", label = "Smoke input", hint_label = "i" },
-      { id = 2, kind = "button", label = "Run smoke", hint_label = "s" },
+      { id = 1, kind = "input", label = "Smoke input", hint_label = "i", x = 120, y = 160, width = 240, height = 32 },
+      { id = 2, kind = "button", label = "Run smoke", hint_label = "s", x = 120, y = 220, width = 240, height = 32 },
     },
   }
 end
@@ -1797,6 +1807,44 @@ terminal.focus_selector = function(selector)
       value = "",
       submittable = true,
     }
+    return true
+  end
+  return false
+end
+terminal.click_here = function()
+  table.insert(_G.nvim_browser_smoke_calls, "click_here")
+  _G.nvim_browser_smoke_focused = {
+    kind = "input",
+    label = "Smoke input",
+    value = "",
+    submittable = true,
+  }
+  return true
+end
+terminal.type_here = function(text, opts)
+  table.insert(_G.nvim_browser_smoke_calls, "type_here:" .. tostring(text) .. ":" .. tostring(opts ~= nil and opts.submit == true))
+  if text == _G.nvim_browser_smoke_interaction_text and opts ~= nil and opts.submit == true then
+    _G.nvim_browser_smoke_focused = {
+      kind = "input",
+      label = "Smoke input",
+      value = text,
+      submittable = true,
+    }
+    _G.nvim_browser_smoke_title = "nvim-browser smoke submitted: " .. text
+    return true
+  end
+  return false
+end
+terminal.type_hint = function(id, text, opts)
+  table.insert(_G.nvim_browser_smoke_calls, "type_hint:" .. tostring(id) .. ":" .. tostring(text) .. ":" .. tostring(opts ~= nil and opts.submit == true))
+  if tostring(id) == "i" and text == _G.nvim_browser_smoke_interaction_text and opts ~= nil and opts.submit == true then
+    _G.nvim_browser_smoke_focused = {
+      kind = "input",
+      label = "Smoke input",
+      value = text,
+      submittable = true,
+    }
+    _G.nvim_browser_smoke_title = "nvim-browser smoke submitted: " .. text
     return true
   end
   return false
@@ -1847,12 +1895,15 @@ assert(browser.record_history(vim.uri_from_fname(root .. "/data/html/smoke.html"
 assert(browser.last_target() == _G.nvim_browser_last_target_before_smoke, "smoke metadata should not persist as last target")
 assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == true, "smoke should report a healthy interaction")
 assert(vim.deep_equal(_G.nvim_browser_smoke_calls, {
-  "focus:#nvim-browser-smoke-input",
-  "input:nvim-browser interaction",
-}), "smoke should focus, type, and submit through the browser runtime")
+  "click_here",
+  "type_hint:i:nvim-browser interaction:true",
+}), "smoke should type and submit through the browser hint overlay")
 _G.nvim_browser_smoke_report_lines = table.concat(_G.nvim_browser_smoke_report.lines, "\n")
 assert(_G.nvim_browser_smoke_report_lines:find("output: ANSI fallback", 1, true), "smoke report should include effective fallback output")
 assert(_G.nvim_browser_smoke_report_lines:find("interaction: ok", 1, true), "smoke report should include interaction status")
+assert(_G.nvim_browser_smoke_report_lines:find("hints: ok", 1, true), "smoke report should include hint discovery status")
+assert(_G.nvim_browser_smoke_report_lines:find("cursor: ok", 1, true), "smoke report should include cursor placement status")
+assert(_G.nvim_browser_smoke_report_lines:find("hint input: ok", 1, true), "smoke report should include hint-backed input status")
 assert(_G.nvim_browser_smoke_report_lines:find("focus: ok", 1, true), "smoke report should include focus status")
 assert(_G.nvim_browser_smoke_report_lines:find("input: ok", 1, true), "smoke report should include input status")
 assert(_G.nvim_browser_smoke_report_lines:find("submit: ok", 1, true), "smoke report should include submit status")
@@ -1882,16 +1933,17 @@ terminal.state = function()
       cells = { columns = 80, rows = 20 },
       viewport = { width = 800, height = 400 },
     },
-    rendered_frame_geometry = { width = 80, height = 20 },
+    rendered_frame_geometry = { columns = 80, rows = 20, width = 800, height = 400 },
     rendered_frame_url = _G.nvim_browser_smoke_fixture_url,
     dom_epoch = 1,
     rendered_frame_dom_epoch = 1,
     frame_health = { stale = false, refresh_pending = false },
     focused_element = _G.nvim_browser_smoke_focused,
     reader_bufnr = _G.nvim_browser_smoke_reader_bufnr,
+    winid = _G.nvim_browser_smoke_winid,
     element_hints = {
-      { id = 1, kind = "input", label = "Smoke input", hint_label = "i" },
-      { id = 2, kind = "button", label = "Run smoke", hint_label = "s" },
+      { id = 1, kind = "input", label = "Smoke input", hint_label = "i", x = 120, y = 160, width = 240, height = 32 },
+      { id = 2, kind = "button", label = "Run smoke", hint_label = "s", x = 120, y = 220, width = 240, height = 32 },
     },
   }
 end
@@ -1931,15 +1983,16 @@ terminal.state = function()
       cells = { columns = 80, rows = 20 },
       viewport = { width = 800, height = 400 },
     },
-    rendered_frame_geometry = { width = 80, height = 20 },
+    rendered_frame_geometry = { columns = 80, rows = 20, width = 800, height = 400 },
     rendered_frame_url = _G.nvim_browser_smoke_fixture_url,
     dom_epoch = 1,
     rendered_frame_dom_epoch = 1,
     frame_health = { stale = false, refresh_pending = false },
     focused_element = _G.nvim_browser_smoke_focused,
+    winid = _G.nvim_browser_smoke_winid,
     element_hints = {
-      { id = 1, kind = "input", label = "Smoke input", hint_label = "i" },
-      { id = 2, kind = "button", label = "Run smoke", hint_label = "s" },
+      { id = 1, kind = "input", label = "Smoke input", hint_label = "i", x = 120, y = 160, width = 240, height = 32 },
+      { id = 2, kind = "button", label = "Run smoke", hint_label = "s", x = 120, y = 220, width = 240, height = 32 },
     },
   }
 end
@@ -1975,13 +2028,18 @@ terminal.state = function()
       cells = { columns = 80, rows = 20 },
       viewport = { width = 800, height = 400 },
     },
-    rendered_frame_geometry = { width = 80, height = 20 },
+    rendered_frame_geometry = { columns = 80, rows = 20, width = 800, height = 400 },
     rendered_frame_url = _G.nvim_browser_smoke_fixture_url,
     dom_epoch = 1,
     rendered_frame_dom_epoch = 1,
     frame_health = { stale = false, refresh_pending = false },
     focused_element = _G.nvim_browser_smoke_focused,
     reader_bufnr = _G.nvim_browser_smoke_reader_bufnr,
+    winid = _G.nvim_browser_smoke_winid,
+    element_hints = {
+      { id = 1, kind = "input", label = "Smoke input", hint_label = "i", x = 120, y = 160, width = 240, height = 32 },
+      { id = 2, kind = "button", label = "Run smoke", hint_label = "s", x = 120, y = 220, width = 240, height = 32 },
+    },
   }
 end
 assert(browser.smoke({
@@ -2022,7 +2080,7 @@ terminal.state = function()
       cells = { columns = 80, rows = 20 },
       viewport = { width = 800, height = 400 },
     },
-    rendered_frame_geometry = { width = 80, height = 20 },
+    rendered_frame_geometry = { columns = 80, rows = 20, width = 800, height = 400 },
     rendered_frame_url = "https://previous.example/smoke-title",
     frame_health = { stale = false, refresh_pending = false },
   }
@@ -2062,20 +2120,28 @@ terminal.state = function()
       cells = { columns = 80, rows = 20 },
       viewport = { width = 800, height = 400 },
     },
-    rendered_frame_geometry = { width = 80, height = 20 },
+    rendered_frame_geometry = { columns = 80, rows = 20, width = 800, height = 400 },
     rendered_frame_url = _G.nvim_browser_smoke_fixture_url,
     dom_epoch = 1,
     rendered_frame_dom_epoch = 1,
     frame_health = { stale = false, refresh_pending = false },
     focused_element = _G.nvim_browser_smoke_focused,
+    winid = _G.nvim_browser_smoke_winid,
     element_hints = {
-      { id = 1, kind = "input", label = "Smoke input", hint_label = "i" },
-      { id = 2, kind = "button", label = "Run smoke", hint_label = "s" },
+      { id = 1, kind = "input", label = "Smoke input", hint_label = "i", x = 120, y = 160, width = 240, height = 32 },
+      { id = 2, kind = "button", label = "Run smoke", hint_label = "s", x = 120, y = 220, width = 240, height = 32 },
     },
   }
 end
-terminal.focus_selector = function()
+terminal.click_here = function()
   return true
+end
+terminal.type_hint = function(id, text, opts)
+  if tostring(id) == "i" and text == _G.nvim_browser_smoke_interaction_text and opts ~= nil and opts.submit == true then
+    _G.nvim_browser_smoke_title = "nvim-browser smoke submitted: " .. text
+    return true
+  end
+  return false
 end
 assert(browser.smoke({
   timeout_ms = 1,
@@ -2089,15 +2155,77 @@ assert(browser.smoke({
   on_report = function(report)
     _G.nvim_browser_smoke_report = report
   end,
-}) == true, "smoke should report focus metadata failures")
-assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == false, "smoke should fail if focus metadata never reaches the expected input")
-assert(table.concat(_G.nvim_browser_smoke_report.lines, "\n"):find("reason: focus", 1, true), "failed smoke should identify focus as the failed stage")
+}) == true, "smoke should not require focus metadata before typing through hints")
+assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == true, "smoke should submit through hints when focus metadata is absent")
+assert(table.concat(_G.nvim_browser_smoke_report.lines, "\n"):find("hint input: ok", 1, true), "smoke should report hint-backed input")
+
+_G.nvim_browser_smoke_report = nil
+_G.nvim_browser_smoke_fake_now = 0
+_G.nvim_browser_smoke_title = _G.nvim_browser_smoke_fixture_title
+_G.nvim_browser_smoke_focused = nil
+_G.nvim_browser_smoke_stale_hints = {
+  { id = 1, kind = "input", label = "Smoke input", hint_label = "i", x = 120, y = 160, width = 240, height = 32 },
+  { id = 2, kind = "button", label = "Run smoke", hint_label = "s", x = 120, y = 220, width = 240, height = 32 },
+}
+terminal.state = function()
+  return {
+    mode = "serve",
+    job_id = 1,
+    has_buffer = true,
+    current_url = _G.nvim_browser_smoke_fixture_url,
+    current_title = _G.nvim_browser_smoke_title,
+    status = "ok",
+    serve_output = "kitty-unicode",
+    runtime_metadata = {
+      output = "kitty-unicode",
+      renderer = "chromium-cdp",
+      cells = { columns = 80, rows = 20 },
+      viewport = { width = 800, height = 400 },
+    },
+    rendered_frame_geometry = { columns = 80, rows = 20, width = 800, height = 400 },
+    rendered_frame_url = _G.nvim_browser_smoke_fixture_url,
+    dom_epoch = 1,
+    rendered_frame_dom_epoch = 1,
+    frame_health = { stale = false, refresh_pending = false },
+    focused_element = _G.nvim_browser_smoke_focused,
+    winid = _G.nvim_browser_smoke_winid,
+    element_hints = _G.nvim_browser_smoke_stale_hints,
+  }
+end
+terminal.click_here = function()
+  return true
+end
+terminal.type_hint = function(id, text, opts)
+  if tostring(id) == "i" and text == _G.nvim_browser_smoke_interaction_text and opts ~= nil and opts.submit == true then
+    _G.nvim_browser_smoke_title = "nvim-browser smoke submitted: " .. text
+    return true
+  end
+  return false
+end
+assert(browser.smoke({
+  timeout_ms = 1,
+  interval_ms = 1,
+  clock = {
+    now = function()
+      _G.nvim_browser_smoke_fake_now = _G.nvim_browser_smoke_fake_now + 1
+      return _G.nvim_browser_smoke_fake_now
+    end,
+  },
+  on_report = function(report)
+    _G.nvim_browser_smoke_report = report
+  end,
+}) == true, "smoke should reject stale pre-click hints before hint-backed input")
+assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == false, "smoke should fail if click does not refresh hints")
+assert(table.concat(_G.nvim_browser_smoke_report.lines, "\n"):find("fresh Smoke input hint", 1, true), "failed smoke should explain stale hints")
 terminal.open = _G.nvim_browser_original_terminal_open_for_smoke
 terminal.state = _G.nvim_browser_original_terminal_state_for_smoke
 terminal.focus_selector = _G.nvim_browser_original_terminal_focus_selector_for_smoke
 terminal.input_text = _G.nvim_browser_original_terminal_input_text_for_smoke
 terminal.submit_focused = _G.nvim_browser_original_terminal_submit_focused_for_smoke
 terminal.click_hint = _G.nvim_browser_original_terminal_click_hint_for_smoke
+terminal.click_here = _G.nvim_browser_original_terminal_click_here_for_smoke
+terminal.type_here = _G.nvim_browser_original_terminal_type_here_for_smoke
+terminal.type_hint = _G.nvim_browser_original_terminal_type_hint_for_smoke
 vim.defer_fn = _G.nvim_browser_original_defer_fn_for_smoke
 
 browser.hints = function()
