@@ -785,6 +785,7 @@ function M.smoke(opts)
     hints = false,
     cursor = false,
     point_click = false,
+    activate = false,
     hint_input = false,
     focus = false,
     input = false,
@@ -843,14 +844,29 @@ function M.smoke(opts)
             fail("hints: missing Smoke input hint")
             return
           end
-          local hint_identifier = input_hint.hint_label or input_hint.id
-          local typed = M.type_hint(hint_identifier, interaction_text, { submit = true })
-          if not typed then
-            fail("hint input: request failed")
+          local activate_cursor_ok, activate_cursor_reason = smoke_place_cursor_on_hint(input_hint)
+          if not activate_cursor_ok then
+            fail("activate cursor: " .. tostring(activate_cursor_reason))
             return
           end
-          details.input = true
-          details.hint_input = true
+          local activated = M.activate_here({
+            point = input_hint,
+            submit = true,
+            input = function()
+              return interaction_text
+            end,
+          })
+          if activated then
+            details.activate = true
+          else
+            local hint_identifier = input_hint.hint_label or input_hint.id
+            local typed = M.type_hint(hint_identifier, interaction_text, { submit = true })
+            if not typed then
+              fail("hint input: request failed")
+              return
+            end
+            details.hint_input = true
+          end
           stage = "input_wait"
           vim.defer_fn(poll, interval_ms)
           return
@@ -868,6 +884,7 @@ function M.smoke(opts)
     elseif stage == "submitted" then
       ready, reason = smoke_is_ready("nvim-browser smoke submitted: " .. interaction_text)
       if ready then
+        details.input = true
         details.submit = true
         details.interaction = true
         local terminal_state = terminal.state()
@@ -1355,6 +1372,9 @@ smoke_report = function(status, reason, details)
   end
   if details.point_click == true then
     table.insert(lines, "point click: ok")
+  end
+  if details.activate == true then
+    table.insert(lines, "activate: ok")
   end
   if details.hint_input == true then
     table.insert(lines, "hint input: ok")
@@ -2865,10 +2885,73 @@ local function enabled_point_options(point)
   return enabled
 end
 
-function M.activate_here(opts)
-  opts = opts or {}
+local function activate_point(point, opts)
   local input = opts.input or vim.fn.input
   local select = opts.select or vim.ui.select
+
+  local kind = point_kind(point)
+  local x, y = point_xy(point)
+  local href = point.href
+  if href ~= nil and href ~= vim.NIL and href ~= "" and kind == "link" then
+    M.navigate(tostring(href))
+    return true
+  end
+
+  if kind == "checkbox" or kind == "radio" then
+    if x ~= nil and y ~= nil then
+      return terminal.toggle_point(x, y)
+    end
+    return false
+  end
+
+  if kind == "input" or kind == "text_area" or kind == "editable" then
+    local text = input("nvim-browser text: ")
+    if text ~= nil and text ~= "" and x ~= nil and y ~= nil then
+      return terminal.type_point(x, y, text, { submit = opts.submit == true })
+    end
+    return false
+  end
+
+  if kind == "select" then
+    local options = enabled_point_options(point)
+    if #options > 0 then
+      select(options, {
+        prompt = "nvim-browser option: ",
+        format_item = select_option_picker_label,
+      }, function(option)
+        if option == nil then
+          return
+        end
+        local choice = select_option_choice(option)
+        if choice ~= nil and x ~= nil and y ~= nil then
+          terminal.select_point(x, y, choice)
+        end
+      end)
+      return true
+    else
+      local choice = input("nvim-browser option: ")
+      if choice ~= nil and choice ~= "" and x ~= nil and y ~= nil then
+        return terminal.select_point(x, y, choice)
+      end
+    end
+    return false
+  end
+
+  if kind == "button" or point.clickable == true then
+    if x ~= nil and y ~= nil then
+      return terminal.click_point(x, y)
+    end
+    return false
+  end
+
+  return false
+end
+
+function M.activate_here(opts)
+  opts = opts or {}
+  if type(opts.point) == "table" then
+    return activate_point(opts.point, opts)
+  end
 
   return terminal.point_info_here(function(response)
     if response.status ~= "ok" or type(response.point) ~= "table" then
@@ -2876,59 +2959,7 @@ function M.activate_here(opts)
       return
     end
 
-    local point = response.point
-    local kind = point_kind(point)
-    local x, y = point_xy(point)
-    local href = point.href
-    if href ~= nil and href ~= vim.NIL and href ~= "" and kind == "link" then
-      M.navigate(tostring(href))
-      return
-    end
-
-    if kind == "checkbox" or kind == "radio" then
-      if x ~= nil and y ~= nil then
-        terminal.toggle_point(x, y)
-      end
-      return
-    end
-
-    if kind == "input" or kind == "text_area" or kind == "editable" then
-      local text = input("nvim-browser text: ")
-      if text ~= nil and text ~= "" and x ~= nil and y ~= nil then
-        terminal.type_point(x, y, text)
-      end
-      return
-    end
-
-    if kind == "select" then
-      local options = enabled_point_options(point)
-      if #options > 0 then
-        select(options, {
-          prompt = "nvim-browser option: ",
-          format_item = select_option_picker_label,
-        }, function(option)
-          if option == nil then
-            return
-          end
-          local choice = select_option_choice(option)
-          if choice ~= nil and x ~= nil and y ~= nil then
-            terminal.select_point(x, y, choice)
-          end
-        end)
-      else
-        local choice = input("nvim-browser option: ")
-        if choice ~= nil and choice ~= "" and x ~= nil and y ~= nil then
-          terminal.select_point(x, y, choice)
-        end
-      end
-      return
-    end
-
-    if kind == "button" or point.clickable == true then
-      if x ~= nil and y ~= nil then
-        terminal.click_point(x, y)
-      end
-    end
+    activate_point(response.point, opts)
   end)
 end
 

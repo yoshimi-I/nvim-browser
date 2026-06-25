@@ -217,7 +217,7 @@ local function common_ready(profile)
       return false
     end
   end
-  for _, line in ipairs({ "hints: ok", "cursor: ok", "hint input: ok" }) do
+  for _, line in ipairs({ "hints: ok", "cursor: ok", "activate: ok" }) do
     if smoke_echo:find(line, 1, true) == nil then
       return false
     end
@@ -286,7 +286,7 @@ local function assert_common(profile, state, stderr_chunks)
   profile_assert(profile, smoke_echo:find("interaction: ok", 1, true), profile.name .. ": smoke report should show a completed interaction loop")
   profile_assert(profile, smoke_echo:find("hints: ok", 1, true), profile.name .. ": smoke report should show hint discovery")
   profile_assert(profile, smoke_echo:find("cursor: ok", 1, true), profile.name .. ": smoke report should show cursor placement")
-  profile_assert(profile, smoke_echo:find("hint input: ok", 1, true), profile.name .. ": smoke report should show hint-backed input")
+  profile_assert(profile, smoke_echo:find("activate: ok", 1, true), profile.name .. ": smoke report should show smart cursor activation")
   profile_assert(profile, smoke_echo:find("input: ok", 1, true), profile.name .. ": smoke report should show typed text")
   profile_assert(profile, smoke_echo:find("submit: ok", 1, true), profile.name .. ": smoke report should show submitted fixture state")
   local smoke_input_hint = nil

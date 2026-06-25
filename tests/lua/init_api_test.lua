@@ -1968,6 +1968,31 @@ terminal.click_here = function()
   }
   return true
 end
+terminal.point_info_here = function(callback)
+  table.insert(_G.nvim_browser_smoke_calls, "point_info_here")
+  callback({
+    status = "ok",
+    point = { kind = "input", label = "Smoke input", x = 120, y = 160 },
+  })
+  return true
+end
+terminal.type_point = function(x, y, text, opts)
+  table.insert(
+    _G.nvim_browser_smoke_calls,
+    "type_point:" .. tostring(x) .. ":" .. tostring(y) .. ":" .. tostring(text) .. ":" .. tostring(opts ~= nil and opts.submit == true)
+  )
+  if tonumber(x) == 120 and tonumber(y) == 160 and text == _G.nvim_browser_smoke_interaction_text then
+    _G.nvim_browser_smoke_focused = {
+      kind = "input",
+      label = "Smoke input",
+      value = text,
+      submittable = true,
+    }
+    _G.nvim_browser_smoke_title = "nvim-browser smoke submitted: " .. text
+    return true
+  end
+  return false
+end
 terminal.type_here = function(text, opts)
   table.insert(_G.nvim_browser_smoke_calls, "type_here:" .. tostring(text) .. ":" .. tostring(opts ~= nil and opts.submit == true))
   if text == _G.nvim_browser_smoke_interaction_text and opts ~= nil and opts.submit == true then
@@ -2043,14 +2068,15 @@ assert(browser.last_target() == _G.nvim_browser_last_target_before_smoke, "smoke
 assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == true, "smoke should report a healthy interaction")
 assert(vim.deep_equal(_G.nvim_browser_smoke_calls, {
   "click_here",
-  "type_hint:i:nvim-browser interaction:true",
-}), "smoke should type and submit through the browser hint overlay")
+  "type_point:120:160:nvim-browser interaction:true",
+}), "smoke should type through smart cursor activation after cursor focus")
 _G.nvim_browser_smoke_report_lines = table.concat(_G.nvim_browser_smoke_report.lines, "\n")
 assert(_G.nvim_browser_smoke_report_lines:find("output: ANSI fallback", 1, true), "smoke report should include effective fallback output")
 assert(_G.nvim_browser_smoke_report_lines:find("interaction: ok", 1, true), "smoke report should include interaction status")
 assert(_G.nvim_browser_smoke_report_lines:find("hints: ok", 1, true), "smoke report should include hint discovery status")
 assert(_G.nvim_browser_smoke_report_lines:find("cursor: ok", 1, true), "smoke report should include cursor placement status")
-assert(_G.nvim_browser_smoke_report_lines:find("hint input: ok", 1, true), "smoke report should include hint-backed input status")
+assert(_G.nvim_browser_smoke_report_lines:find("activate: ok", 1, true), "smoke report should include smart activation status")
+assert(not _G.nvim_browser_smoke_report_lines:find("hint input: ok", 1, true), "focused smoke should prefer smart cursor activation over hint-backed input")
 assert(_G.nvim_browser_smoke_report_lines:find("focus: ok", 1, true), "smoke report should include focus status")
 assert(_G.nvim_browser_smoke_report_lines:find("input: ok", 1, true), "smoke report should include input status")
 assert(_G.nvim_browser_smoke_report_lines:find("submit: ok", 1, true), "smoke report should include submit status")
@@ -2304,9 +2330,9 @@ assert(browser.smoke({
   on_report = function(report)
     _G.nvim_browser_smoke_report = report
   end,
-}) == true, "smoke should not require focus metadata before typing through hints")
-assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == true, "smoke should submit through hints when focus metadata is absent")
-assert(table.concat(_G.nvim_browser_smoke_report.lines, "\n"):find("hint input: ok", 1, true), "smoke should report hint-backed input")
+}) == true, "smoke should not require focus metadata before smart activation")
+assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == true, "smoke should submit through smart activation when focus metadata is absent")
+assert(table.concat(_G.nvim_browser_smoke_report.lines, "\n"):find("activate: ok", 1, true), "smoke should report smart activation")
 
 _G.nvim_browser_smoke_report = nil
 _G.nvim_browser_smoke_fake_now = 0
@@ -2947,6 +2973,15 @@ assert(browser.activate_here({
   end,
 }) == true, "activate_here should inspect input points")
 assert(_G.nvim_browser_activate_calls[#_G.nvim_browser_activate_calls] == "type:14:24:query", "activate_here should type into text inputs at the inspected point")
+
+_G.nvim_browser_activate_point = { kind = "input", label = "Search", x = 14, y = 24 }
+assert(browser.activate_here({
+  submit = true,
+  input = function()
+    return "submitted"
+  end,
+}) == true, "activate_here should inspect submit input points")
+assert(_G.nvim_browser_activate_calls[#_G.nvim_browser_activate_calls] == "type:14:24:submitted", "activate_here should type submit input text at the inspected point")
 
 _G.nvim_browser_before_legacy_input_activate_calls = #_G.nvim_browser_activate_calls
 _G.nvim_browser_activate_point = { tag = "input", label = "Legacy checkbox", x = 15, y = 25 }
