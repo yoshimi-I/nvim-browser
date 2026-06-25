@@ -27,7 +27,7 @@ use nvbrowser_core::{
 };
 use serde::{Deserialize, Serialize};
 
-const SERVE_PROTOCOL_VERSION: u32 = 24;
+const SERVE_PROTOCOL_VERSION: u32 = 25;
 
 #[derive(Debug, Parser)]
 #[command(name = "nvbrowser")]
@@ -533,6 +533,8 @@ struct ServeResponse {
     dom_epoch: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    display_url: Option<String>,
     title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     page: Option<PageMetrics>,
@@ -771,10 +773,12 @@ fn markdown_base_directory(path: &Path) -> Option<PathBuf> {
 #[derive(Debug)]
 struct MarkdownPreviewFile {
     file: tempfile::NamedTempFile,
+    source_url: String,
 }
 
 impl MarkdownPreviewFile {
     fn create(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let source_url = path_to_file_url(absolute_or_existing_path(path));
         let html = render_markdown_file(path)?;
         let stem = path
             .file_stem()
@@ -789,7 +793,7 @@ impl MarkdownPreviewFile {
             .tempfile()?;
         file.write_all(html.as_bytes())?;
         file.flush()?;
-        Ok(Self { file })
+        Ok(Self { file, source_url })
     }
 
     fn path(&self) -> &Path {
@@ -799,16 +803,22 @@ impl MarkdownPreviewFile {
     fn url(&self) -> String {
         path_to_file_url(self.path())
     }
+
+    fn source_url(&self) -> &str {
+        &self.source_url
+    }
 }
 
 #[derive(Debug)]
 struct ImagePreviewFile {
     file: tempfile::NamedTempFile,
+    source_url: String,
 }
 
 impl ImagePreviewFile {
     fn create(path: &Path, fit: ImageFit) -> Result<Self, Box<dyn std::error::Error>> {
         let image_path = absolute_or_existing_path(path);
+        let source_url = path_to_file_url(&image_path);
         let html = render_image_preview_document(&image_path, fit);
         let stem = path
             .file_stem()
@@ -823,7 +833,7 @@ impl ImagePreviewFile {
             .tempfile()?;
         file.write_all(html.as_bytes())?;
         file.flush()?;
-        Ok(Self { file })
+        Ok(Self { file, source_url })
     }
 
     fn path(&self) -> &Path {
@@ -832,6 +842,10 @@ impl ImagePreviewFile {
 
     fn url(&self) -> String {
         path_to_file_url(self.path())
+    }
+
+    fn source_url(&self) -> &str {
+        &self.source_url
     }
 }
 
@@ -1002,6 +1016,8 @@ struct ServeRuntime<R: Renderer> {
     _image_preview: Option<ImagePreviewFile>,
     _dynamic_markdown_previews: Vec<MarkdownPreviewFile>,
     _dynamic_image_previews: Vec<ImagePreviewFile>,
+    display_url: Option<String>,
+    display_browser_url: Option<String>,
     pending_downloads: Vec<DownloadInfo>,
     pending_dialogs: Vec<DialogEvent>,
 }
@@ -1025,6 +1041,16 @@ struct CapturePayload {
 
 impl<R: Renderer> ServeRuntime<R> {
     fn new(renderer: R, options: ServeOptions) -> Self {
+        let display_url = options
+            .markdown_preview
+            .as_ref()
+            .map(|preview| preview.source_url().to_string())
+            .or_else(|| {
+                options
+                    .image_preview
+                    .as_ref()
+                    .map(|preview| preview.source_url().to_string())
+            });
         Self {
             renderer,
             session: BrowserSession::new(SessionId::new(1), options.viewport),
@@ -1035,6 +1061,8 @@ impl<R: Renderer> ServeRuntime<R> {
             _image_preview: options.image_preview,
             _dynamic_markdown_previews: Vec::new(),
             _dynamic_image_previews: Vec::new(),
+            display_url,
+            display_browser_url: options.initial_url.clone(),
             pending_downloads: Vec::new(),
             pending_dialogs: Vec::new(),
         }
@@ -1043,90 +1071,14 @@ impl<R: Renderer> ServeRuntime<R> {
     fn handle(&mut self, request: ServeRequest) -> ServeResponse {
         let id = request.id();
         match self.try_handle(request) {
-            Ok(capture) => {
-                let (
-                    payload,
-                    dom_epoch,
-                    page,
-                    focused,
-                    text,
-                    selection,
-                    hints,
-                    hint_error,
-                    found,
-                    match_count,
-                    download,
-                    downloads,
-                    dialog,
-                    dialogs,
-                ) = capture
-                    .map(|capture| {
-                        (
-                            capture.payload,
-                            capture.dom_epoch,
-                            capture.page,
-                            capture.focused,
-                            capture.text,
-                            capture.selection,
-                            capture.hints,
-                            capture.hint_error,
-                            capture.found,
-                            capture.match_count,
-                            capture.download,
-                            capture.downloads,
-                            capture.dialog,
-                            capture.dialogs,
-                        )
-                    })
-                    .unwrap_or((
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        Vec::new(),
-                        None,
-                        None,
-                        None,
-                        None,
-                        Vec::new(),
-                        None,
-                        Vec::new(),
-                    ));
-                let download = download.or_else(|| downloads.last().cloned());
-                let dialog = dialog.or_else(|| dialogs.last().cloned());
-                let history = self.browser_history();
-                ServeResponse {
-                    id,
-                    status: ServeStatus::Ok,
-                    runtime: Some(self.runtime_info()),
-                    payload,
-                    dom_epoch,
-                    url: self.session.active_page().url().map(str::to_string),
-                    title: self.session.active_page().title().map(str::to_string),
-                    page,
-                    history,
-                    focused,
-                    text,
-                    selection,
-                    hints,
-                    hint_error,
-                    found,
-                    match_count,
-                    download: download.map(ServeDownloadInfo::from),
-                    downloads: downloads.into_iter().map(ServeDownloadInfo::from).collect(),
-                    dialog: dialog.map(ServeDialogInfo::from),
-                    dialogs: dialogs.into_iter().map(ServeDialogInfo::from).collect(),
-                    error: None,
-                }
-            }
+            Ok(capture) => self.response_from_capture(id, capture),
             Err(error) => ServeResponse {
                 id,
                 status: ServeStatus::Error,
                 runtime: Some(self.runtime_info()),
                 payload: None,
                 url: self.session.active_page().url().map(str::to_string),
+                display_url: self.display_url.clone(),
                 title: self.session.active_page().title().map(str::to_string),
                 dom_epoch: None,
                 page: None,
@@ -1176,6 +1128,16 @@ impl<R: Renderer> ServeRuntime<R> {
             .flatten()
     }
 
+    fn clear_display_url_if_browser_url_changed(&mut self) {
+        let Some(display_browser_url) = self.display_browser_url.as_deref() else {
+            return;
+        };
+        if self.session.active_page().url() != Some(display_browser_url) {
+            self.display_url = None;
+            self.display_browser_url = None;
+        }
+    }
+
     fn ensure_hint_dom_epoch_current(
         &mut self,
         expected: Option<u64>,
@@ -1197,6 +1159,106 @@ impl<R: Renderer> ServeRuntime<R> {
         .into())
     }
 
+    fn navigate_initial_target(
+        &mut self,
+        id: u64,
+        url: String,
+    ) -> Result<ServeResponse, Box<dyn std::error::Error>> {
+        let navigation = self.renderer.navigate(NavigateRequest::new(
+            self.session.id(),
+            self.session.active_page_id(),
+            url,
+        ))?;
+        if self.display_url.is_some() {
+            self.display_browser_url = Some(navigation.url.clone());
+        }
+        self.session
+            .navigate_active_page_with_title(navigation.url, navigation.title);
+        self.session.finish_active_page_load();
+        let capture = self.capture_payload(true)?;
+        Ok(self.response_from_capture(id, Some(capture)))
+    }
+
+    fn response_from_capture(&mut self, id: u64, capture: Option<CapturePayload>) -> ServeResponse {
+        let (
+            payload,
+            dom_epoch,
+            page,
+            focused,
+            text,
+            selection,
+            hints,
+            hint_error,
+            found,
+            match_count,
+            download,
+            downloads,
+            dialog,
+            dialogs,
+        ) = capture
+            .map(|capture| {
+                (
+                    capture.payload,
+                    capture.dom_epoch,
+                    capture.page,
+                    capture.focused,
+                    capture.text,
+                    capture.selection,
+                    capture.hints,
+                    capture.hint_error,
+                    capture.found,
+                    capture.match_count,
+                    capture.download,
+                    capture.downloads,
+                    capture.dialog,
+                    capture.dialogs,
+                )
+            })
+            .unwrap_or((
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Vec::new(),
+                None,
+                None,
+                None,
+                None,
+                Vec::new(),
+                None,
+                Vec::new(),
+            ));
+        let download = download.or_else(|| downloads.last().cloned());
+        let dialog = dialog.or_else(|| dialogs.last().cloned());
+        let history = self.browser_history();
+        ServeResponse {
+            id,
+            status: ServeStatus::Ok,
+            runtime: Some(self.runtime_info()),
+            payload,
+            dom_epoch,
+            url: self.session.active_page().url().map(str::to_string),
+            display_url: self.display_url.clone(),
+            title: self.session.active_page().title().map(str::to_string),
+            page,
+            history,
+            focused,
+            text,
+            selection,
+            hints,
+            hint_error,
+            found,
+            match_count,
+            download: download.map(ServeDownloadInfo::from),
+            downloads: downloads.into_iter().map(ServeDownloadInfo::from).collect(),
+            dialog: dialog.map(ServeDialogInfo::from),
+            dialogs: dialogs.into_iter().map(ServeDialogInfo::from).collect(),
+            error: None,
+        }
+    }
+
     fn try_handle(
         &mut self,
         request: ServeRequest,
@@ -1208,6 +1270,8 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.active_page_id(),
                     url,
                 ))?;
+                self.display_url = None;
+                self.display_browser_url = None;
                 self.session
                     .navigate_active_page_with_title(navigation.url, navigation.title);
                 self.session.finish_active_page_load();
@@ -1215,6 +1279,7 @@ impl<R: Renderer> ServeRuntime<R> {
             }
             ServeRequest::NavigateImage { path, fit, .. } => {
                 let preview = ImagePreviewFile::create(&path, fit.unwrap_or(ImageFit::Original))?;
+                let display_url = preview.source_url().to_string();
                 let url = preview.url();
                 let navigation = self.renderer.navigate(NavigateRequest::new(
                     self.session.id(),
@@ -1222,6 +1287,8 @@ impl<R: Renderer> ServeRuntime<R> {
                     url,
                 ))?;
                 self._dynamic_image_previews.push(preview);
+                self.display_url = Some(display_url);
+                self.display_browser_url = Some(navigation.url.clone());
                 self.session
                     .navigate_active_page_with_title(navigation.url, navigation.title);
                 self.session.finish_active_page_load();
@@ -1229,6 +1296,7 @@ impl<R: Renderer> ServeRuntime<R> {
             }
             ServeRequest::NavigateMarkdown { path, .. } => {
                 let preview = MarkdownPreviewFile::create(&path)?;
+                let display_url = preview.source_url().to_string();
                 let url = preview.url();
                 let navigation = self.renderer.navigate(NavigateRequest::new(
                     self.session.id(),
@@ -1236,6 +1304,8 @@ impl<R: Renderer> ServeRuntime<R> {
                     url,
                 ))?;
                 self._dynamic_markdown_previews.push(preview);
+                self.display_url = Some(display_url);
+                self.display_browser_url = Some(navigation.url.clone());
                 self.session
                     .navigate_active_page_with_title(navigation.url, navigation.title);
                 self.session.finish_active_page_load();
@@ -1277,6 +1347,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.session
                     .navigate_active_page_with_title(reload.url, reload.title);
                 self.session.finish_active_page_load();
+                self.clear_display_url_if_browser_url_changed();
                 self.capture_payload(true).map(Some)
             }
             ServeRequest::Back { .. } => {
@@ -1287,6 +1358,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.session
                     .navigate_active_page_with_title(navigation.url, navigation.title);
                 self.session.finish_active_page_load();
+                self.clear_display_url_if_browser_url_changed();
                 self.capture_payload(true).map(Some)
             }
             ServeRequest::Forward { .. } => {
@@ -1297,6 +1369,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.session
                     .navigate_active_page_with_title(navigation.url, navigation.title);
                 self.session.finish_active_page_load();
+                self.clear_display_url_if_browser_url_changed();
                 self.capture_payload(true).map(Some)
             }
             ServeRequest::TextInput { text, capture, .. } => {
@@ -1706,6 +1779,7 @@ impl<R: Renderer> ServeRuntime<R> {
             None
         };
         let payload = frame_to_payload(frame, self.output, self.columns, Some(self.rows))?;
+        self.clear_display_url_if_browser_url_changed();
         Ok(CapturePayload {
             payload: Some(payload),
             dom_epoch,
@@ -1734,6 +1808,7 @@ impl<R: Renderer> ServeRuntime<R> {
         ))? {
             self.session
                 .navigate_active_page_with_title(metadata.url, metadata.title);
+            self.clear_display_url_if_browser_url_changed();
         }
         let page = self.renderer.page_metrics(PageMetricsRequest::new(
             self.session.id(),
@@ -1797,6 +1872,7 @@ impl<R: Renderer> ServeRuntime<R> {
         self.session
             .navigate_active_page_with_title(settled.url, settled.title);
         self.session.finish_active_page_load();
+        self.clear_display_url_if_browser_url_changed();
         Ok(())
     }
 }
@@ -1940,7 +2016,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
         writeln!(
             writer,
             "{}",
-            encode_serve_response(&runtime.handle(ServeRequest::Navigate { id: 0, url }))
+            encode_serve_response(&runtime.navigate_initial_target(0, url)?)
         )?;
         writer.flush()?;
     }
@@ -1963,6 +2039,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         payload: None,
                         dom_epoch: None,
                         url: None,
+                        display_url: None,
                         title: None,
                         page: None,
                         history: None,
@@ -2377,6 +2454,7 @@ mod tests {
         fail_hints: bool,
         fail_focus_hint: bool,
         fail_focused_element: bool,
+        fail_navigation: bool,
         operations: Vec<&'static str>,
         history: Vec<String>,
         history_index: Option<usize>,
@@ -2431,6 +2509,7 @@ mod tests {
                 fail_hints: false,
                 fail_focus_hint: false,
                 fail_focused_element: false,
+                fail_navigation: false,
                 operations: Vec::new(),
                 history: Vec::new(),
                 history_index: None,
@@ -2455,6 +2534,12 @@ mod tests {
             &mut self,
             request: NavigateRequest,
         ) -> Result<NavigationResult, RendererError> {
+            if self.fail_navigation {
+                return Err(RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "navigation failed",
+                ));
+            }
             let url = self.final_navigation_url.clone().unwrap_or(request.url);
             if let Some(index) = self.history_index {
                 self.history.truncate(index + 1);
@@ -3287,6 +3372,7 @@ mod tests {
         let directory = tempfile::tempdir().expect("tempdir should be created");
         let image_path = directory.path().join("pixel.png");
         std::fs::write(&image_path, tiny_png()).expect("image fixture should be written");
+        let expected_display_url = path_to_file_url(absolute_or_existing_path(&image_path));
         let mut runtime = ServeRuntime::new(
             FakeRenderer::new(),
             ServeOptions {
@@ -3314,6 +3400,11 @@ mod tests {
         let navigated_url = runtime.renderer.url.expect("renderer should navigate");
         assert!(navigated_url.starts_with("file://"));
         assert!(navigated_url.contains("nvbrowser-image-pixel-"));
+        assert_eq!(response.url.as_deref(), Some(navigated_url.as_str()));
+        assert_eq!(
+            response.display_url.as_deref(),
+            Some(expected_display_url.as_str())
+        );
         assert_eq!(runtime._dynamic_image_previews.len(), 1);
     }
 
@@ -3323,6 +3414,7 @@ mod tests {
         let markdown_path = directory.path().join("README.md");
         std::fs::write(&markdown_path, "# Preview\n\nHello **browser**.")
             .expect("markdown fixture should be written");
+        let expected_display_url = path_to_file_url(absolute_or_existing_path(&markdown_path));
         let mut runtime = ServeRuntime::new(
             FakeRenderer::new(),
             ServeOptions {
@@ -3349,7 +3441,150 @@ mod tests {
         let navigated_url = runtime.renderer.url.expect("renderer should navigate");
         assert!(navigated_url.starts_with("file://"));
         assert!(navigated_url.contains("nvbrowser-README-"));
+        assert_eq!(response.url.as_deref(), Some(navigated_url.as_str()));
+        assert_eq!(
+            response.display_url.as_deref(),
+            Some(expected_display_url.as_str())
+        );
         assert_eq!(runtime._dynamic_markdown_previews.len(), 1);
+    }
+
+    #[test]
+    fn serve_runtime_initial_markdown_wrapper_preserves_display_url() {
+        let directory = tempfile::tempdir().expect("tempdir should be created");
+        let markdown_path = directory.path().join("README.md");
+        std::fs::write(&markdown_path, "# Preview").expect("markdown fixture should be written");
+        let expected_display_url = path_to_file_url(absolute_or_existing_path(&markdown_path));
+        let preview =
+            MarkdownPreviewFile::create(&markdown_path).expect("preview should be created");
+        let initial_url = preview.url();
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: Some(initial_url.clone()),
+                markdown_preview: Some(preview),
+                image_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        let response = runtime
+            .navigate_initial_target(0, initial_url)
+            .expect("initial wrapper navigation should succeed");
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert_eq!(
+            response.display_url.as_deref(),
+            Some(expected_display_url.as_str())
+        );
+        assert!(
+            response
+                .url
+                .as_deref()
+                .is_some_and(|url| url.contains("nvbrowser-README-")),
+            "initial response should keep the Chromium wrapper URL"
+        );
+    }
+
+    #[test]
+    fn serve_runtime_preserves_wrapper_display_url_when_normal_navigation_fails() {
+        let directory = tempfile::tempdir().expect("tempdir should be created");
+        let markdown_path = directory.path().join("README.md");
+        std::fs::write(&markdown_path, "# Preview").expect("markdown fixture should be written");
+        let expected_display_url = path_to_file_url(absolute_or_existing_path(&markdown_path));
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                image_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        let wrapper_response = runtime.handle(ServeRequest::NavigateMarkdown {
+            id: 8,
+            path: markdown_path,
+        });
+        assert_eq!(wrapper_response.status, ServeStatus::Ok);
+        let wrapper_url = wrapper_response
+            .url
+            .clone()
+            .expect("wrapper response should expose browser URL");
+        runtime.renderer.fail_navigation = true;
+
+        let failed_response = runtime.handle(ServeRequest::Navigate {
+            id: 9,
+            url: "https://example.invalid".to_string(),
+        });
+
+        assert_eq!(failed_response.status, ServeStatus::Error);
+        assert_eq!(failed_response.url.as_deref(), Some(wrapper_url.as_str()));
+        assert_eq!(
+            failed_response.display_url.as_deref(),
+            Some(expected_display_url.as_str())
+        );
+    }
+
+    #[test]
+    fn serve_runtime_clears_wrapper_display_url_after_interaction_reaches_new_url() {
+        let directory = tempfile::tempdir().expect("tempdir should be created");
+        let markdown_path = directory.path().join("README.md");
+        std::fs::write(&markdown_path, "# Preview").expect("markdown fixture should be written");
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                image_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        let wrapper_response = runtime.handle(ServeRequest::NavigateMarkdown {
+            id: 8,
+            path: markdown_path,
+        });
+        assert_eq!(wrapper_response.status, ServeStatus::Ok);
+        assert!(
+            wrapper_response.display_url.is_some(),
+            "wrapper response should expose source display URL"
+        );
+        runtime.renderer.settled_url = Some("https://example.com/after-click".to_string());
+
+        let settled_response = runtime.handle(ServeRequest::TextInput {
+            id: 9,
+            text: "go".to_string(),
+            capture: false,
+        });
+
+        assert_eq!(settled_response.status, ServeStatus::Ok);
+        assert_eq!(
+            settled_response.url.as_deref(),
+            Some("https://example.com/after-click")
+        );
+        assert_eq!(settled_response.display_url, None);
     }
 
     #[test]
@@ -3653,6 +3888,7 @@ mod tests {
             payload: Some("frame".to_string()),
             dom_epoch: None,
             url: None,
+            display_url: None,
             title: None,
             page: None,
             history: None,
@@ -3686,6 +3922,7 @@ mod tests {
             payload: Some("frame".to_string()),
             dom_epoch: None,
             url: Some("https://example.com".to_string()),
+            display_url: None,
             title: Some("Example Domain".to_string()),
             page: None,
             history: None,
@@ -3725,6 +3962,40 @@ mod tests {
     }
 
     #[test]
+    fn serve_response_encodes_display_url_when_present() {
+        let response = ServeResponse {
+            id: 9,
+            status: ServeStatus::Ok,
+            runtime: None,
+            payload: Some("frame".to_string()),
+            dom_epoch: None,
+            url: Some("file:///tmp/nvbrowser-README-wrapper.html".to_string()),
+            display_url: Some("file:///tmp/README.md".to_string()),
+            title: Some("README".to_string()),
+            page: None,
+            history: None,
+
+            focused: None,
+            text: None,
+            selection: None,
+            hints: Vec::new(),
+            hint_error: None,
+            found: None,
+            match_count: None,
+            download: None,
+            downloads: Vec::new(),
+            dialog: None,
+            dialogs: Vec::new(),
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r#"{"id":9,"status":"ok","payload":"frame","url":"file:///tmp/nvbrowser-README-wrapper.html","display_url":"file:///tmp/README.md","title":"README"}"#
+        );
+    }
+
+    #[test]
     fn serve_response_encodes_find_result_when_present() {
         let response = ServeResponse {
             id: 12,
@@ -3733,6 +4004,7 @@ mod tests {
             payload: Some("frame".to_string()),
             dom_epoch: None,
             url: Some("https://example.com".to_string()),
+            display_url: None,
             title: Some("Example".to_string()),
             page: None,
             history: None,
@@ -3766,6 +4038,7 @@ mod tests {
             payload: None,
             dom_epoch: Some(77),
             url: Some("https://example.com".to_string()),
+            display_url: None,
             title: Some("Example".to_string()),
             page: None,
             history: None,
@@ -3799,6 +4072,7 @@ mod tests {
             payload: Some("frame".to_string()),
             dom_epoch: None,
             url: Some("https://example.com".to_string()),
+            display_url: None,
             title: Some("Example".to_string()),
             page: None,
             history: None,
@@ -3838,6 +4112,7 @@ mod tests {
             payload: Some("frame".to_string()),
             dom_epoch: None,
             url: Some("https://example.com".to_string()),
+            display_url: None,
             title: Some("Example".to_string()),
             page: None,
             history: None,
@@ -3879,6 +4154,7 @@ mod tests {
             payload: Some("frame".to_string()),
             dom_epoch: None,
             url: Some("https://example.com".to_string()),
+            display_url: None,
             title: Some("Example".to_string()),
             page: Some(PageMetrics {
                 scroll_x: 0.0,
@@ -3918,6 +4194,7 @@ mod tests {
             payload: None,
             dom_epoch: None,
             url: Some("https://example.com".to_string()),
+            display_url: None,
             title: Some("Example".to_string()),
             page: None,
             history: Some(BrowserHistoryAvailability {
@@ -3953,6 +4230,7 @@ mod tests {
             payload: Some("frame".to_string()),
             dom_epoch: None,
             url: Some("https://example.com".to_string()),
+            display_url: None,
             title: Some("Example".to_string()),
             page: None,
             history: None,
@@ -3993,6 +4271,7 @@ mod tests {
             payload: Some("frame".to_string()),
             dom_epoch: None,
             url: Some("https://example.com".to_string()),
+            display_url: None,
             title: Some("Example".to_string()),
             page: None,
             history: None,
@@ -4026,6 +4305,7 @@ mod tests {
             payload: None,
             dom_epoch: None,
             url: Some("https://example.com".to_string()),
+            display_url: None,
             title: Some("Example".to_string()),
             page: None,
             history: None,
@@ -4066,6 +4346,7 @@ mod tests {
             payload: None,
             dom_epoch: None,
             url: Some("https://example.com".to_string()),
+            display_url: None,
             title: Some("Example".to_string()),
             page: None,
             history: None,
@@ -4113,6 +4394,7 @@ mod tests {
             payload: Some("frame".to_string()),
             dom_epoch: None,
             url: Some("https://example.com".to_string()),
+            display_url: None,
             title: Some("Example".to_string()),
             page: None,
             history: None,
@@ -4133,7 +4415,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":24,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":25,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 

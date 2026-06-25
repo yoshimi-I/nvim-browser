@@ -409,7 +409,7 @@ fn doctor_outputs_backend_json_without_launching_chrome() {
     );
     assert_eq!(json["backend"]["user_data_dir"], "/tmp/nvbrowser-profile");
     assert_eq!(
-        json["protocol"]["serve"], 24,
+        json["protocol"]["serve"], 25,
         "doctor JSON should expose the serve protocol version"
     );
 }
@@ -2419,6 +2419,17 @@ graph TD
     assert_eq!(
         initial["status"], "ok",
         "Mermaid Markdown should render through the real Chromium serve pipeline; response={initial:?}"
+    );
+    assert_eq!(
+        initial["display_url"],
+        file_url(&markdown_path),
+        "initial Markdown wrapper response should expose the source file as display_url; response={initial:?}"
+    );
+    assert!(
+        initial["url"]
+            .as_str()
+            .is_some_and(|url| url.contains("nvbrowser-diagram-") && url.ends_with(".html")),
+        "initial Markdown wrapper response should keep the Chromium wrapper URL separately; response={initial:?}"
     );
     assert!(
         initial["payload"]

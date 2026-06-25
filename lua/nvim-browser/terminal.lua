@@ -20,6 +20,7 @@ local state = {
   resize_autocmd = nil,
   resize_timer = nil,
   current_url = nil,
+  browser_url = nil,
   current_title = nil,
   dom_epoch = nil,
   page_metrics = nil,
@@ -1215,8 +1216,14 @@ local function apply_serve_response_metadata(response)
     state.hint_error = nil
   end
   if response.url ~= nil then
+    state.browser_url = response.url ~= vim.NIL and response.url or nil
     state.current_url = response.url
   end
+  if response.display_url ~= nil then
+    state.current_url = response.display_url ~= vim.NIL and response.display_url or state.browser_url
+  end
+  local has_explicit_url = (response.display_url ~= nil and response.display_url ~= vim.NIL and response.display_url ~= "")
+    or (response.url ~= nil and response.url ~= vim.NIL and response.url ~= "")
   if response.title ~= nil then
     state.current_title = response.title ~= vim.NIL and response.title or nil
   end
@@ -1228,9 +1235,7 @@ local function apply_serve_response_metadata(response)
   if
     type(state.metadata_observer) == "function"
     and response.status == "ok"
-    and response.url ~= nil
-    and response.url ~= vim.NIL
-    and response.url ~= ""
+    and has_explicit_url
   then
     pcall(state.metadata_observer, {
       url = state.current_url,
@@ -1513,6 +1518,16 @@ local function response_field_changed(response, key, current)
   return value ~= nil and value ~= vim.NIL and value ~= current
 end
 
+local function response_current_url(response)
+  if response.display_url ~= nil and response.display_url ~= vim.NIL then
+    return response.display_url
+  end
+  if response.url ~= nil and response.url ~= vim.NIL then
+    return response.url
+  end
+  return nil
+end
+
 local function table_field_changed(response_value, current_value, key)
   if type(response_value) ~= "table" then
     return false
@@ -1535,7 +1550,8 @@ local function page_state_needs_capture(response)
   if type(response) ~= "table" or response.status ~= "ok" then
     return false
   end
-  if response_field_changed(response, "url", state.current_url) then
+  local response_url = response_current_url(response)
+  if response_url ~= nil and response_url ~= state.current_url then
     return true
   end
   if response_field_changed(response, "title", state.current_title) then
@@ -2433,6 +2449,7 @@ function M.open(command)
   state.last_serve_command = command_uses_serve(original_command) and original_command or nil
   state.next_request_id = 1
   state.current_url = nil
+  state.browser_url = nil
   state.current_title = nil
   state.dom_epoch = nil
   state.page_metrics = nil
@@ -2821,6 +2838,7 @@ function M.close()
   state.serve_output = nil
   state.last_serve_command = nil
   state.current_url = nil
+  state.browser_url = nil
   state.current_title = nil
   state.dom_epoch = nil
   state.page_metrics = nil
@@ -4404,6 +4422,7 @@ function M.state()
     text_mode_active = state.text_mode_active,
     last_target = state.last_target,
     current_url = state.current_url,
+    browser_url = state.browser_url,
     current_title = state.current_title,
     dom_epoch = state.dom_epoch,
     page_metrics = state.page_metrics,

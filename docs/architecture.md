@@ -66,13 +66,15 @@ browser frames into stable row-major image tiles. Tile payloads clear the full
 stable tile ID range before reusing IDs so frame replacement is deterministic
 when a large capture is followed by a smaller one.
 
-The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 24
+The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 25
 includes URL, Markdown-wrapper, and raster-image-wrapper navigation requests so
 Neovim can reuse an active Chromium session when the target type changes. It
 also includes lightweight `page_state` requests for idle metadata refresh,
 multi-download reporting through a `downloads` array while preserving the
 single `download` compatibility field, and auto-handled JavaScript dialog
-reporting through `dialog`/`dialogs`. Responses can include `history`
+reporting through `dialog`/`dialogs`. Wrapper-backed Markdown and raster image
+responses keep `url` as the Chromium-loaded wrapper URL and can include
+`display_url` for the original user-facing source file. Responses can include `history`
 availability from Chromium navigation history so Neovim can avoid sending dead
 Back/Forward requests. Lightweight and captured responses can include
 `dom_epoch`, a Chromium-backed mutation freshness signal used by Neovim to

@@ -2501,6 +2501,36 @@ vim.wait(50)
 assert(#fake_timers == _G.nvim_browser_timer_count_before_stable_page_state, "stable page-state responses should not schedule adaptive captures")
 
 terminal._test.apply_serve_response({
+  id = live_page_state_id + 800,
+  status = "ok",
+  url = "file:///tmp/nvbrowser-README-wrapper.html",
+  display_url = "file:///tmp/README.md",
+  title = "README",
+})
+sent_requests = {}
+_G.nvim_browser_live_timer_after_reenable.callback()
+assert(vim.wait(1000, function()
+  live_page_state_id = terminal.state().live_refresh_request_id
+  return live_page_state_id ~= nil and last_request_of_type("page_state") ~= nil
+end), "live refresh should send a page-state request for wrapper previews")
+_G.nvim_browser_timer_count_before_wrapper_page_state = #fake_timers
+serve_stdout(nil, { vim.json.encode({
+  id = live_page_state_id,
+  status = "ok",
+  url = "file:///tmp/nvbrowser-README-wrapper.html",
+  display_url = "file:///tmp/README.md",
+  title = "README",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().live_refresh_request_id == nil
+end), "stable wrapper page-state responses should clear live tracking")
+vim.wait(50)
+assert(
+  #fake_timers == _G.nvim_browser_timer_count_before_wrapper_page_state,
+  "stable wrapper page-state responses should compare display URLs and avoid adaptive capture"
+)
+
+terminal._test.apply_serve_response({
   id = live_page_state_id + 900,
   status = "ok",
   url = "https://example.com/disable-change",
@@ -3609,6 +3639,46 @@ assert(vim.fn.getreg("b") == "https://example.com", "current URL yank should wri
 assert(#sent_requests == 0, "current URL yank should not send backend requests")
 assert(terminal.yank_current_url("bb") == false, "current URL yank should reject invalid register names")
 
+_G.nvim_browser_observed_wrapper_metadata = nil
+terminal.set_metadata_observer(function(metadata)
+  _G.nvim_browser_observed_wrapper_metadata = metadata
+end)
+terminal._test.apply_serve_response({
+  id = 30,
+  status = "ok",
+  payload = "markdown wrapper frame",
+  url = "file:///tmp/nvbrowser-README-wrapper.html",
+  display_url = "file:///tmp/README.md",
+  title = "README",
+  runtime = {
+    protocol_version = 25,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = 80, rows = 24 },
+    viewport = { width = 800, height = 480, device_scale_factor = 1.0 },
+  },
+})
+assert(terminal.state().current_url == "file:///tmp/README.md", "wrapper display URL should become the user-facing current URL")
+assert(
+  terminal.state().rendered_frame_url == "file:///tmp/nvbrowser-README-wrapper.html",
+  "wrapper browser URL should remain available as the rendered frame URL"
+)
+assert(
+  _G.nvim_browser_observed_wrapper_metadata ~= nil and _G.nvim_browser_observed_wrapper_metadata.url == "file:///tmp/README.md",
+  "metadata observers should receive the wrapper display URL, not the temp wrapper URL"
+)
+vim.fn.setreg("b", "before-wrapper-yank")
+assert(terminal.yank_current_url("b") == true, "wrapper current URL yank should succeed")
+assert(vim.fn.getreg("b") == "file:///tmp/README.md", "wrapper current URL yank should write the display URL")
+terminal.set_metadata_observer(nil)
+terminal._test.apply_serve_response({
+  id = 31,
+  status = "ok",
+  url = "https://example.com",
+  title = vim.NIL,
+})
+
 vim.fn.setreg("b", "before-hint-yank")
 sent_requests = {}
 assert(terminal.yank_hint_url("a", "b") == true, "hint URL yank should match hint labels")
@@ -3750,7 +3820,7 @@ serve_stdout(nil, { vim.json.encode({
   url = "https://example.com/docs",
   title = "Stopped Page",
   runtime = {
-    protocol_version = 24,
+    protocol_version = 25,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",
