@@ -244,6 +244,18 @@ local function command_option_value(command, option)
   return nil
 end
 
+local function command_string_option_value(command, option)
+  if type(command) ~= "table" then
+    return nil
+  end
+  for index, value in ipairs(command) do
+    if value == option then
+      return command[index + 1]
+    end
+  end
+  return nil
+end
+
 local function kitty_unicode_cell_limit()
   return #kitty_diacritics
 end
@@ -368,13 +380,29 @@ local function command_target(command)
   end
   if command[2] == "serve" then
     for index, value in ipairs(command) do
-      if value == "--url" then
+      if value == "--url" or value == "--image" then
         return command[index + 1]
       end
     end
     return nil
   end
   return command[3]
+end
+
+local function command_image_target(command)
+  return command_string_option_value(command, "--image")
+end
+
+local function command_image_fit(command)
+  return command_string_option_value(command, "--image-fit") or "original"
+end
+
+local function is_raster_image_path(target)
+  if target == nil or target == "" or target:match("^%a[%w+.-]*:") then
+    return false
+  end
+  local extension = vim.fn.fnamemodify(target, ":e"):lower()
+  return extension == "png" or extension == "jpg" or extension == "jpeg" or extension == "gif" or extension == "webp"
 end
 
 local function copy_command(command)
@@ -392,12 +420,29 @@ local function command_with_target(command, target)
   if adjusted[2] ~= "serve" then
     return adjusted
   end
+  local image_index = nil
   for index, value in ipairs(adjusted) do
     if value == "--url" then
       adjusted[index + 1] = target
       return adjusted
     end
-    if value == "--markdown" then
+    if value == "--image" then
+      image_index = index
+    end
+  end
+  if image_index ~= nil and is_raster_image_path(target) then
+    adjusted[image_index + 1] = target
+    return adjusted
+  end
+  for index, value in ipairs(adjusted) do
+    if value == "--markdown" or value == "--image" then
+      table.remove(adjusted, index + 1)
+      table.remove(adjusted, index)
+      break
+    end
+  end
+  for index = #adjusted, 1, -1 do
+    if adjusted[index] == "--image-fit" then
       table.remove(adjusted, index + 1)
       table.remove(adjusted, index)
       break
@@ -1207,6 +1252,7 @@ is_navigation_class_request = function(request)
   return type(request) == "table"
     and (
       request.type == "navigate"
+      or request.type == "navigate_image"
       or request.type == "reload"
       or request.type == "back"
       or request.type == "forward"
@@ -1609,7 +1655,16 @@ local function reuse_active_serve_command(command)
   end
 
   state.last_target = target
+  state.last_serve_command = copy_command(command)
   request_resize()
+  local image_target = command_image_target(command)
+  if image_target ~= nil and image_target ~= "" then
+    return send_pending_request({
+      type = "navigate_image",
+      path = image_target,
+      fit = command_image_fit(command),
+    }, target)
+  end
   return send_pending_request({
     type = "navigate",
     url = target,

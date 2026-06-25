@@ -300,7 +300,9 @@ fn serve_help_documents_cdp_ws_url_flag() {
         .stdout(predicate::str::contains("--cdp-ws-url"))
         .stdout(predicate::str::contains("--user-data-dir"))
         .stdout(predicate::str::contains("--download-dir"))
-        .stdout(predicate::str::contains("--navigation-timeout-ms"));
+        .stdout(predicate::str::contains("--navigation-timeout-ms"))
+        .stdout(predicate::str::contains("--image"))
+        .stdout(predicate::str::contains("--image-fit"));
 }
 
 #[test]
@@ -333,6 +335,34 @@ fn serve_markdown_initial_startup_failure_writes_jsonl_error_before_exit() {
     let output = command
         .args(["serve", "--output", "ansi", "--markdown"])
         .arg(markdown_path)
+        .env("NVBROWSER_CHROME", &missing_chrome)
+        .env_remove("NVBROWSER_CDP_WS_URL")
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    assert_serve_startup_error_jsonl(output);
+}
+
+#[test]
+fn serve_image_initial_startup_failure_writes_jsonl_error_before_exit() {
+    let directory = tempdir().expect("tempdir should be created");
+    let image_path = directory.path().join("pixel.png");
+    std::fs::write(&image_path, tiny_png()).expect("image fixture should be written");
+    let missing_chrome = directory.path().join("missing-chrome");
+    let mut command = Command::cargo_bin("nvbrowser").expect("binary should build");
+
+    let output = command
+        .args([
+            "serve",
+            "--output",
+            "ansi",
+            "--image-fit",
+            "contain",
+            "--image",
+        ])
+        .arg(image_path)
         .env("NVBROWSER_CHROME", &missing_chrome)
         .env_remove("NVBROWSER_CDP_WS_URL")
         .assert()
@@ -379,7 +409,7 @@ fn doctor_outputs_backend_json_without_launching_chrome() {
     );
     assert_eq!(json["backend"]["user_data_dir"], "/tmp/nvbrowser-profile");
     assert_eq!(
-        json["protocol"]["serve"], 22,
+        json["protocol"]["serve"], 23,
         "doctor JSON should expose the serve protocol version"
     );
 }

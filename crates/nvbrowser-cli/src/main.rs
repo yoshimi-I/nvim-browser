@@ -27,7 +27,7 @@ use nvbrowser_core::{
 };
 use serde::{Deserialize, Serialize};
 
-const SERVE_PROTOCOL_VERSION: u32 = 22;
+const SERVE_PROTOCOL_VERSION: u32 = 23;
 
 #[derive(Debug, Parser)]
 #[command(name = "nvbrowser")]
@@ -116,6 +116,10 @@ enum Command {
         #[arg(long)]
         markdown: Option<PathBuf>,
         #[arg(long)]
+        image: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = ImageFit::Original)]
+        image_fit: ImageFit,
+        #[arg(long)]
         cdp_ws_url: Option<String>,
         #[arg(long)]
         user_data_dir: Option<PathBuf>,
@@ -142,7 +146,8 @@ enum ImageOutput {
     Ansi,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, ValueEnum)]
+#[serde(rename_all = "kebab-case")]
 enum ImageFit {
     Contain,
     Original,
@@ -281,29 +286,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             height,
             url,
             markdown,
+            image,
+            image_fit,
             cdp_ws_url,
             user_data_dir,
             download_dir,
             navigation_timeout_ms,
         } => {
-            let (initial_url, markdown_preview) = match (url, markdown) {
-                (Some(_), Some(_)) => {
-                    return Err("serve accepts either --url or --markdown, not both".into());
-                }
-                (Some(url), None) => (Some(url), None),
-                (None, Some(path)) => {
-                    let preview = MarkdownPreviewFile::create(&path)?;
-                    (Some(preview.url()), Some(preview))
-                }
-                (None, None) => (None, None),
-            };
+            let initial_target = resolve_serve_initial_target(url, markdown, image, image_fit)?;
             let options = ServeOptions {
                 output,
                 columns,
                 rows,
                 viewport: Viewport::new(width, height),
-                initial_url,
-                markdown_preview,
+                initial_url: initial_target.initial_url,
+                markdown_preview: initial_target.markdown_preview,
+                image_preview: initial_target.image_preview,
                 cdp_ws_url,
                 user_data_dir,
                 download_dir,
@@ -346,6 +344,12 @@ enum ServeRequest {
     Navigate {
         id: u64,
         url: String,
+    },
+    NavigateImage {
+        id: u64,
+        path: PathBuf,
+        #[serde(default)]
+        fit: Option<ImageFit>,
     },
     Capture {
         id: u64,
@@ -793,6 +797,153 @@ impl MarkdownPreviewFile {
     }
 }
 
+#[derive(Debug)]
+struct ImagePreviewFile {
+    file: tempfile::NamedTempFile,
+}
+
+impl ImagePreviewFile {
+    fn create(path: &Path, fit: ImageFit) -> Result<Self, Box<dyn std::error::Error>> {
+        let image_path = absolute_or_existing_path(path);
+        let html = render_image_preview_document(&image_path, fit);
+        let stem = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("image");
+        let mut file = tempfile::Builder::new()
+            .prefix(&format!(
+                "nvbrowser-image-{}-",
+                percent_encode_path(stem).replace('/', "%2F")
+            ))
+            .suffix(".html")
+            .tempfile()?;
+        file.write_all(html.as_bytes())?;
+        file.flush()?;
+        Ok(Self { file })
+    }
+
+    fn path(&self) -> &Path {
+        self.file.path()
+    }
+
+    fn url(&self) -> String {
+        path_to_file_url(self.path())
+    }
+}
+
+fn absolute_or_existing_path(path: &Path) -> PathBuf {
+    fs::canonicalize(path).unwrap_or_else(|_| {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .map(|cwd| cwd.join(path))
+                .unwrap_or_else(|_| path.to_path_buf())
+        }
+    })
+}
+
+fn render_image_preview_document(path: &Path, fit: ImageFit) -> String {
+    let url = html_attribute_escape(&path_to_file_url(path));
+    let fit_css = image_preview_fit_css(fit);
+    format!(
+        r#"<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+html, body {{
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: #111318;
+  overflow: auto;
+}}
+body {{
+  display: grid;
+  place-items: center;
+}}
+img {{
+  display: block;
+  {fit_css}
+}}
+</style>
+</head>
+<body>
+<img src="{url}" alt="">
+</body>
+</html>
+"#
+    )
+}
+
+fn image_preview_fit_css(fit: ImageFit) -> &'static str {
+    match fit {
+        ImageFit::Contain => "max-width: 100vw;\n  max-height: 100vh;\n  object-fit: contain;",
+        ImageFit::Original => {
+            "width: auto;\n  height: auto;\n  max-width: none;\n  max-height: none;"
+        }
+        ImageFit::Width => "width: 100vw;\n  height: auto;\n  object-fit: contain;",
+        ImageFit::Height => "width: auto;\n  height: 100vh;\n  object-fit: contain;",
+    }
+}
+
+fn html_attribute_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+#[derive(Debug)]
+struct ServeInitialTarget {
+    initial_url: Option<String>,
+    markdown_preview: Option<MarkdownPreviewFile>,
+    image_preview: Option<ImagePreviewFile>,
+}
+
+fn resolve_serve_initial_target(
+    url: Option<String>,
+    markdown: Option<PathBuf>,
+    image: Option<PathBuf>,
+    image_fit: ImageFit,
+) -> Result<ServeInitialTarget, Box<dyn std::error::Error>> {
+    let target_count = url.is_some() as u8 + markdown.is_some() as u8 + image.is_some() as u8;
+    if target_count > 1 {
+        return Err("serve accepts only one of --url, --markdown, or --image".into());
+    }
+    if let Some(url) = url {
+        return Ok(ServeInitialTarget {
+            initial_url: Some(url),
+            markdown_preview: None,
+            image_preview: None,
+        });
+    }
+    if let Some(path) = markdown {
+        let preview = MarkdownPreviewFile::create(&path)?;
+        return Ok(ServeInitialTarget {
+            initial_url: Some(preview.url()),
+            markdown_preview: Some(preview),
+            image_preview: None,
+        });
+    }
+    if let Some(path) = image {
+        let preview = ImagePreviewFile::create(&path, image_fit)?;
+        return Ok(ServeInitialTarget {
+            initial_url: Some(preview.url()),
+            markdown_preview: None,
+            image_preview: Some(preview),
+        });
+    }
+    Ok(ServeInitialTarget {
+        initial_url: None,
+        markdown_preview: None,
+        image_preview: None,
+    })
+}
+
 fn path_to_file_url(path: impl AsRef<std::path::Path>) -> String {
     let path = path.as_ref();
     let mut value = path.to_string_lossy().replace('\\', "/");
@@ -830,6 +981,7 @@ struct ServeOptions {
     viewport: Viewport,
     initial_url: Option<String>,
     markdown_preview: Option<MarkdownPreviewFile>,
+    image_preview: Option<ImagePreviewFile>,
     cdp_ws_url: Option<String>,
     user_data_dir: Option<PathBuf>,
     download_dir: Option<PathBuf>,
@@ -843,6 +995,8 @@ struct ServeRuntime<R: Renderer> {
     rows: u32,
     output: ImageOutput,
     _markdown_preview: Option<MarkdownPreviewFile>,
+    _image_preview: Option<ImagePreviewFile>,
+    _dynamic_image_previews: Vec<ImagePreviewFile>,
     pending_downloads: Vec<DownloadInfo>,
     pending_dialogs: Vec<DialogEvent>,
 }
@@ -873,6 +1027,8 @@ impl<R: Renderer> ServeRuntime<R> {
             rows: options.rows,
             output: options.output,
             _markdown_preview: options.markdown_preview,
+            _image_preview: options.image_preview,
+            _dynamic_image_previews: Vec::new(),
             pending_downloads: Vec::new(),
             pending_dialogs: Vec::new(),
         }
@@ -1046,6 +1202,20 @@ impl<R: Renderer> ServeRuntime<R> {
                     self.session.active_page_id(),
                     url,
                 ))?;
+                self.session
+                    .navigate_active_page_with_title(navigation.url, navigation.title);
+                self.session.finish_active_page_load();
+                self.capture_payload(true).map(Some)
+            }
+            ServeRequest::NavigateImage { path, fit, .. } => {
+                let preview = ImagePreviewFile::create(&path, fit.unwrap_or(ImageFit::Original))?;
+                let url = preview.url();
+                let navigation = self.renderer.navigate(NavigateRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    url,
+                ))?;
+                self._dynamic_image_previews.push(preview);
                 self.session
                     .navigate_active_page_with_title(navigation.url, navigation.title);
                 self.session.finish_active_page_load();
@@ -1615,6 +1785,7 @@ impl ServeRequest {
     fn id(&self) -> u64 {
         match self {
             ServeRequest::Navigate { id, .. }
+            | ServeRequest::NavigateImage { id, .. }
             | ServeRequest::Capture { id }
             | ServeRequest::PageState { id }
             | ServeRequest::Scroll { id, .. }
@@ -2960,6 +3131,17 @@ mod tests {
                 url: "https://example.com".to_string(),
             }
         );
+        assert_eq!(
+            parse_serve_request(
+                r#"{"type":"navigate_image","id":2,"path":"/tmp/image.png","fit":"contain"}"#
+            )
+            .expect("navigate_image request should parse"),
+            ServeRequest::NavigateImage {
+                id: 2,
+                path: PathBuf::from("/tmp/image.png"),
+                fit: Some(ImageFit::Contain),
+            }
+        );
 
         assert_eq!(
             parse_serve_request(
@@ -3035,6 +3217,75 @@ mod tests {
             !first_path.exists(),
             "preview file should be cleaned up when its owner is dropped"
         );
+    }
+
+    #[test]
+    fn image_preview_file_wraps_raster_image_with_contain_viewport_css() {
+        let directory = tempfile::tempdir().expect("tempdir should be created");
+        let image_path = directory.path().join("pixel.png");
+        std::fs::write(&image_path, tiny_png()).expect("image fixture should be written");
+
+        let preview = ImagePreviewFile::create(&image_path, ImageFit::Contain)
+            .expect("image preview should render");
+        let html =
+            std::fs::read_to_string(preview.path()).expect("preview html should be readable");
+
+        assert!(preview.url().starts_with("file://"));
+        assert!(html.contains(r#"<img src="file://"#));
+        assert!(html.contains("pixel.png"));
+        assert!(html.contains("object-fit: contain"));
+        assert!(html.contains("max-width: 100vw"));
+        assert!(html.contains("max-height: 100vh"));
+    }
+
+    #[test]
+    fn serve_rejects_multiple_initial_targets_including_image() {
+        let error = resolve_serve_initial_target(
+            Some("https://example.com".to_string()),
+            Some(PathBuf::from("README.md")),
+            Some(PathBuf::from("pixel.png")),
+            ImageFit::Contain,
+        )
+        .expect_err("multiple initial targets should be rejected");
+
+        assert!(error
+            .to_string()
+            .contains("serve accepts only one of --url, --markdown, or --image"));
+    }
+
+    #[test]
+    fn serve_runtime_navigates_image_through_preview_wrapper() {
+        let directory = tempfile::tempdir().expect("tempdir should be created");
+        let image_path = directory.path().join("pixel.png");
+        std::fs::write(&image_path, tiny_png()).expect("image fixture should be written");
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                image_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        let response = runtime.handle(ServeRequest::NavigateImage {
+            id: 7,
+            path: image_path,
+            fit: Some(ImageFit::Contain),
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        let navigated_url = runtime.renderer.url.expect("renderer should navigate");
+        assert!(navigated_url.starts_with("file://"));
+        assert!(navigated_url.contains("nvbrowser-image-pixel-"));
+        assert_eq!(runtime._dynamic_image_previews.len(), 1);
     }
 
     #[test]
@@ -3818,7 +4069,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":22,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":23,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -3833,6 +4084,7 @@ mod tests {
                 viewport: Viewport::new(800, 480),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -3876,6 +4128,7 @@ mod tests {
                 viewport: Viewport::new(800, 480),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -3916,6 +4169,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -3961,6 +4215,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4000,6 +4255,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4027,6 +4283,7 @@ mod tests {
                 viewport: Viewport::new(120, 60),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4170,6 +4427,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4203,6 +4461,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4246,6 +4505,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4313,6 +4573,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4373,6 +4634,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4418,6 +4680,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4448,6 +4711,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4479,6 +4743,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4514,6 +4779,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4550,6 +4816,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4583,6 +4850,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4627,6 +4895,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4725,6 +4994,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4769,6 +5039,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4802,6 +5073,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4842,6 +5114,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4896,6 +5169,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -4949,6 +5223,7 @@ mod tests {
                 viewport: Viewport::new(800, 480),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5003,6 +5278,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5058,6 +5334,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5118,6 +5395,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5164,6 +5442,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5209,6 +5488,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5242,6 +5522,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5275,6 +5556,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5322,6 +5604,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5368,6 +5651,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5415,6 +5699,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5465,6 +5750,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5510,6 +5796,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5555,6 +5842,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5605,6 +5893,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5653,6 +5942,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5691,6 +5981,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5732,6 +6023,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5773,6 +6065,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5808,6 +6101,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5861,6 +6155,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5919,6 +6214,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -5982,6 +6278,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6022,6 +6319,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6068,6 +6366,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6112,6 +6411,7 @@ mod tests {
                     viewport: Viewport::new(10, 10),
                     initial_url: None,
                     markdown_preview: None,
+                    image_preview: None,
                     cdp_ws_url: None,
                     user_data_dir: None,
                     download_dir: None,
@@ -6212,6 +6512,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6256,6 +6557,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6289,6 +6591,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6338,6 +6641,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6378,6 +6682,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6417,6 +6722,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6463,6 +6769,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6500,6 +6807,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6553,6 +6861,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6601,6 +6910,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6643,6 +6953,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6693,6 +7004,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6734,6 +7046,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6780,6 +7093,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6818,6 +7132,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6868,6 +7183,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,
@@ -6913,6 +7229,7 @@ mod tests {
                 viewport: Viewport::new(10, 10),
                 initial_url: None,
                 markdown_preview: None,
+                image_preview: None,
                 cdp_ws_url: None,
                 user_data_dir: None,
                 download_dir: None,

@@ -9,6 +9,10 @@ local function is_browser_file_extension(extension)
   return vim.tbl_contains({ "html", "htm", "svg", "pdf", "png", "jpg", "jpeg", "gif", "webp" }, extension)
 end
 
+local function is_raster_image_extension(extension)
+  return vim.tbl_contains({ "png", "jpg", "jpeg", "gif", "webp" }, extension)
+end
+
 local function env_value(env, key)
   if env ~= nil then
     return env[key]
@@ -188,6 +192,13 @@ function M.command_for(binary, action, target, opts)
     add_cdp_ws_url(command, opts)
     add_user_data_dir(command, opts)
     add_download_dir(command, opts)
+    if is_raster_image_extension(extension) then
+      table.insert(command, "--image-fit")
+      table.insert(command, opts and opts.image_fit or "original")
+      table.insert(command, "--image")
+      table.insert(command, vim.fn.fnamemodify(target, ":p"))
+      return command
+    end
     table.insert(command, "--url")
     table.insert(command, vim.uri_from_fname(vim.fn.fnamemodify(target, ":p")))
     return command

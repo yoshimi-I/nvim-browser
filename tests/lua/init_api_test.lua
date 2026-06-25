@@ -96,6 +96,8 @@ _G.nvim_browser_cursor_target_dir = vim.fn.tempname()
 vim.fn.mkdir(_G.nvim_browser_cursor_target_dir, "p")
 _G.nvim_browser_cursor_target_file = _G.nvim_browser_cursor_target_dir .. "/guide.md"
 vim.fn.writefile({ "# Guide" }, _G.nvim_browser_cursor_target_file)
+_G.nvim_browser_cursor_target_image = _G.nvim_browser_cursor_target_dir .. "/pixel.png"
+vim.fn.writefile({ "not really a png" }, _G.nvim_browser_cursor_target_image)
 _G.nvim_browser_cursor_buf = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_set_current_buf(_G.nvim_browser_cursor_buf)
 vim.api.nvim_buf_set_lines(_G.nvim_browser_cursor_buf, 0, -1, false, {
@@ -107,6 +109,7 @@ vim.api.nvim_buf_set_lines(_G.nvim_browser_cursor_buf, 0, -1, false, {
   "Parens [wiki](https://en.wikipedia.org/wiki/Foo_(bar))",
   "File URL file:///tmp/example.html",
   "Escaped [docs\\]](https://example.com/a\\)b)",
+  "Image " .. _G.nvim_browser_cursor_target_image,
   "   ",
 })
 vim.api.nvim_win_set_cursor(0, { 1, 9 })
@@ -125,7 +128,9 @@ vim.api.nvim_win_set_cursor(0, { 7, 12 })
 assert(browser.resolve_cursor_target() == "file:///tmp/example.html", "cursor resolver should preserve raw file URLs")
 vim.api.nvim_win_set_cursor(0, { 8, 12 })
 assert(browser.resolve_cursor_target() == "https://example.com/a)b", "cursor resolver should unescape escaped markdown link targets")
-vim.api.nvim_win_set_cursor(0, { 9, 1 })
+vim.api.nvim_win_set_cursor(0, { 9, 8 })
+assert(browser.resolve_cursor_target() == _G.nvim_browser_cursor_target_image, "cursor resolver should read local raster image paths")
+vim.api.nvim_win_set_cursor(0, { 10, 1 })
 assert(browser.resolve_cursor_target() == nil, "cursor resolver should reject empty cursor context")
 
 _G.nvim_browser_opened_under_cursor = nil
@@ -163,6 +168,12 @@ assert(
   _G.nvim_browser_navigated_under_cursor == vim.uri_from_fname(_G.nvim_browser_cursor_target_file),
   "open_under_cursor should convert readable local files to file URLs before active-session navigation"
 )
+_G.nvim_browser_opened_under_cursor = nil
+_G.nvim_browser_navigated_under_cursor = nil
+vim.api.nvim_win_set_cursor(0, { 9, 8 })
+assert(browser.open_under_cursor() == true, "open_under_cursor should open active-session raster images through the preview wrapper")
+assert(_G.nvim_browser_opened_under_cursor == _G.nvim_browser_cursor_target_image, "open_under_cursor should route active raster images through open")
+assert(_G.nvim_browser_navigated_under_cursor == nil, "open_under_cursor should not direct-navigate active raster images")
 browser.open = _G.nvim_browser_original_open_under_cursor_open
 browser.navigate = _G.nvim_browser_original_open_under_cursor_navigate
 terminal.state = _G.nvim_browser_original_terminal_state_for_cursor

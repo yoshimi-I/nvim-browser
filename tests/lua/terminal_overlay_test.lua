@@ -2954,6 +2954,23 @@ assert(not quit_seen, "serve URL reuse should not send quit to the active backen
 terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
 
 sent_requests = {}
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--image-fit", "contain", "--image", "/tmp/image.png" })
+local image_state = terminal.state()
+local image_navigate_seen = false
+for _, request in ipairs(sent_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "navigate_image" and decoded.path == "/tmp/image.png" and decoded.fit == "contain" then
+    image_navigate_seen = true
+  end
+end
+assert(#jobstart_calls == 1, "opening an image in an active serve session should reuse the existing job")
+assert(image_state.bufnr == first_state.bufnr, "serve image reuse should keep the same preview buffer")
+assert(image_state.job_id == first_state.job_id, "serve image reuse should keep the same backend job")
+assert(image_state.last_target == "/tmp/image.png", "serve image reuse should update the remembered target")
+assert(image_navigate_seen, "serve image reuse should send a navigate_image request for the image preview target")
+terminal._test.clear_pending_operation(terminal.state().pending_operation.id)
+
+sent_requests = {}
 assert(terminal.navigate("https://example.com/older") == true, "test setup should send an older navigation")
 local older_navigation_id = terminal.state().pending_operation and terminal.state().pending_operation.id
 assert(older_navigation_id ~= nil, "older navigation should be tracked as pending")
@@ -3675,7 +3692,7 @@ serve_stdout(nil, { vim.json.encode({
   url = "https://example.com/docs",
   title = "Stopped Page",
   runtime = {
-    protocol_version = 22,
+    protocol_version = 23,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",
@@ -3761,6 +3778,19 @@ sent_requests = {}
 assert(terminal.reload() == true, "reload after hard stop should restart the serve session")
 assert(#jobstart_calls == 1, "reload after hard stop should start one replacement serve job")
 assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == _G.nvim_browser_reload_stopped_target, "reload restart should target the stopped operation")
+
+terminal._test.clear_in_flight_capture()
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--image-fit", "contain", "--image", "/tmp/restart-image.png" })
+assert(terminal.state().pending_operation ~= nil, "test setup should create a pending image navigation")
+_G.nvim_browser_stop_with_backend_error()
+jobstart_calls = {}
+sent_requests = {}
+assert(terminal.refresh() == true, "refresh after stopped image navigation should restart the serve session")
+assert(#jobstart_calls == 1, "stopped image refresh should start one replacement serve job")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == nil, "stopped image refresh should not restart as a raw URL")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--image") == "/tmp/restart-image.png", "stopped image refresh should preserve the image wrapper target")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--image-fit") == "contain", "stopped image refresh should preserve the image fit")
+
 terminal._test.clear_in_flight_capture()
 assert(terminal.navigate("https://example.com/address-stopped") == true, "test setup should create a pending address navigation")
 _G.nvim_browser_stop_with_backend_error()

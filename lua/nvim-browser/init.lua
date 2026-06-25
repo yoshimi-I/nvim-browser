@@ -583,6 +583,11 @@ local function is_readable_local_target(value)
   return value ~= nil and not value:match("^%a[%w+.-]*:") and readable_cursor_file(value) ~= nil
 end
 
+local function is_raster_image_target(value)
+  local extension = vim.fn.fnamemodify(value or "", ":e"):lower()
+  return extension == "png" or extension == "jpg" or extension == "jpeg" or extension == "gif" or extension == "webp"
+end
+
 local function setup_preview_keymaps()
   local terminal_state = terminal.state()
   if terminal_state.bufnr ~= nil then
@@ -746,6 +751,9 @@ function M.open_under_cursor()
     return false
   end
   if has_active_browser_session() then
+    if local_file_target and is_raster_image_target(target) then
+      return M.open(target) ~= false
+    end
     if local_file_target then
       target = vim.uri_from_fname(target)
     end

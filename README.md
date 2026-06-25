@@ -379,9 +379,11 @@ math is rendered with KaTeX. When a Markdown file contains at least one Mermaid
 block, the generated preview imports Mermaid `10.9.3` from `cdn.jsdelivr.net`.
 When it contains math, it imports KaTeX `0.16.11` and the KaTeX auto-render
 helper. Plain Markdown files without diagrams or math do not load those assets.
-HTML, SVG, PDF, and raster image files are opened through Chromium using
-`file://` URLs. The standalone `nvbrowser show-image` CLI still supports
-`original`, `contain`, `width`, and `height` fit modes.
+HTML, SVG, and PDF files are opened through Chromium using `file://` URLs.
+Raster image files are opened through a generated Chromium preview wrapper so
+the configured `image_fit` mode (`original`, `contain`, `width`, or `height`)
+also applies in the persistent browser session. The standalone
+`nvbrowser show-image` CLI supports the same fit modes.
 
 `:NBrowserOpenUnderCursor` opens the Markdown link target, raw URL, `file://`
 URL, readable local file path, or host-like text under the cursor, falling back

@@ -134,8 +134,8 @@ COMMANDS                                           *nvim-browser-commands*
         SVG files, PDF files, and HTTP/HTTPS URLs
         start a Chromium-backed browser session for the current POC. PDF
         rendering uses Chrome's built-in PDF viewer. Raster image files are
-        opened through Chromium using file:// URLs so they reuse the same
-        preview surface and session lifecycle.
+        opened through a generated Chromium preview wrapper so they reuse the
+        same preview surface and session lifecycle while honoring image_fit.
 
 							*:NBrowserReload*
 :NBrowserReload

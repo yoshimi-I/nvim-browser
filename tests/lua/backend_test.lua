@@ -391,9 +391,11 @@ assert(vim.deep_equal(image_command, {
   "ansi",
   "--user-data-dir",
   "/tmp/nvbrowser-profile",
-  "--url",
-  vim.uri_from_fname("/tmp/image.png"),
-}), "raster images should route through Chromium serve with file URLs")
+  "--image-fit",
+  "contain",
+  "--image",
+  "/tmp/image.png",
+}), "raster images should route through Chromium serve with image fit wrappers")
 
 local image_cdp_command = backend.command_for("nvbrowser", "open", "/tmp/image.webp", {
   graphics = "ansi",
@@ -406,8 +408,10 @@ assert(vim.deep_equal(image_cdp_command, {
   "ansi",
   "--cdp-ws-url",
   "ws://127.0.0.1:9222/devtools/browser/test",
-  "--url",
-  vim.uri_from_fname("/tmp/image.webp"),
+  "--image-fit",
+  "original",
+  "--image",
+  "/tmp/image.webp",
 }), "raster image commands should pass configured CDP websocket endpoints")
 
 local relative_image_command = backend.command_for("nvbrowser", "open", "assets/image.JPG", {
@@ -418,9 +422,11 @@ assert(vim.deep_equal(relative_image_command, {
   "serve",
   "--output",
   "ansi",
-  "--url",
-  vim.uri_from_fname(vim.fn.fnamemodify("assets/image.JPG", ":p")),
-}), "relative raster image paths should be converted to absolute file URLs")
+  "--image-fit",
+  "original",
+  "--image",
+  vim.fn.fnamemodify("assets/image.JPG", ":p"),
+}), "relative raster image paths should be converted to absolute image paths")
 
 local original_zellij = vim.env.ZELLIJ
 local original_tmux = vim.env.TMUX
@@ -441,8 +447,10 @@ assert(vim.deep_equal(zellij_auto_image_command, {
   "serve",
   "--output",
   "ansi",
-  "--url",
-  vim.uri_from_fname("/tmp/image.png"),
+  "--image-fit",
+  "contain",
+  "--image",
+  "/tmp/image.png",
 }), "auto raster image browser previews under Zellij should use ANSI output")
 
 local zellij_auto_url_command = backend.command_for("nvbrowser", "open", "https://example.com", {
@@ -510,8 +518,10 @@ assert(vim.deep_equal(zellij_explicit_kitty_unicode_image_command, {
   "serve",
   "--output",
   "kitty-unicode",
-  "--url",
-  vim.uri_from_fname("/tmp/image.png"),
+  "--image-fit",
+  "contain",
+  "--image",
+  "/tmp/image.png",
 }), "explicit kitty-unicode raster image browser previews under Zellij should preserve browser output")
 
 vim.env.ZELLIJ = original_zellij
