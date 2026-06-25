@@ -35,8 +35,8 @@ use crate::{
         PageTextSnapshot, PointInfo, PointInfoRequest, ReloadRequest, ReloadResult,
         RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
         RightClickHintRequest, RightClickPointRequest, ScrollRequest, ScrollResult,
-        SelectHintRequest, SelectionTextRequest, SelectionTextResult, ShutdownResult,
-        StopLoadingRequest, StopLoadingResult, TextInputRequest, ToggleHintRequest,
+        SelectHintRequest, SelectPointRequest, SelectionTextRequest, SelectionTextResult,
+        ShutdownResult, StopLoadingRequest, StopLoadingResult, TextInputRequest, ToggleHintRequest,
         UploadHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
@@ -661,6 +661,28 @@ impl Renderer for ChromiumRenderer {
             return Err(RendererError::new(
                 RendererErrorKind::InvalidState,
                 "hint id was not a selectable element, was stale, or option choice was not found",
+            ));
+        }
+        Ok(InputResult {
+            session_id: request.session_id,
+            page_id: request.page_id,
+        })
+    }
+
+    fn select_point(&mut self, request: SelectPointRequest) -> Result<InputResult, RendererError> {
+        self.mark_interaction_start();
+        let script = select_point_script(request.x, request.y, &request.choice)?;
+        let selected = self
+            .tab
+            .evaluate(&script, true)
+            .map_err(render_error)?
+            .value
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        if !selected {
+            return Err(RendererError::new(
+                RendererErrorKind::InvalidState,
+                "point was not over a selectable element or option choice was not found",
             ));
         }
         Ok(InputResult {
@@ -2070,6 +2092,71 @@ fn select_hint_script(hint_id: u32, choice: &str) -> Result<String, RendererErro
         .replace("__HINT_ID__", &hint_id)
         .replace("__CHOICE__", &choice))
 }
+
+fn select_point_script(x: f64, y: f64, choice: &str) -> Result<String, RendererError> {
+    let x = serde_json::to_string(&x).map_err(render_error)?;
+    let y = serde_json::to_string(&y).map_err(render_error)?;
+    let choice = serde_json::to_string(choice).map_err(render_error)?;
+    Ok(SELECT_POINT_SCRIPT
+        .replace("__X__", &x)
+        .replace("__Y__", &y)
+        .replace("__CHOICE__", &choice))
+}
+
+const SELECT_POINT_SCRIPT: &str = r#"
+(() => {
+  const x = __X__;
+  const y = __Y__;
+  const choice = __CHOICE__;
+  const elementAtPoint = (root, pointX, pointY, depth) => {
+    const element = root && typeof root.elementFromPoint === 'function'
+      ? root.elementFromPoint(pointX, pointY)
+      : null;
+    if (!element || depth >= 8) return element;
+    const tag = element.tagName ? element.tagName.toLowerCase() : '';
+    if (tag !== 'iframe' && tag !== 'frame') return element;
+    try {
+      const frameDocument = element.contentDocument;
+      if (!frameDocument) return element;
+      const rect = element.getBoundingClientRect();
+      const innerX = pointX - rect.left - (element.clientLeft || 0);
+      const innerY = pointY - rect.top - (element.clientTop || 0);
+      return elementAtPoint(frameDocument, innerX, innerY, depth + 1) || element;
+    } catch (_error) {
+      return element;
+    }
+  };
+  const hit = elementAtPoint(document, x, y, 0);
+  const element = hit && typeof hit.closest === 'function' ? hit.closest('select') : null;
+  if (!element || !element.isConnected || element.tagName.toLowerCase() !== 'select') return false;
+  const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+  const normalizedChoice = normalize(choice);
+  const options = Array.from(element.options || []);
+  let selectedIndex = -1;
+  if (/^\d+$/.test(normalizedChoice)) {
+    const index = Number.parseInt(normalizedChoice, 10) - 1;
+    if (index >= 0 && index < options.length && !options[index].disabled) {
+      selectedIndex = index;
+    }
+  }
+  if (selectedIndex < 0) {
+    selectedIndex = options.findIndex((option) => !option.disabled && option.value === choice);
+  }
+  if (selectedIndex < 0) {
+    const wanted = normalizedChoice.toLowerCase();
+    selectedIndex = options.findIndex((option) => !option.disabled && normalize(option.textContent).toLowerCase() === wanted);
+  }
+  if (selectedIndex < 0) return false;
+  if (typeof element.focus === 'function') {
+    element.focus({ preventScroll: true });
+  }
+  element.selectedIndex = selectedIndex;
+  element.value = options[selectedIndex].value;
+  element.dispatchEvent(new Event('input', { bubbles: true }));
+  element.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
+})()
+"#;
 
 const SELECT_HINT_SCRIPT: &str = r#"
 (() => {
@@ -4187,6 +4274,21 @@ mod tests {
         let script = select_hint_script(4, "Canada \"East\"").expect("select script should build");
         assert!(script.contains("const hintId = 4;"));
         assert!(script.contains(r#"const choice = "Canada \"East\"";"#));
+    }
+
+    #[test]
+    fn select_point_script_walks_same_origin_iframes() {
+        let script =
+            select_point_script(12.5, 24.25, "Canada").expect("select point script should build");
+
+        assert!(script.contains("const x = 12.5;"));
+        assert!(script.contains("const y = 24.25;"));
+        assert!(script.contains("elementAtPoint(document, x, y, 0)"));
+        assert!(script.contains("root.elementFromPoint(pointX, pointY)"));
+        assert!(script.contains("element.contentDocument"));
+        assert!(script.contains("elementAtPoint(frameDocument, innerX, innerY, depth + 1)"));
+        assert!(script.contains("element.clientLeft || 0"));
+        assert!(script.contains("hit.closest('select')"));
     }
 
     #[test]

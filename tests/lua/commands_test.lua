@@ -79,6 +79,7 @@ local focused_hint = nil
 local jumped_hint = nil
 local typed_here = nil
 local submitted_here = nil
+local selected_here = nil
 local input_text = nil
 local pasted_register = nil
 local yanked_register = nil
@@ -380,6 +381,10 @@ local browser = {
     else
       typed_here = text
     end
+    return true
+  end,
+  select_here = function(choice)
+    selected_here = choice
     return true
   end,
   doctor = function()
@@ -1402,6 +1407,9 @@ assert(typed_here == "hello world", "NBrowserTypeHere should type at the preview
 vim.cmd("NBrowserSubmitHere hello world")
 assert(submitted_here == "hello world", "NBrowserSubmitHere should type at the preview cursor and submit")
 
+vim.cmd("NBrowserSelectHere Canada")
+assert(selected_here == "Canada", "NBrowserSelectHere should select at the preview cursor")
+
 typed_hint = nil
 local hint_prompts = {}
 local hint_responses = { "s", "hello world" }
@@ -1718,6 +1726,9 @@ local failed_browser = {
   type_here = function()
     return false
   end,
+  select_here = function()
+    return false
+  end,
   wheel_here = function()
     return false
   end,
@@ -1815,6 +1826,9 @@ assert(warnings[#warnings] == "nvim-browser: cursor text input requires an activ
 vim.cmd("NBrowserSubmitHere missing")
 assert(warnings[#warnings] == "nvim-browser: cursor text input requires an active cursor-addressable browser preview", "NBrowserSubmitHere should warn when cursor submit fails")
 
+vim.cmd("NBrowserSelectHere missing")
+assert(warnings[#warnings] == "nvim-browser: cursor select requires an active cursor-addressable browser preview", "NBrowserSelectHere should warn when cursor select fails")
+
 vim.cmd("NBrowserWheelDownHere")
 assert(warnings[#warnings] == "nvim-browser: cursor wheel requires an active cursor-addressable browser preview", "NBrowserWheelDownHere should warn when cursor wheel fails")
 
@@ -1882,6 +1896,12 @@ vim.cmd("NBrowserSubmitHere")
 assert(
   warnings[#warnings] == "nvim-browser: cursor text input requires an active cursor-addressable browser preview",
   "NBrowserSubmitHere should warn on empty text instead of failing command parsing"
+)
+
+vim.cmd("NBrowserSelectHere")
+assert(
+  warnings[#warnings] == "nvim-browser: cursor select requires an active cursor-addressable browser preview",
+  "NBrowserSelectHere should warn on empty choice instead of failing command parsing"
 )
 
 local empty_browser = {

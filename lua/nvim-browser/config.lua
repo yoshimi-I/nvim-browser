@@ -118,6 +118,7 @@ M.options = {
       point_info_here = "gi",
       type_here = "gI",
       submit_here = "gS",
+      select_here = "gO",
       type_hint_mode = "t",
       submit_hint_mode = "s",
       submit_focused = "gs",

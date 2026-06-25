@@ -16,9 +16,10 @@ pub use renderer::{
     PageMetadataRequest, PageMetrics, PageMetricsRequest, PageTextRequest, PageTextSnapshot,
     PointInfo, PointInfoRequest, ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame,
     Renderer, RendererError, RendererErrorKind, RightClickHintRequest, RightClickPointRequest,
-    ScrollRequest, ScrollResult, SelectHintRequest, SelectOptionHint, SelectionTextRequest,
-    SelectionTextResult, ShutdownResult, StopLoadingRequest, StopLoadingResult, TextInputRequest,
-    ToggleHintRequest, UploadHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
+    ScrollRequest, ScrollResult, SelectHintRequest, SelectOptionHint, SelectPointRequest,
+    SelectionTextRequest, SelectionTextResult, ShutdownResult, StopLoadingRequest,
+    StopLoadingResult, TextInputRequest, ToggleHintRequest, UploadHintRequest, WheelPointRequest,
+    ZoomRequest, ZoomResult,
 };
 pub use session::{
     BrowserSession, FrameId, FrameMetadata, LoadingState, PageId, PageState, SessionId, Viewport,

@@ -30,6 +30,8 @@ assert(type(browser.wheel_point) == "function", "wheel_point API should exist")
 assert(type(browser.wheel_mouse) == "function", "wheel_mouse API should exist")
 assert(type(browser.type_point) == "function", "type_point API should exist")
 assert(type(browser.type_here) == "function", "type_here API should exist")
+assert(type(browser.select_point) == "function", "select_point API should exist")
+assert(type(browser.select_here) == "function", "select_here API should exist")
 assert(type(browser.type_hint) == "function", "type_hint API should exist")
 assert(type(browser.type_hint_mode) == "function", "type_hint_mode API should exist")
 assert(type(browser.select_hint) == "function", "select_hint API should exist")
@@ -828,6 +830,7 @@ local function with_action_stubs(fn)
     yank_point_url_here = browser.yank_point_url_here,
     wheel_here = browser.wheel_here,
     type_here = browser.type_here,
+    select_here = browser.select_here,
   }
   browser.open = function(target)
     table.insert(action_calls, "open:" .. tostring(target))
@@ -993,6 +996,10 @@ local function with_action_stubs(fn)
   end
   browser.type_here = function(text)
     table.insert(action_calls, "type_here:" .. tostring(text))
+    return true
+  end
+  browser.select_here = function(choice)
+    table.insert(action_calls, "select_here:" .. tostring(choice))
     return true
   end
   fn()
@@ -1287,6 +1294,39 @@ with_action_stubs(function()
 	    end,
 	  }) == true, "Type at cursor action should run")
 	  assert(action_calls[#action_calls] == "type_here:typed text", "Type at cursor action should call type_here")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Select at cursor" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	    input = function(prompt)
+	      assert(prompt == "nvim-browser select at cursor: ", "Select at cursor action should prompt for an option choice")
+	      return "Canada"
+	    end,
+	  }) == true, "Select at cursor action should run")
+	  assert(action_calls[#action_calls] == "select_here:Canada", "Select at cursor action should call select_here")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Select at cursor" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	    input = function()
+	      return ""
+	    end,
+	  }) == true, "Select at cursor action should treat empty input as a no-op")
+	  assert(#action_calls == 0, "Select at cursor action should not call select_here on empty input")
 
 	  action_calls = {}
 	  assert(browser.actions({
@@ -1775,6 +1815,8 @@ local original_terminal_hover_hint = terminal.hover_hint
 local original_terminal_focus_hint = terminal.focus_hint
 local original_terminal_type_point = terminal.type_point
 local original_terminal_type_here = terminal.type_here
+_G.nvim_browser_original_terminal_select_point = terminal.select_point
+_G.nvim_browser_original_terminal_select_here = terminal.select_here
 local original_terminal_stop = terminal.stop
 local original_terminal_input_text = terminal.input_text
 local original_terminal_press_key = terminal.press_key
@@ -3059,6 +3101,22 @@ assert(browser.type_here("cursor text", { submit = true }) == "typed-here", "typ
 assert(typed_here.text == "cursor text", "type_here should pass text to terminal")
 assert(typed_here.submit == true, "type_here should pass submit option to terminal")
 
+terminal.select_point = function(x, y, choice)
+  _G.nvim_browser_selected_point = { x = x, y = y, choice = choice }
+  return true
+end
+assert(browser.select_point(12.5, 24.25, "Canada") == true, "select_point should delegate to terminal point select")
+assert(_G.nvim_browser_selected_point.x == 12.5, "select_point should pass x coordinate to terminal")
+assert(_G.nvim_browser_selected_point.y == 24.25, "select_point should pass y coordinate to terminal")
+assert(_G.nvim_browser_selected_point.choice == "Canada", "select_point should pass choice to terminal")
+
+terminal.select_here = function(choice)
+  _G.nvim_browser_selected_here = choice
+  return "selected-here"
+end
+assert(browser.select_here("Canada") == "selected-here", "select_here should delegate to terminal cursor select")
+assert(_G.nvim_browser_selected_here == "Canada", "select_here should pass choice to terminal")
+
 local focused_input = nil
 terminal.input_text = function(text)
   focused_input = text
@@ -3780,6 +3838,8 @@ terminal.hover_hint = original_terminal_hover_hint
 terminal.focus_hint = original_terminal_focus_hint
 terminal.type_point = original_terminal_type_point
 terminal.type_here = original_terminal_type_here
+terminal.select_point = _G.nvim_browser_original_terminal_select_point
+terminal.select_here = _G.nvim_browser_original_terminal_select_here
 terminal.stop = original_terminal_stop
 terminal.input_text = original_terminal_input_text
 terminal.press_key = original_terminal_press_key

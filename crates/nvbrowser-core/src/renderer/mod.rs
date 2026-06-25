@@ -65,6 +65,8 @@ pub trait Renderer {
 
     fn select_hint(&mut self, request: SelectHintRequest) -> Result<InputResult, RendererError>;
 
+    fn select_point(&mut self, request: SelectPointRequest) -> Result<InputResult, RendererError>;
+
     fn upload_hint(&mut self, request: UploadHintRequest) -> Result<InputResult, RendererError>;
 
     fn toggle_hint(&mut self, request: ToggleHintRequest) -> Result<InputResult, RendererError>;
@@ -765,6 +767,15 @@ pub struct WheelPointRequest {
     pub delta_y: f64,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SelectPointRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub x: f64,
+    pub y: f64,
+    pub choice: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FindTextRequest {
     pub session_id: SessionId,
@@ -1028,6 +1039,24 @@ impl WheelPointRequest {
     }
 }
 
+impl SelectPointRequest {
+    pub fn new(
+        session_id: SessionId,
+        page_id: PageId,
+        x: f64,
+        y: f64,
+        choice: impl Into<String>,
+    ) -> Self {
+        Self {
+            session_id,
+            page_id,
+            x,
+            y,
+            choice: choice.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ShutdownResult {}
 
@@ -1252,6 +1281,16 @@ mod tests {
         fn select_hint(
             &mut self,
             request: SelectHintRequest,
+        ) -> Result<InputResult, RendererError> {
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn select_point(
+            &mut self,
+            request: SelectPointRequest,
         ) -> Result<InputResult, RendererError> {
             Ok(InputResult {
                 session_id: request.session_id,

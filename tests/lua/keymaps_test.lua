@@ -172,6 +172,10 @@ local browser = {
     table.insert(calls, "type_here" .. suffix .. ":" .. tostring(text))
     return true
   end,
+  select_here = function(choice)
+    table.insert(calls, "select_here:" .. tostring(choice))
+    return true
+  end,
   stop = function()
     table.insert(calls, "stop")
   end,
@@ -341,6 +345,8 @@ keymaps.setup_buffer(browser, first_bufnr, {
       return "cursor text"
     elseif prompt == "nvim-browser submit at cursor: " then
       return "cursor submit"
+    elseif prompt == "nvim-browser select at cursor: " then
+      return "cursor option"
     end
     assert(
       prompt == "nvim-browser text: " or prompt == "nvim-browser option: " or prompt == "nvim-browser hint: ",
@@ -379,6 +385,7 @@ assert_buffer_mapping(first_bufnr, "gY", "buffer-local controls should install c
 assert_buffer_mapping(first_bufnr, "gi", "buffer-local controls should install cursor point inspection")
 assert_buffer_mapping(first_bufnr, "gI", "buffer-local controls should install cursor text input")
 assert_buffer_mapping(first_bufnr, "gS", "buffer-local controls should install cursor text submit")
+assert_buffer_mapping(first_bufnr, "gO", "buffer-local controls should install cursor select")
 assert_buffer_mapping(first_bufnr, "<CR>", "buffer-local controls should install Enter forwarding")
 assert_buffer_mapping(first_bufnr, "<Tab>", "buffer-local controls should install Tab forwarding")
 assert_buffer_mapping(first_bufnr, "<S-Tab>", "buffer-local controls should install Shift-Tab forwarding")
@@ -439,6 +446,7 @@ vim.cmd([[normal "+gY]])
 trigger_buffer(first_bufnr, "gi")
 trigger_buffer(first_bufnr, "gI")
 trigger_buffer(first_bufnr, "gS")
+trigger_buffer(first_bufnr, "gO")
 trigger_buffer(first_bufnr, "<CR>")
 trigger_buffer(first_bufnr, "<Tab>")
 trigger_buffer(first_bufnr, "<S-Tab>")
@@ -470,7 +478,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,actions,find:forward:local,find_next,find_previous,transient_hints,jump_hint:buffer text,type_hints:type:buffer text,type_hints:submit:buffer text,submit_focused,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,yank_point_url:+,inspect_point_here,type_here:type:cursor text,type_here:submit:cursor submit,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,address,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,double_click_here,right_click_here,hover_here,follow_point_url_here,close,click_mouse,double_click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,actions,find:forward:local,find_next,find_previous,transient_hints,jump_hint:buffer text,type_hints:type:buffer text,type_hints:submit:buffer text,submit_focused,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,yank_point_url:+,inspect_point_here,type_here:type:cursor text,type_here:submit:cursor submit,select_here:cursor option,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,address,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,double_click_here,right_click_here,hover_here,follow_point_url_here,close,click_mouse,double_click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
 
@@ -533,6 +541,7 @@ keymaps.setup_buffer(browser, first_bufnr, {
     point_info_here = "gI",
     type_here = "gt",
     submit_here = "gT",
+    select_here = "go",
     key_enter = false,
     key_focus_location = "ga",
   },
@@ -561,6 +570,7 @@ assert_buffer_mapping(first_bufnr, "gU", "custom buffer-local cursor link URL ya
 assert_buffer_mapping(first_bufnr, "gI", "custom buffer-local cursor point inspection mapping should be installed")
 assert_buffer_mapping(first_bufnr, "gt", "custom buffer-local cursor text input mapping should be installed")
 assert_buffer_mapping(first_bufnr, "gT", "custom buffer-local cursor text submit mapping should be installed")
+assert_buffer_mapping(first_bufnr, "go", "custom buffer-local cursor select mapping should be installed")
 assert_no_buffer_mapping(first_bufnr, "gl", "remapped address prompt shortcut should remove the default")
 assert_buffer_mapping(first_bufnr, "ga", "custom address prompt shortcut should be installed")
 assert_no_buffer_mapping(first_bufnr, "<CR>", "false buffer-local browser key mappings should disable defaults")
@@ -597,6 +607,9 @@ end, { buffer = second_bufnr })
 vim.keymap.set("n", "gS", function()
   table.insert(calls, "cursor-submit-existing")
 end, { buffer = second_bufnr })
+vim.keymap.set("n", "gO", function()
+  table.insert(calls, "cursor-select-existing")
+end, { buffer = second_bufnr })
 keymaps.setup_buffer(browser, second_bufnr, {
   enabled = true,
 })
@@ -612,6 +625,8 @@ trigger_buffer(second_bufnr, "gI")
 assert(calls[#calls] == "cursor-type-existing", "buffer-local cursor text input should not overwrite existing mappings")
 trigger_buffer(second_bufnr, "gS")
 assert(calls[#calls] == "cursor-submit-existing", "buffer-local cursor text submit should not overwrite existing mappings")
+trigger_buffer(second_bufnr, "gO")
+assert(calls[#calls] == "cursor-select-existing", "buffer-local cursor select should not overwrite existing mappings")
 
 local disabled_click_bufnr = vim.api.nvim_create_buf(false, true)
 keymaps.setup_buffer(browser, disabled_click_bufnr, {
@@ -623,6 +638,7 @@ keymaps.setup_buffer(browser, disabled_click_bufnr, {
     point_info_here = false,
     type_here = false,
     submit_here = false,
+    select_here = false,
     actions = false,
   },
 })
@@ -654,6 +670,10 @@ assert(
   buffer_mapping(disabled_click_bufnr, "gS").buffer ~= 1,
   "false cursor text submit mapping should disable the default buffer-local mapping"
 )
+assert(
+  buffer_mapping(disabled_click_bufnr, "gO").buffer ~= 1,
+  "false cursor select mapping should disable the default buffer-local mapping"
+)
 
 local canceled_type_bufnr = vim.api.nvim_create_buf(false, true)
 local calls_before_canceled_type = #calls
@@ -666,12 +686,16 @@ keymaps.setup_buffer(browser, canceled_type_bufnr, {
     if prompt == "nvim-browser submit at cursor: " then
       return nil
     end
+    if prompt == "nvim-browser select at cursor: " then
+      return ""
+    end
     return "unexpected"
   end,
 })
 trigger_buffer(canceled_type_bufnr, "gI")
 trigger_buffer(canceled_type_bufnr, "gS")
-assert(#calls == calls_before_canceled_type, "empty or canceled cursor text prompts should not call browser type_here")
+trigger_buffer(canceled_type_bufnr, "gO")
+assert(#calls == calls_before_canceled_type, "empty or canceled cursor prompts should not call browser cursor actions")
 
 keymaps.setup_buffer(browser, first_bufnr, {
   enabled = false,

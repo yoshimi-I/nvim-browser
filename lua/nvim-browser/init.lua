@@ -1798,6 +1798,16 @@ local function action_items(opts, report_error)
       end,
     },
     {
+      label = "Select at cursor",
+      run = function()
+        local choice = (opts.input or vim.fn.input)("nvim-browser select at cursor: ")
+        if choice == nil or choice == "" then
+          return true
+        end
+        return M.select_here(choice)
+      end,
+    },
+    {
       label = "Submit focused",
       run = function()
         return M.submit_focused()
@@ -2198,6 +2208,10 @@ function M.type_point(x, y, text, opts)
   return terminal.type_point(x, y, text, opts)
 end
 
+function M.select_point(x, y, choice)
+  return terminal.select_point(x, y, choice)
+end
+
 function M.find_text(query, opts)
   return terminal.find_text(query, opts)
 end
@@ -2245,6 +2259,10 @@ end
 
 function M.type_here(text, opts)
   return terminal.type_here(text, opts)
+end
+
+function M.select_here(choice)
+  return terminal.select_here(choice)
 end
 
 function M.jump_hint(id)

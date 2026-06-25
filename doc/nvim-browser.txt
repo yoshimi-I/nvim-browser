@@ -104,6 +104,7 @@ Example lazy.nvim setup:
     "NBrowserToggleHint",
     "NBrowserTypeHere",
     "NBrowserSubmitHere",
+    "NBrowserSelectHere",
     "NBrowserTypeHintMode",
     "NBrowserSubmitHintMode",
     "NBrowserSelectHintMode",
@@ -327,7 +328,7 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserActions
 	Open a compact picker for common browser actions such as opening,
 	previewing, inspecting, resuming, bookmarking, address, reload, back,
-	forward, find, hints, text mode, cursor click/double-click/right-click/hover/wheel/type,
+	forward, find, hints, text mode, cursor click/double-click/right-click/hover/wheel/type/select,
 	cursor link follow, downloads, screenshot, reader, status, zoom, doctor,
 	and close. Focused preview buffers map ? to this picker by default.
 
@@ -648,8 +649,13 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserSubmitHere {text}
 	Map the preview cursor to viewport pixels, click/focus that browser point,
 	type text there, press Enter, and capture a fresh frame.
-	Focused preview buffers map `gI` to prompt for :NBrowserTypeHere behavior
-	and `gS` to prompt for :NBrowserSubmitHere behavior.
+
+							*:NBrowserSelectHere*
+:NBrowserSelectHere {choice}
+	Map the preview cursor to viewport pixels, select a <select> option by
+	1-based index, value, or visible label, and capture a fresh frame.
+	Focused preview buffers map `gI`, `gS`, and `gO` to prompt for
+	:NBrowserTypeHere, :NBrowserSubmitHere, and :NBrowserSelectHere behavior.
 
 							*:NBrowserTypeHintMode*
 :NBrowserTypeHintMode
@@ -910,6 +916,7 @@ Y  yank active browser URL into register
 gY yank link URL under cursor into register
 gI type text at cursor
 gS type text at cursor and submit
+gO select dropdown option at cursor
 <CR>     press Enter
 <Tab>    press Tab
 <S-Tab>  press Shift-Tab
@@ -955,6 +962,7 @@ require("nvim-browser").setup({
       point_info_here = "gi",
       type_here = "gI",
       submit_here = "gS",
+      select_here = "gO",
       left_click = false,
       double_click = "<2-LeftMouse>",
       right_click_mouse = "<RightMouse>",
@@ -986,6 +994,8 @@ Set a mapping value to `false` to preserve that key, for example
 `preview_keymaps = { mappings = { yank_point_url_here = false } }`.
 To preserve Vim's built-in `gi`, use
 `preview_keymaps = { mappings = { point_info_here = false } }`.
+To disable cursor-local select prompts, use
+`preview_keymaps = { mappings = { select_here = false } }`.
 
 	The session file stores recent pages, bookmarks, and completed-download
 	history. `history_limit` bounds each persisted list. Set `persist = false`

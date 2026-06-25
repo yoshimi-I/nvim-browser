@@ -146,6 +146,7 @@ With lazy.nvim:
     "NBrowserToggleHint",
     "NBrowserTypeHere",
     "NBrowserSubmitHere",
+    "NBrowserSelectHere",
     "NBrowserTypeHintMode",
     "NBrowserSubmitHintMode",
     "NBrowserSelectHintMode",
@@ -493,6 +494,7 @@ Then run:
 :NBrowserToggleHint c
 :NBrowserTypeHere hello world
 :NBrowserSubmitHere hello world
+:NBrowserSelectHere Canada
 :NBrowserTypeHintMode
 :NBrowserSubmitHintMode
 :NBrowserSelectHintMode
@@ -644,8 +646,10 @@ hinted radio input. Checkbox/radio hints show `[checked]` or `[unchecked]` in
 clicks/focuses that point, and types text there. `:NBrowserSubmitHere {text}`
 does the same and presses Enter after the text is queued. These commands require
 an ANSI or Kitty Unicode browser preview and ignore the preview footer row.
-Focused preview buffers map `gI` and `gS` to prompt for these cursor-local
-type and submit actions.
+`:NBrowserSelectHere {choice}` maps the preview cursor to a browser point and
+selects a `<select>` option by 1-based index, value, or visible label. Focused
+preview buffers map `gI`, `gS`, and `gO` to prompt for these cursor-local type,
+submit, and select actions.
 
 `:NBrowserTypeHintMode` prompts for a hint label and text, then types into the
 hinted element. `:NBrowserSubmitHintMode` does the same and presses Enter after
@@ -680,7 +684,7 @@ Lua mappings can call `require("nvim-browser").address()` or pass a value
 directly with `require("nvim-browser").address("example.com")`.
 `:NBrowserActions` opens a compact picker for common browser actions such as
 opening, previewing, inspecting, resuming, bookmarking, address, reload, history
-movement, find, hints, text mode, cursor click/double-click/right-click/hover/wheel/type,
+movement, find, hints, text mode, cursor click/double-click/right-click/hover/wheel/type/select,
 cursor link follow/yank/inspect, downloads, screenshot, reader, status, zoom, doctor, and
 close. Preview buffers map `?` to this picker by default.
 
@@ -788,7 +792,8 @@ type into the focused element with browser text mode, `p` paste the selected
 register into the focused element, `y` yank the browser selection into the
 selected register, `Y` yank the active browser URL into the selected register,
 `gY` yank the link URL under the cursor into the selected register, `gI` type
-text at the cursor, `gS` type text at the cursor and submit, `<CR>`
+text at the cursor, `gS` type text at the cursor and submit, `gO` select a
+dropdown option at the cursor, `<CR>`
 Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
 Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` address
 prompt, arrow keys, `gc` click the browser viewport at the cursor, `gd`
@@ -806,7 +811,8 @@ example, keep preview keymaps enabled but preserve Vim's built-in `gf` with
 cursor link URL yank with
 `preview_keymaps = { mappings = { yank_point_url_here = false } }`, or disable
 cursor inspect with
-`preview_keymaps = { mappings = { point_info_here = false } }`.
+`preview_keymaps = { mappings = { point_info_here = false } }`, or disable
+cursor select with `preview_keymaps = { mappings = { select_here = false } }`.
 
 Configure search with `require("nvim-browser").setup({ search_url = "https://www.google.com/search?q=%s" })`.
 The `%s` placeholder receives the encoded query; write literal percent signs as

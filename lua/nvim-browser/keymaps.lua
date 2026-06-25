@@ -335,6 +335,17 @@ function M.setup_buffer(browser, bufnr, opts)
     browser.type_here(text, { submit = true })
   end, "nvim-browser: submit at cursor", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "select_here", "gO"), function()
+    if browser.select_here == nil then
+      return
+    end
+    local choice = input("nvim-browser select at cursor: ")
+    if choice == nil or choice == "" then
+      return
+    end
+    browser.select_here(choice)
+  end, "nvim-browser: select at cursor", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "type_hint_mode", "t"), function()
     browser.type_hint_mode(input)
   end, "nvim-browser: type into hint", buffer_opts)

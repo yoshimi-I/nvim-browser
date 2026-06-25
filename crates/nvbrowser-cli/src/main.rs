@@ -22,8 +22,8 @@ use nvbrowser_core::{
     PageMetricsRequest, PageTextRequest, PageTextSnapshot, PointInfo, PointInfoRequest,
     ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
     RightClickHintRequest, RightClickPointRequest, ScrollRequest, SelectHintRequest,
-    SelectionTextRequest, SessionId, StopLoadingRequest, TextInputRequest, ToggleHintRequest,
-    UploadHintRequest, Viewport, WheelPointRequest, ZoomRequest,
+    SelectPointRequest, SelectionTextRequest, SessionId, StopLoadingRequest, TextInputRequest,
+    ToggleHintRequest, UploadHintRequest, Viewport, WheelPointRequest, ZoomRequest,
 };
 use serde::{Deserialize, Serialize};
 
@@ -493,6 +493,12 @@ enum ServeRequest {
         y: f64,
         text: String,
         submit: bool,
+    },
+    SelectPoint {
+        id: u64,
+        x: f64,
+        y: f64,
+        choice: String,
     },
     TypeHint {
         id: u64,
@@ -1680,6 +1686,17 @@ impl<R: Renderer> ServeRuntime<R> {
                 }
                 self.capture_payload(true).map(Some)
             }
+            ServeRequest::SelectPoint { x, y, choice, .. } => {
+                self.renderer.select_point(SelectPointRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    x,
+                    y,
+                    choice,
+                ))?;
+                self.settle_after_interaction()?;
+                self.capture_payload(true).map(Some)
+            }
             ServeRequest::TypeHint {
                 hint_id,
                 text,
@@ -1962,6 +1979,7 @@ impl ServeRequest {
             | ServeRequest::ToggleHint { id, .. }
             | ServeRequest::SubmitFocused { id }
             | ServeRequest::TypePoint { id, .. }
+            | ServeRequest::SelectPoint { id, .. }
             | ServeRequest::TypeHint { id, .. }
             | ServeRequest::FindText { id, .. }
             | ServeRequest::PageText { id }
@@ -2567,6 +2585,7 @@ mod tests {
         right_clicked_hints: Vec<u32>,
         hovered_hints: Vec<u32>,
         selected_hints: Vec<(u32, String)>,
+        selected_points: Vec<(f64, f64, String)>,
         uploaded_hints: Vec<(u32, Vec<PathBuf>)>,
         toggled_hints: Vec<u32>,
         clicked_points: Vec<(f64, f64, u32)>,
@@ -2583,6 +2602,7 @@ mod tests {
         fail_right_click_hint: bool,
         fail_hover_hint: bool,
         fail_select_hint: bool,
+        fail_select_point: bool,
         fail_upload_hint: bool,
         fail_toggle_hint: bool,
         fail_hints: bool,
@@ -2623,6 +2643,7 @@ mod tests {
                 right_clicked_hints: Vec::new(),
                 hovered_hints: Vec::new(),
                 selected_hints: Vec::new(),
+                selected_points: Vec::new(),
                 uploaded_hints: Vec::new(),
                 toggled_hints: Vec::new(),
                 clicked_points: Vec::new(),
@@ -2639,6 +2660,7 @@ mod tests {
                 fail_right_click_hint: false,
                 fail_hover_hint: false,
                 fail_select_hint: false,
+                fail_select_point: false,
                 fail_upload_hint: false,
                 fail_toggle_hint: false,
                 fail_hints: false,
@@ -3003,6 +3025,25 @@ mod tests {
                 return Err(RendererError::new(
                     RendererErrorKind::InvalidState,
                     "hint select failed",
+                ));
+            }
+            Ok(InputResult {
+                session_id: request.session_id,
+                page_id: request.page_id,
+            })
+        }
+
+        fn select_point(
+            &mut self,
+            request: SelectPointRequest,
+        ) -> Result<InputResult, RendererError> {
+            self.operations.push("select_point");
+            self.selected_points
+                .push((request.x, request.y, request.choice));
+            if self.fail_select_point {
+                return Err(RendererError::new(
+                    RendererErrorKind::InvalidState,
+                    "point select failed",
                 ));
             }
             Ok(InputResult {
@@ -4017,6 +4058,22 @@ mod tests {
                 text: "hello \"world\"".to_string(),
                 submit: true,
                 dom_epoch: None,
+            }
+        );
+    }
+
+    #[test]
+    fn serve_request_parses_select_point_jsonl() {
+        assert_eq!(
+            parse_serve_request(
+                r##"{"type":"select_point","id":17,"x":120.5,"y":240.25,"choice":"Canada"}"##
+            )
+            .expect("select point request should parse"),
+            ServeRequest::SelectPoint {
+                id: 17,
+                x: 120.5,
+                y: 240.25,
+                choice: "Canada".to_string(),
             }
         );
     }
@@ -6863,6 +6920,99 @@ mod tests {
                 "capture",
                 "hints"
             ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_selects_at_point_before_capturing_next_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                image_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::SelectPoint {
+            id: 2,
+            x: 120.5,
+            y: 240.25,
+            choice: "Canada".to_string(),
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_some());
+        assert_eq!(
+            runtime.renderer.selected_points,
+            vec![(120.5, 240.25, "Canada".to_string())]
+        );
+        assert_eq!(
+            runtime.renderer.operations,
+            vec![
+                "capture",
+                "hints",
+                "select_point",
+                "settle",
+                "capture",
+                "hints"
+            ]
+        );
+    }
+
+    #[test]
+    fn serve_runtime_does_not_capture_when_point_select_fails() {
+        let mut renderer = FakeRenderer::new();
+        renderer.fail_select_point = true;
+        let mut runtime = ServeRuntime::new(
+            renderer,
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                image_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+
+        runtime.handle(ServeRequest::Navigate {
+            id: 1,
+            url: "https://example.com".to_string(),
+        });
+        let response = runtime.handle(ServeRequest::SelectPoint {
+            id: 2,
+            x: 120.5,
+            y: 240.25,
+            choice: "Canada".to_string(),
+        });
+
+        assert_eq!(response.status, ServeStatus::Error);
+        assert!(response.payload.is_none());
+        assert_eq!(
+            runtime.renderer.selected_points,
+            vec![(120.5, 240.25, "Canada".to_string())]
+        );
+        assert_eq!(
+            runtime.renderer.operations,
+            vec!["capture", "hints", "select_point"]
         );
     }
 
