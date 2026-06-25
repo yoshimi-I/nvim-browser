@@ -2105,6 +2105,54 @@ assert(
 )
 _G.nvim_browser_serve_egress_payloads = {}
 _G.nvim_browser_serve_egress_events = {}
+vim.api.nvim_exec_autocmds("BufEnter", { buffer = _G.nvim_browser_tmux_state.bufnr, modeline = false })
+assert(vim.wait(1000, function()
+  for _, payload in ipairs(_G.nvim_browser_serve_egress_payloads) do
+    if payload:find("unicode-frame", 1, true) then
+      return true
+    end
+  end
+  return false
+end), "kitty-unicode previews should replay the last terminal payload on preview BufEnter")
+_G.nvim_browser_assert_redraw_before_payload("unicode-frame", "kitty-unicode BufEnter replay")
+_G.nvim_browser_serve_egress_payloads = {}
+_G.nvim_browser_serve_egress_events = {}
+vim.api.nvim_exec_autocmds("WinEnter", { buffer = _G.nvim_browser_tmux_state.bufnr, modeline = false })
+assert(vim.wait(1000, function()
+  for _, payload in ipairs(_G.nvim_browser_serve_egress_payloads) do
+    if payload:find("unicode-frame", 1, true) then
+      return true
+    end
+  end
+  return false
+end), "kitty-unicode previews should replay the last terminal payload on preview WinEnter")
+_G.nvim_browser_assert_redraw_before_payload("unicode-frame", "kitty-unicode WinEnter replay")
+_G.nvim_browser_serve_egress_payloads = {}
+_G.nvim_browser_serve_egress_events = {}
+vim.api.nvim_exec_autocmds("BufEnter", { buffer = _G.nvim_browser_tmux_state.bufnr, modeline = false })
+vim.api.nvim_exec_autocmds("WinEnter", { buffer = _G.nvim_browser_tmux_state.bufnr, modeline = false })
+assert(vim.wait(1000, function()
+  for _, payload in ipairs(_G.nvim_browser_serve_egress_payloads) do
+    if payload:find("unicode-frame", 1, true) then
+      return true
+    end
+  end
+  return false
+end), "kitty-unicode focus events should replay a terminal payload")
+_G.nvim_browser_focus_replay_count = 0
+for _, payload in ipairs(_G.nvim_browser_serve_egress_payloads) do
+  if payload:find("unicode-frame", 1, true) then
+    _G.nvim_browser_focus_replay_count = _G.nvim_browser_focus_replay_count + 1
+  end
+end
+assert(_G.nvim_browser_focus_replay_count == 1, "kitty-unicode BufEnter plus WinEnter should coalesce to one replay")
+_G.nvim_browser_serve_egress_payloads = {}
+_G.nvim_browser_serve_egress_events = {}
+_G.nvim_browser_unrelated_bufnr = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_exec_autocmds("BufEnter", { buffer = _G.nvim_browser_unrelated_bufnr, modeline = false })
+vim.wait(50)
+assert(#_G.nvim_browser_serve_egress_payloads == 0, "unrelated buffers should not replay kitty-unicode browser payloads")
+vim.api.nvim_set_current_win(_G.nvim_browser_tmux_state.winid)
 assert(terminal.focus() == true, "focus should replay the active kitty-unicode preview")
 _G.nvim_browser_assert_redraw_before_payload("unicode-frame", "kitty-unicode focus replay")
 _G.nvim_browser_serve_egress_payloads = {}
@@ -2147,7 +2195,25 @@ vim.api.nvim_chan_send = function(channel, payload)
   end
   return original_nvim_chan_send(channel, payload)
 end
+vim.api.nvim_chan_send = function(channel, payload)
+  if channel == vim.v.stderr then
+    table.insert(_G.nvim_browser_serve_egress_payloads, payload)
+    return 0
+  end
+  return original_nvim_chan_send(channel, payload)
+end
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com" })
+_G.nvim_browser_ansi_focus_state = terminal.state()
+_G.nvim_browser_serve_egress_payloads = {}
+vim.api.nvim_exec_autocmds("BufEnter", { buffer = _G.nvim_browser_ansi_focus_state.bufnr, modeline = false })
+vim.wait(50)
+assert(#_G.nvim_browser_serve_egress_payloads == 0, "ansi browser previews should not emit terminal graphics on BufEnter")
+vim.api.nvim_chan_send = function(channel, payload)
+  if channel == vim.v.stderr then
+    return 0
+  end
+  return original_nvim_chan_send(channel, payload)
+end
 fake_timers[1] = fake_timers[#fake_timers]
 jobstart_calls = { jobstart_calls[#jobstart_calls] }
 jobstop_calls = {}

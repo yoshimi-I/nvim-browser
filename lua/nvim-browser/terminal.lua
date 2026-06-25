@@ -10,6 +10,8 @@ local state = {
   generation = 0,
   last_payload = nil,
   last_payload_is_unicode = false,
+  suppress_focus_replay = false,
+  focus_replay_scheduled = false,
   has_rendered_frame = false,
   last_target = nil,
   stream_buffer = "",
@@ -19,6 +21,7 @@ local state = {
   next_request_id = 1,
   stop_timer = nil,
   resize_autocmd = nil,
+  focus_autocmd = nil,
   resize_timer = nil,
   current_url = nil,
   browser_url = nil,
@@ -118,6 +121,7 @@ local hint_label_keys = {
 }
 
 local resize_augroup = vim.api.nvim_create_augroup("nvim-browser-resize", { clear = true })
+local focus_augroup = vim.api.nvim_create_augroup("nvim-browser-focus", { clear = true })
 
 local function preview_width()
   return math.max(40, math.min(120, math.floor(vim.o.columns * 0.48)))
@@ -582,6 +586,7 @@ local stop_operation_watchdog_timer
 local schedule_operation_watchdog
 local hard_stop_pending_operation
 local hard_stop_capture_operation
+local replay_focused_kitty_unicode_frame
 
 local function send_serve_request(request, on_response)
   if state.mode ~= "serve" or state.job_id == nil then
@@ -1735,6 +1740,29 @@ local function ensure_resize_autocmd()
   })
 end
 
+local function ensure_focus_autocmd()
+  if state.focus_autocmd ~= nil then
+    return
+  end
+
+  state.focus_autocmd = vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
+    group = focus_augroup,
+    callback = function(args)
+      if args.buf ~= state.bufnr then
+        return
+      end
+      if state.suppress_focus_replay or state.focus_replay_scheduled then
+        return
+      end
+      state.focus_replay_scheduled = true
+      vim.schedule(function()
+        state.focus_replay_scheduled = false
+        replay_focused_kitty_unicode_frame()
+      end)
+    end,
+  })
+end
+
 local function reuse_active_serve_command(command)
   if state.mode ~= "serve" or state.job_id == nil or not is_valid_buffer() then
     return nil
@@ -2414,6 +2442,27 @@ local function send_kitty_unicode_frame(payload)
   send_terminal_escape(payload)
 end
 
+local function preview_has_current_focus()
+  if not is_valid_window() or not is_valid_buffer() then
+    return false
+  end
+  return vim.api.nvim_get_current_win() == state.winid and vim.api.nvim_get_current_buf() == state.bufnr
+end
+
+replay_focused_kitty_unicode_frame = function()
+  if not preview_has_current_focus() then
+    return false
+  end
+  if state.suppress_focus_replay then
+    return false
+  end
+  if not state.last_payload_is_unicode or state.last_payload == nil then
+    return false
+  end
+  send_kitty_unicode_frame(state.last_payload)
+  return true
+end
+
 local function preview_lines(message, target)
   local lines = {
     message,
@@ -2507,6 +2556,7 @@ function M.open(command)
   end
 
   stop_existing_job(false)
+  ensure_focus_autocmd()
 
   state.generation = state.generation + 1
   state.last_payload = nil
@@ -2922,7 +2972,9 @@ function M.focus()
     return false
   end
 
+  state.suppress_focus_replay = true
   vim.api.nvim_set_current_win(state.winid)
+  state.suppress_focus_replay = false
   if state.last_payload_is_unicode and state.last_payload ~= nil then
     send_kitty_unicode_frame(state.last_payload)
   else
@@ -4502,7 +4554,9 @@ function M.toggle()
 
   if is_valid_buffer() then
     create_window()
+    state.suppress_focus_replay = true
     vim.api.nvim_win_set_buf(state.winid, state.bufnr)
+    state.suppress_focus_replay = false
     if state.last_payload_is_unicode and state.last_payload ~= nil then
       send_kitty_unicode_frame(state.last_payload)
     else
