@@ -5436,12 +5436,58 @@ assert(vim.wait(1000, function()
 end), "serve exit after a good frame should close the active serve state")
 _G.nvim_browser_post_frame_exit_text = _G.nvim_browser_buffer_text(_G.nvim_browser_post_frame_exit_bufnr)
 assert(
-  _G.nvim_browser_post_frame_exit_text:find("Browser session exited: 3", 1, true),
-  "serve exit after a good frame should use the normal exit message"
+  not _G.nvim_browser_post_frame_exit_text:find("Browser session exited: 3", 1, true),
+  "serve exit after a good frame should not replace the preview body with the generic exit message"
+)
+assert(
+  terminal.state().status_error == "browser exited 3",
+  "serve exit after a good frame should keep the exit reason in status"
 )
 assert(
   not _G.nvim_browser_post_frame_exit_text:find("Browser startup failed", 1, true),
   "serve exit after a good frame should not be treated as a startup failure"
+)
+
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/preserve-exit-frame" })
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "ansi last good frame",
+  url = "https://example.com/preserve-exit-frame",
+  title = "Preserve Exit Frame",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Preserve Exit Frame"
+end), "test setup should render an ANSI frame before serve exit")
+_G.nvim_browser_ansi_post_frame_exit_bufnr = terminal.state().bufnr
+_G.nvim_browser_ansi_post_frame_exit_before = vim.api.nvim_buf_get_lines(
+  _G.nvim_browser_ansi_post_frame_exit_bufnr,
+  0,
+  -1,
+  false
+)
+serve_exit(nil, 5)
+assert(vim.wait(1000, function()
+  return terminal.state().mode == nil
+end), "ANSI serve exit after a good frame should close the active serve state")
+_G.nvim_browser_ansi_post_frame_exit_after = vim.api.nvim_buf_get_lines(
+  _G.nvim_browser_ansi_post_frame_exit_bufnr,
+  0,
+  -1,
+  false
+)
+assert(
+  _G.nvim_browser_ansi_post_frame_exit_after[1] == _G.nvim_browser_ansi_post_frame_exit_before[1],
+  "ANSI serve exit after a good frame should preserve the first rendered row"
+)
+_G.nvim_browser_ansi_post_frame_exit_text = table.concat(_G.nvim_browser_ansi_post_frame_exit_after, "\n")
+assert(
+  not _G.nvim_browser_ansi_post_frame_exit_text:find("Browser session exited: 5", 1, true),
+  "ANSI serve exit after a good frame should not replace the preview body with the generic exit message"
+)
+assert(
+  terminal.state().status_error == "browser exited 5",
+  "ANSI serve exit after a good frame should keep the exit reason in status"
 )
 
 local reused_bufnr = second_state.bufnr

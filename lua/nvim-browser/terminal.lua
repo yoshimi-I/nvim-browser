@@ -2869,15 +2869,22 @@ function M.open(command)
                   state.status_error = state.status_error .. ": " .. stderr_summary
                 end
               end
-              vim.api.nvim_buf_set_lines(
-                bufnr,
-                0,
-                -1,
-                false,
-                had_rendered_frame
-                    and preview_lines("Browser session exited: " .. code, target)
-                  or failure_preview_lines("Browser startup failed: exit " .. code, target, state.status_error)
-              )
+              if had_rendered_frame then
+                local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+                if #lines > 0 then
+                  local width = math.max(1, vim.fn.strdisplaywidth(lines[#lines]))
+                  lines[#lines] = preview_footer_line(width)
+                  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+                end
+              else
+                vim.api.nvim_buf_set_lines(
+                  bufnr,
+                  0,
+                  -1,
+                  false,
+                  failure_preview_lines("Browser startup failed: exit " .. code, target, state.status_error)
+                )
+              end
             else
               local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
               if #lines > 0 then
