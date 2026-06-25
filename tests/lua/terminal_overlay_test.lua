@@ -576,12 +576,18 @@ terminal._test.apply_serve_response({
 })
 terminal._test.handle_reader_response({
   status = "ok",
+  display_url = "file:///tmp/site/README.md#intro",
   text = {
     title = "Local Reader",
-    url = "file:///tmp/site/index.html",
+    url = "file:///tmp/nvbrowser-README-wrapper.html",
     text = "# Local Reader\n\n[Next](guide/page.html)\n\n[Parent](../docs/page.html)\n\n[Double](assets//app.js)\n\n[DotFragment](..#intro)\n\n[DotQuery](.?q=x)\n\n[Docs](/docs)\n\n[Section](#intro)\n\n[Search](?q=x)\n\n[Markdown](guide/notes.md)\n\n[Image](assets/pixel.png)\n\n[Pdf](manual.pdf)",
   },
 })
+_G.nvim_browser_display_reader_lines = vim.api.nvim_buf_get_lines(terminal.state().reader_bufnr, 0, 1, false)
+assert(
+  _G.nvim_browser_display_reader_lines[1] == "<file:///tmp/site/README.md#intro>",
+  "reader header should prefer the serve display URL over an internal wrapper URL"
+)
 vim.api.nvim_set_current_buf(terminal.state().reader_bufnr)
 reader_requests = {}
 vim.fn.chansend = function(job_id, payload)
@@ -589,7 +595,7 @@ vim.fn.chansend = function(job_id, payload)
   return 1
 end
 vim.api.nvim_win_set_cursor(0, { 5, 1 })
-assert(terminal.reader_follow() == "file:///tmp/site/guide/page.html", "reader follow should resolve relative file links from the reader snapshot")
+assert(terminal.reader_follow() == "file:///tmp/site/guide/page.html", "reader follow should resolve relative file links from the display URL")
 vim.api.nvim_win_set_cursor(0, { 7, 1 })
 assert(terminal.reader_follow() == "file:///tmp/docs/page.html", "reader follow should normalize parent segments in file links")
 vim.api.nvim_win_set_cursor(0, { 9, 1 })
@@ -601,12 +607,18 @@ assert(terminal.reader_follow() == "file:///tmp/site/?q=x", "reader follow shoul
 vim.api.nvim_win_set_cursor(0, { 15, 1 })
 assert(terminal.reader_follow() == "file:///docs", "reader follow should resolve root-relative file links")
 vim.api.nvim_win_set_cursor(0, { 17, 1 })
-assert(terminal.reader_follow() == "file:///tmp/site/index.html#intro", "reader follow should resolve file fragments")
+assert(terminal.reader_follow() == "file:///tmp/site/README.md#intro", "reader follow should resolve file fragments from the display URL")
 vim.api.nvim_win_set_cursor(0, { 19, 1 })
-assert(terminal.reader_follow() == "file:///tmp/site/index.html?q=x", "reader follow should resolve file query-only links")
+assert(terminal.reader_follow() == "file:///tmp/site/README.md?q=x", "reader follow should resolve file query-only links from the display URL")
 vim.fn.chansend = original_chansend_for_reader
 assert(reader_requests[1].request.type == "navigate", "local HTML reader follow should use normal navigation")
 assert(reader_requests[1].request.url == "file:///tmp/site/guide/page.html", "local HTML reader follow should send the resolved file URL")
+assert(reader_requests[7].request.type == "navigate_markdown", "Markdown fragment follow should use the Markdown preview wrapper")
+assert(reader_requests[7].request.path == "/tmp/site/README.md", "Markdown fragment follow should send the display-URL-relative filesystem path")
+assert(reader_requests[7].request.display_url == "file:///tmp/site/README.md#intro", "Markdown fragment follow should preserve the display-URL-relative URL")
+assert(reader_requests[8].request.type == "navigate_markdown", "Markdown query follow should use the Markdown preview wrapper")
+assert(reader_requests[8].request.path == "/tmp/site/README.md", "Markdown query follow should send the display-URL-relative filesystem path")
+assert(reader_requests[8].request.display_url == "file:///tmp/site/README.md?q=x", "Markdown query follow should preserve the display-URL-relative URL")
 vim.fn.chansend = function(job_id, payload)
   table.insert(reader_requests, { job_id = job_id, request = vim.json.decode(payload) })
   return 1

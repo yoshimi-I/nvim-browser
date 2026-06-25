@@ -6398,6 +6398,7 @@ mod tests {
             url: "https://example.com".to_string(),
         });
         assert_eq!(navigate.status, ServeStatus::Ok);
+        runtime.display_url = Some("file:///tmp/README.md#intro".to_string());
         runtime.renderer.operations.clear();
         runtime.renderer.captures = 0;
 
@@ -6405,6 +6406,10 @@ mod tests {
 
         assert_eq!(response.status, ServeStatus::Ok);
         assert!(response.payload.is_none());
+        assert_eq!(
+            response.display_url.as_deref(),
+            Some("file:///tmp/README.md#intro")
+        );
         assert!(response.hints.is_empty());
         assert_eq!(
             response

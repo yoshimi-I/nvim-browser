@@ -934,10 +934,11 @@ local function apply_reader_snapshot(snapshot)
   end
   pcall(vim.api.nvim_buf_set_name, state.reader_bufnr, reader_buffer_name(snapshot))
   local lines = {}
-  if snapshot.url ~= nil and snapshot.url ~= "" then
-    table.insert(lines, "<" .. snapshot.url .. ">")
+  local reader_url = snapshot.display_url or snapshot.url
+  if reader_url ~= nil and reader_url ~= "" then
+    table.insert(lines, "<" .. reader_url .. ">")
     table.insert(lines, "")
-    state.reader_base_url = snapshot.url
+    state.reader_base_url = reader_url
   end
   vim.list_extend(lines, vim.split(snapshot.text or "", "\n", { plain = true }))
   if snapshot.truncated == true then
@@ -973,7 +974,11 @@ local function handle_reader_response(response)
     vim.api.nvim_echo({ { "nvim-browser: reader snapshot was empty", "WarningMsg" } }, false, {})
     return
   end
-  apply_reader_snapshot(response.text)
+  local snapshot = response.text
+  if response.display_url ~= nil and response.display_url ~= vim.NIL and response.display_url ~= "" then
+    snapshot = vim.tbl_extend("force", {}, snapshot, { display_url = response.display_url })
+  end
+  apply_reader_snapshot(snapshot)
 end
 
 local function warn_selection_yank_failed()
