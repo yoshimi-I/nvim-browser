@@ -123,6 +123,10 @@ local browser = {
     table.insert(calls, "yank_url:" .. tostring(register))
     return true
   end,
+  yank_point_url_here = function(register)
+    table.insert(calls, "yank_point_url:" .. tostring(register))
+    return true
+  end,
   start_text_mode = function()
     table.insert(calls, "text_mode")
     return true
@@ -358,6 +362,7 @@ assert_buffer_mapping(first_bufnr, "p", "buffer-local controls should install re
 assert_buffer_mapping(first_bufnr, "y", "buffer-local controls should install browser selection yank")
 assert_buffer_visual_mapping(first_bufnr, "y", "buffer-local controls should install visual browser region yank")
 assert_buffer_mapping(first_bufnr, "Y", "buffer-local controls should install current URL yank")
+assert_buffer_mapping(first_bufnr, "gY", "buffer-local controls should install cursor link URL yank")
 assert_buffer_mapping(first_bufnr, "<CR>", "buffer-local controls should install Enter forwarding")
 assert_buffer_mapping(first_bufnr, "<Tab>", "buffer-local controls should install Tab forwarding")
 assert_buffer_mapping(first_bufnr, "<S-Tab>", "buffer-local controls should install Shift-Tab forwarding")
@@ -414,6 +419,7 @@ vim.api.nvim_set_current_buf(first_bufnr)
 vim.cmd([[normal "+p]])
 vim.cmd([[normal "+y]])
 vim.cmd([[normal "+Y]])
+vim.cmd([[normal "+gY]])
 trigger_buffer(first_bufnr, "<CR>")
 trigger_buffer(first_bufnr, "<Tab>")
 trigger_buffer(first_bufnr, "<S-Tab>")
@@ -445,7 +451,7 @@ for index = buffer_call_start + 1, #calls do
 end
 assert(
   table.concat(buffer_calls, ",")
-    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,actions,find:forward:local,find_next,find_previous,transient_hints,jump_hint:buffer text,type_hints:type:buffer text,type_hints:submit:buffer text,submit_focused,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,address,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,double_click_here,right_click_here,hover_here,follow_point_url_here,close,click_mouse,double_click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
+    == "reload,back,forward,scroll:120:0,scroll:-120:0,page_down,page_up,scroll_top,scroll_bottom,half_page_down,half_page_up,zoom_in,zoom_out,zoom_reset,address,actions,find:forward:local,find_next,find_previous,transient_hints,jump_hint:buffer text,type_hints:type:buffer text,type_hints:submit:buffer text,submit_focused,select_hint:buffer text,toggle_hint:buffer text,text_mode,paste:+,yank:+,yank_url:+,yank_point_url:+,key:Enter:,key:Tab:,key:Tab:shift,key:Backspace:,key:Delete:,key:Escape:,key:A:ctrl,address,key:ArrowUp:,key:ArrowDown:,key:ArrowLeft:,key:ArrowRight:,click_here,double_click_here,right_click_here,hover_here,follow_point_url_here,close,click_mouse,double_click_mouse,right_click_mouse,wheel:120:0,wheel:-120:0,stop",
   "buffer-local controls should call browser APIs and prefer transient hints"
 )
 
@@ -504,6 +510,7 @@ keymaps.setup_buffer(browser, first_bufnr, {
     paste_register = "P",
     yank_selection = "yy",
     yank_current_url = "YU",
+    yank_point_url_here = "gU",
     key_enter = false,
     key_focus_location = "ga",
   },
@@ -528,6 +535,7 @@ assert_buffer_mapping(first_bufnr, "P", "custom buffer-local paste mapping shoul
 assert_buffer_mapping(first_bufnr, "yy", "custom buffer-local browser selection yank mapping should be installed")
 assert_buffer_visual_mapping(first_bufnr, "yy", "custom buffer-local visual browser region yank mapping should be installed")
 assert_buffer_mapping(first_bufnr, "YU", "custom buffer-local current URL yank mapping should be installed")
+assert_buffer_mapping(first_bufnr, "gU", "custom buffer-local cursor link URL yank mapping should be installed")
 assert_no_buffer_mapping(first_bufnr, "gl", "remapped address prompt shortcut should remove the default")
 assert_buffer_mapping(first_bufnr, "ga", "custom address prompt shortcut should be installed")
 assert_no_buffer_mapping(first_bufnr, "<CR>", "false buffer-local browser key mappings should disable defaults")
@@ -552,6 +560,9 @@ end, { buffer = second_bufnr })
 vim.keymap.set("n", "gf", function()
   table.insert(calls, "cursor-follow-existing")
 end, { buffer = second_bufnr })
+vim.keymap.set("n", "gY", function()
+  table.insert(calls, "cursor-yank-link-existing")
+end, { buffer = second_bufnr })
 keymaps.setup_buffer(browser, second_bufnr, {
   enabled = true,
 })
@@ -559,6 +570,8 @@ trigger_buffer(second_bufnr, "gc")
 assert(calls[#calls] == "cursor-click-existing", "buffer-local cursor click should not overwrite existing mappings")
 trigger_buffer(second_bufnr, "gf")
 assert(calls[#calls] == "cursor-follow-existing", "buffer-local cursor link follow should not overwrite existing mappings")
+trigger_buffer(second_bufnr, "gY")
+assert(calls[#calls] == "cursor-yank-link-existing", "buffer-local cursor link URL yank should not overwrite existing mappings")
 
 local disabled_click_bufnr = vim.api.nvim_create_buf(false, true)
 keymaps.setup_buffer(browser, disabled_click_bufnr, {
@@ -566,6 +579,7 @@ keymaps.setup_buffer(browser, disabled_click_bufnr, {
   mappings = {
     click_here = false,
     follow_point_url_here = false,
+    yank_point_url_here = false,
     actions = false,
   },
 })
@@ -580,6 +594,10 @@ assert(
 assert(
   buffer_mapping(disabled_click_bufnr, "gf").buffer ~= 1,
   "false cursor link follow mapping should disable the default buffer-local mapping"
+)
+assert(
+  buffer_mapping(disabled_click_bufnr, "gY").buffer ~= 1,
+  "false cursor link URL yank mapping should disable the default buffer-local mapping"
 )
 
 keymaps.setup_buffer(browser, first_bufnr, {

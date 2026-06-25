@@ -125,6 +125,7 @@ M.options = {
       paste_register = "p",
       yank_selection = "y",
       yank_current_url = "Y",
+      yank_point_url_here = "gY",
       key_enter = "<CR>",
       key_tab = "<Tab>",
       key_shift_tab = "<S-Tab>",

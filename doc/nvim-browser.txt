@@ -905,6 +905,7 @@ i  type into focused element
 p  paste register into focused element
 y  yank browser selection into register; Visual y yanks the Visual preview region
 Y  yank active browser URL into register
+gY yank link URL under cursor into register
 <CR>     press Enter
 <Tab>    press Tab
 <S-Tab>  press Shift-Tab
@@ -945,6 +946,7 @@ require("nvim-browser").setup({
       double_click_here = "gd",
       right_click_here = "gr",
       follow_point_url_here = "gf",
+      yank_point_url_here = "gY",
       left_click = false,
       double_click = "<2-LeftMouse>",
       right_click_mouse = "<RightMouse>",
@@ -972,6 +974,8 @@ require("nvim-browser").setup({
   },
 	})
 	<
+Set a mapping value to `false` to preserve that key, for example
+`preview_keymaps = { mappings = { yank_point_url_here = false } }`.
 
 	The session file stores recent pages, bookmarks, and completed-download
 	history. `history_limit` bounds each persisted list. Set `persist = false`

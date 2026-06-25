@@ -90,6 +90,7 @@ assert(configured.preview_keymaps.mappings.input_text_mode == "i", "preview-loca
 assert(configured.preview_keymaps.mappings.paste_register == "p", "preview-local keymaps should include register paste")
 assert(configured.preview_keymaps.mappings.yank_selection == "y", "preview-local keymaps should include browser selection yank")
 assert(configured.preview_keymaps.mappings.yank_current_url == "Y", "preview-local keymaps should include current URL yank")
+assert(configured.preview_keymaps.mappings.yank_point_url_here == "gY", "preview-local keymaps should include cursor link URL yank")
 assert(configured.preview_keymaps.mappings.key_enter == "<CR>", "preview-local keymaps should include Enter forwarding")
 assert(configured.preview_keymaps.mappings.key_tab == "<Tab>", "preview-local keymaps should include Tab forwarding")
 assert(configured.preview_keymaps.mappings.key_shift_tab == "<S-Tab>", "preview-local keymaps should include Shift-Tab forwarding")
@@ -218,6 +219,10 @@ assert(
 assert(
   remapped.preview_keymaps.mappings.follow_point_url_here == "gf",
   "preview-local partial remaps should retain cursor link follow"
+)
+assert(
+  remapped.preview_keymaps.mappings.yank_point_url_here == "gY",
+  "preview-local partial remaps should retain cursor link URL yank"
 )
 assert(
   remapped.preview_keymaps.mappings.click_here == "gc",
