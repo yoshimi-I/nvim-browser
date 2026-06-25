@@ -6096,6 +6096,13 @@ assert(
   "browser text mode should warn when unavailable"
 )
 assert(#warnings == text_mode_warning_count + 1, "browser text mode should emit one inactive warning")
+assert(terminal.start_text_mode({
+  warn = false,
+  getcharstr = function()
+    error("silent inactive text mode should not read keys")
+  end,
+}) == false, "browser text mode should allow silent inactive refusal")
+assert(#warnings == text_mode_warning_count + 1, "browser text mode warn=false should suppress inactive warnings")
 terminal._test.set_cursor_addressable_preview(true)
 
 sent_requests = {}

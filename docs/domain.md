@@ -111,6 +111,9 @@ can be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   plain text, protocol-old generic input metadata, missing viewport coordinates,
   and rejected backend actions should warn with a concrete reason rather than
   making `ga` appear inert.
+- On editable fields, smart cursor activation should focus the browser point and
+  enter `:NBrowserTextMode` by default. One-shot cursor-local typing remains
+  available through `:NBrowserTypeHere`, `:NBrowserSubmitHere`, `gI`, and `gS`.
 - Kitty Unicode terminal graphics diagnostics should keep raw payload bytes and
   terminal egress bytes separate. Multiplexer wrapping belongs at egress time, so
   replay can re-wrap the stored raw payload for the active transport. Egress

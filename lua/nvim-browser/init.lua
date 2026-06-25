@@ -2931,17 +2931,37 @@ local function activate_point(point, opts)
   end
 
   if kind == "input" or kind == "text_area" or kind == "editable" then
-    local text = input("nvim-browser text: ")
-    if text == nil or text == "" then
-      return false
-    end
     if x == nil or y == nil then
       if should_warn_activate(opts) then
         warn_activate_here("cursor activation could not map the element to viewport coordinates")
       end
       return false
     end
-    local ok = terminal.type_point(x, y, text, { submit = opts.submit == true })
+
+    if opts.input ~= nil then
+      local text = input("nvim-browser text: ")
+      if text == nil or text == "" then
+        return false
+      end
+      local ok = terminal.type_point(x, y, text, { submit = opts.submit == true })
+      if not ok and should_warn_activate(opts) then
+        warn_activate_here("cursor activation failed for " .. activate_failure_kind(kind))
+      end
+      return ok
+    end
+
+    local ok = terminal.click_point(x, y, {
+      on_response = function(response)
+        if type(response) == "table" and response.status == "ok" then
+          local text_mode_ok = terminal.start_text_mode({ warn = false })
+          if not text_mode_ok and should_warn_activate(opts) then
+            warn_activate_here("cursor activation failed for " .. activate_failure_kind(kind))
+          end
+        elseif should_warn_activate(opts) then
+          warn_activate_here("cursor activation failed for " .. activate_failure_kind(kind))
+        end
+      end,
+    })
     if not ok and should_warn_activate(opts) then
       warn_activate_here("cursor activation failed for " .. activate_failure_kind(kind))
     end

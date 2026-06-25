@@ -2950,8 +2950,15 @@ terminal.toggle_point = function(x, y)
   table.insert(_G.nvim_browser_activate_calls, "toggle:" .. tostring(x) .. ":" .. tostring(y))
   return true
 end
-terminal.click_point = function(x, y)
+terminal.click_point = function(x, y, opts)
   table.insert(_G.nvim_browser_activate_calls, "click:" .. tostring(x) .. ":" .. tostring(y))
+  if type(opts) == "table" and type(opts.on_response) == "function" then
+    opts.on_response({ status = "ok" })
+  end
+  return true
+end
+terminal.start_text_mode = function()
+  table.insert(_G.nvim_browser_activate_calls, "text-mode")
   return true
 end
 terminal.type_point = function(x, y, text)
@@ -2986,6 +2993,23 @@ assert(browser.activate_here({
   end,
 }) == true, "activate_here should inspect input points")
 assert(_G.nvim_browser_activate_calls[#_G.nvim_browser_activate_calls] == "type:14:24:query", "activate_here should type into text inputs at the inspected point")
+
+_G.nvim_browser_activate_point = { kind = "input", label = "Search", x = 14, y = 24 }
+_G.nvim_browser_before_input_text_mode_calls = #_G.nvim_browser_activate_calls
+_G.nvim_browser_original_vim_fn_input = vim.fn.input
+vim.fn.input = function()
+  error("activate_here should not prompt for editable default activation")
+end
+assert(browser.activate_here() == true, "activate_here should inspect input points for browser text mode")
+vim.fn.input = _G.nvim_browser_original_vim_fn_input
+assert(
+  _G.nvim_browser_activate_calls[_G.nvim_browser_before_input_text_mode_calls + 1] == "click:14:24",
+  "activate_here should focus editable points before text mode"
+)
+assert(
+  _G.nvim_browser_activate_calls[_G.nvim_browser_before_input_text_mode_calls + 2] == "text-mode",
+  "activate_here should enter browser text mode after editable focus succeeds"
+)
 
 _G.nvim_browser_activate_point = { kind = "input", label = "Search", x = 14, y = 24 }
 assert(browser.activate_here({
@@ -3059,6 +3083,58 @@ assert(browser.activate_here() == true, "activate_here should inspect actionable
 assert(
   _G.nvim_browser_activate_warnings[#_G.nvim_browser_activate_warnings] == "nvim-browser: cursor activation failed for button",
   "activate_here should explain failed browser action dispatch"
+)
+
+_G.nvim_browser_before_failed_text_mode_calls = #_G.nvim_browser_activate_calls
+_G.nvim_browser_before_failed_text_mode_warning_count = #_G.nvim_browser_activate_warnings
+_G.nvim_browser_activate_point = { kind = "input", label = "Broken search", x = 20, y = 30 }
+assert(browser.activate_here() == true, "activate_here should inspect editable points even when focus dispatch fails")
+assert(
+  _G.nvim_browser_activate_calls[#_G.nvim_browser_activate_calls] == "failed-click:20:30",
+  "activate_here should try to focus broken editable points"
+)
+assert(
+  #_G.nvim_browser_activate_calls == _G.nvim_browser_before_failed_text_mode_calls + 1,
+  "activate_here should not enter text mode when editable focus dispatch fails"
+)
+assert(
+  _G.nvim_browser_activate_warnings[#_G.nvim_browser_activate_warnings] == "nvim-browser: cursor activation failed for input",
+  "activate_here should explain failed editable focus dispatch"
+)
+
+terminal.click_point = function(x, y, opts)
+  table.insert(_G.nvim_browser_activate_calls, "click:" .. tostring(x) .. ":" .. tostring(y))
+  if type(opts) == "table" and type(opts.on_response) == "function" then
+    opts.on_response({ status = "ok" })
+  end
+  return true
+end
+terminal.start_text_mode = function()
+  table.insert(_G.nvim_browser_activate_calls, "failed-text-mode")
+  return false
+end
+_G.nvim_browser_before_text_mode_failure_warning_count = #_G.nvim_browser_activate_warnings
+_G.nvim_browser_activate_point = { kind = "text_area", label = "Broken notes", x = 21, y = 31 }
+assert(browser.activate_here() == true, "activate_here should inspect editable points when text mode cannot start")
+assert(
+  _G.nvim_browser_activate_calls[#_G.nvim_browser_activate_calls] == "failed-text-mode",
+  "activate_here should try to enter text mode after editable focus"
+)
+assert(
+  _G.nvim_browser_activate_warnings[#_G.nvim_browser_activate_warnings] == "nvim-browser: cursor activation failed for text_area",
+  "activate_here should explain failed editable text mode entry"
+)
+assert(
+  #_G.nvim_browser_activate_warnings == _G.nvim_browser_before_text_mode_failure_warning_count + 1,
+  "activate_here should emit one warning when editable text mode cannot start"
+)
+
+_G.nvim_browser_before_silent_text_mode_warning_count = #_G.nvim_browser_activate_warnings
+_G.nvim_browser_activate_point = { kind = "editable", label = "Silent notes", x = 22, y = 32 }
+assert(browser.activate_here({ warn = false }) == true, "activate_here should allow silent editable text mode failures")
+assert(
+  #_G.nvim_browser_activate_warnings == _G.nvim_browser_before_silent_text_mode_warning_count,
+  "activate_here warn=false should suppress editable text mode failure warnings"
 )
 
 _G.nvim_browser_before_silent_warning_count = #_G.nvim_browser_activate_warnings

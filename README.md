@@ -738,10 +738,12 @@ cursor-addressable browser preview.
 link URL under the preview cursor in the active preview without sending a click.
 `:NBrowserActivateHere` inspects the live DOM under the preview cursor and
 chooses the obvious cursor action: follow links, toggle checkbox/radio inputs,
-prompt and type into text inputs, pick an enabled select option, or click
-buttons and other clickable elements. If the inspected point is plain text,
-stale, missing viewport coordinates, or the backend rejects the action, it
-emits a warning instead of failing silently.
+focus editable fields and enter browser text mode, pick an enabled select
+option, or click buttons and other clickable elements. Use `:NBrowserTypeHere`
+or `gI` for one-shot cursor-local text entry, and `:NBrowserSubmitHere` or `gS`
+for one-shot text entry with submit. If the inspected point is plain text,
+stale, missing viewport coordinates, or the backend rejects the action, it emits
+a warning instead of failing silently.
 `:NBrowserScreenshot [path]` captures the active browser session viewport to a
 PNG file without replacing the Neovim preview frame. Without a path, it writes a
 timestamped PNG under Neovim's cache directory.
@@ -803,8 +805,9 @@ type into the focused element with browser text mode, `p` paste the selected
 register into the focused element, `y` yank the browser selection into the
 selected register, `Y` yank the active browser URL into the selected register,
 `gY` yank the link URL under the cursor into the selected register, `ga`
-activate the element at the cursor, `gI` type text at the cursor, `gS` type
-text at the cursor and submit, `gO` select a dropdown option at the cursor,
+activate the element at the cursor or enter browser text mode for editable
+fields, `gI` type text at the cursor, `gS` type text at the cursor and submit,
+`gO` select a dropdown option at the cursor,
 `gC` toggle a checkbox/radio at the cursor, `<CR>`
 Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
 Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` address

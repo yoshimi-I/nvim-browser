@@ -549,10 +549,12 @@ COMMANDS                                           *nvim-browser-commands*
 							*:NBrowserActivateHere*
 :NBrowserActivateHere
 	Inspect the live DOM under the preview cursor and choose the obvious
-	cursor action: follow links, toggle checkbox/radio inputs, prompt and type
-	into text inputs, pick an enabled select option, or click buttons and other
-	clickable elements. Plain text, missing viewport coordinates, stale
-	metadata, and rejected backend actions warn instead of silently doing
+	cursor action: follow links, toggle checkbox/radio inputs, focus editable
+	fields and enter browser text mode, pick an enabled select option, or click
+	buttons and other clickable elements. Use |:NBrowserTypeHere| or gI for
+	one-shot cursor-local text entry, and |:NBrowserSubmitHere| or gS for
+	one-shot text entry with submit. Plain text, missing viewport coordinates,
+	stale metadata, and rejected backend actions warn instead of silently doing
 	nothing.
 
 							*:NBrowserWheelDownHere*

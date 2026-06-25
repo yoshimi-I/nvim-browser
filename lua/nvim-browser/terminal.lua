@@ -3837,7 +3837,9 @@ end
 function M.start_text_mode(opts)
   opts = opts or {}
   if state.mode ~= "serve" or state.job_id == nil or not is_valid_window() or not state.cursor_addressable_preview then
-    vim.api.nvim_echo({ { "nvim-browser: text mode requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+    if opts.warn ~= false then
+      vim.api.nvim_echo({ { "nvim-browser: text mode requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+    end
     return false
   end
 
@@ -3944,7 +3946,7 @@ function M.click_point(x, y, opts)
   if click_count > 1 then
     request.click_count = click_count
   end
-  return send_pending_request(request, state.current_url or state.last_target or "click", "click")
+  return send_pending_request(request, state.current_url or state.last_target or "click", "click", opts.on_response)
 end
 
 function M.drag_point(start_x, start_y, end_x, end_y)
