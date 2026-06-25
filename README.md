@@ -133,6 +133,7 @@ With lazy.nvim:
     "NBrowserRightClickHint",
     "NBrowserHoverHint",
     "NBrowserFocusHint",
+    "NBrowserJumpHint",
     "NBrowserFollowHint",
     "NBrowserTypeHint",
     "NBrowserSubmitHint",
@@ -147,6 +148,7 @@ With lazy.nvim:
     "NBrowserSelectHintMode",
     "NBrowserUploadHintMode",
     "NBrowserFocusHintMode",
+    "NBrowserJumpHintMode",
     "NBrowserToggleHintMode",
     "NBrowserHintMode",
     "NBrowserCurrentUrl",
@@ -490,6 +492,7 @@ Then run:
 :NBrowserSelectHintMode
 :NBrowserUploadHintMode
 :NBrowserFocusHintMode
+:NBrowserJumpHintMode
 :NBrowserToggleHintMode
 :NBrowserHintMode
 :NBrowserCurrentUrl
@@ -587,16 +590,20 @@ on viewport coordinates. For link hints with `target="_blank"` and an `href`,
 it follows the `href` in the current preview instead of opening a popup target.
 `:NBrowserRightClickHint {id-or-label}` dispatches a native right-click at the
 hinted element. `:NBrowserHoverHint {id-or-label}` moves to the matching
-element coordinates.
+element coordinates. `:NBrowserJumpHint {id-or-label}` moves the Neovim preview
+cursor to the hinted element, so cursor-local commands such as
+`:NBrowserClickHere`, `:NBrowserHoverHere`, and `:NBrowserTypeHere` can start
+from that visible target.
 `:NBrowserFollowHint {label}` uses a link hint's `href` directly when
 available, which avoids coordinate-click drift and keeps the active browser
 session on the navigated URL; non-link hints fall back to backend hint clicks.
-`:NBrowserPickHint [follow|click|right-click|focus|hover|toggle|type|submit|select|upload|yank-url]` opens a `vim.ui.select`
+`:NBrowserPickHint [follow|click|right-click|focus|jump|hover|toggle|type|submit|select|upload|yank-url]` opens a `vim.ui.select`
 picker for the current hints and runs the selected action, defaulting to
 `follow`. The `type` and `submit` actions show only input-like hints, then
 prompt for text. The `select`, `upload`, and `yank-url` actions show only
 compatible hints, then select an enabled option, prompt for a file path, or yank
-the link destination.
+the link destination. The `jump` action moves the preview cursor to the selected
+hint without sending browser input.
 `:NBrowserHintMode` prompts for a label and follows it. In preview buffers, the
 default `f` mapping enters a transient hint mode instead: type the visible hint
 label directly, use additional keys for multi-character labels such as `aa`, or
@@ -630,13 +637,15 @@ the text is queued. `:NBrowserSelectHintMode` opens Neovim pickers for hinted
 falling back to typed hint and option prompts for older metadata. Disabled
 options are not submitted. `:NBrowserUploadHintMode` prompts for a file-input
 hint label and a path. `:NBrowserFocusHintMode` prompts for a hint label and
-focuses the matching element. `:NBrowserToggleHintMode` prompts for a
-checkbox/radio hint label. Lua mappings can call `require("nvim-browser").hint_mode()`,
+focuses the matching element. `:NBrowserJumpHintMode` prompts for a hint label
+and moves the preview cursor to that element. `:NBrowserToggleHintMode` prompts
+for a checkbox/radio hint label. Lua mappings can call `require("nvim-browser").hint_mode()`,
 `require("nvim-browser").pick_hint({ action = "focus" })`,
 `require("nvim-browser").type_hint_mode(nil, { submit = true })`, or
 `require("nvim-browser").select_hint_mode()` /
 `require("nvim-browser").upload_hint_mode()` /
 `require("nvim-browser").focus_hint_mode()` /
+`require("nvim-browser").jump_hint_mode()` /
 `require("nvim-browser").toggle_hint_mode()`.
 `:NBrowserAddress [url-or-search]` works like a small omnibox; host-like input
 opens as a URL, and plain words use the configured search URL. With no
@@ -740,18 +749,19 @@ The default mappings are `<leader>br` reload, `<leader>bh` back, `<leader>bl`
 forward, `<leader>bj` scroll down, `<leader>bk` scroll up, `<leader>ba`
 address, `<leader>bg` open the target under the cursor, `<leader>b/` find,
 `<leader>bf` hint mode, `<leader>bt` type into a hinted field, `<leader>bs`
-type and submit, `<leader>bo` select a hinted option, and `<leader>bc` toggle a
-hinted checkbox/radio. Existing mappings are left untouched; choose another
-prefix or mapping key if one is already in use.
+type and submit, `<leader>bo` select a hinted option, `<leader>bc` toggle a
+hinted checkbox/radio, and `<leader>bgj` jump the cursor to a hint. Existing
+mappings are left untouched; choose another prefix or mapping key if one is
+already in use.
 
 Focused preview buffers also install buffer-local browser controls by default:
 `r` reload, `H` back, `L` forward, `j`/`k` scroll, `<PageDown>/<PageUp>` scroll
 by 90% of the browser viewport, `gg` top, `G` bottom, `<C-d>/<C-u>` scroll by
 half the browser viewport, `+` zoom in, `-` zoom out, `=` reset zoom,
 `a` address, `?` actions picker, `/` find, `n` repeat find forward, `N`
-repeat find backward, `f` hint mode, `t` type into a hinted field, `s` type and
-submit, `gs` submit the focused form-capable element, `o` select a hinted option,
-`c` toggle a hinted checkbox/radio, `i`
+repeat find backward, `f` hint mode, `gj` jump the cursor to a hint, `t` type
+into a hinted field, `s` type and submit, `gs` submit the focused form-capable
+element, `o` select a hinted option, `c` toggle a hinted checkbox/radio, `i`
 type into the focused element with browser text mode, `p` paste the selected
 register into the focused element, `y` yank the browser selection into the
 selected register, `Y` yank the active browser URL into the selected register,

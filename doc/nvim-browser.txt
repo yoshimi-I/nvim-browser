@@ -91,6 +91,7 @@ Example lazy.nvim setup:
     "NBrowserRightClickHint",
     "NBrowserHoverHint",
     "NBrowserFocusHint",
+    "NBrowserJumpHint",
     "NBrowserFollowHint",
     "NBrowserTypeHint",
     "NBrowserSubmitHint",
@@ -105,6 +106,7 @@ Example lazy.nvim setup:
     "NBrowserSelectHintMode",
     "NBrowserUploadHintMode",
     "NBrowserFocusHintMode",
+    "NBrowserJumpHintMode",
     "NBrowserToggleHintMode",
     "NBrowserHintMode",
     "NBrowserCurrentUrl",
@@ -561,6 +563,12 @@ COMMANDS                                           *nvim-browser-commands*
 	is useful before :NBrowserInput, :NBrowserPaste, or :NBrowserKey Enter for
 	search boxes and forms.
 
+							*:NBrowserJumpHint*
+:NBrowserJumpHint {id-or-label}
+	Move the Neovim preview cursor to the hinted element. This does not send
+	Chromium input by itself; it positions the cursor for commands such as
+	:NBrowserClickHere, :NBrowserHoverHere, and :NBrowserTypeHere.
+
 							*:NBrowserFollowHint*
 :NBrowserFollowHint {label}
 	Follow a keyboard-labeled browser hint. Link hints with an href navigate
@@ -568,13 +576,14 @@ COMMANDS                                           *nvim-browser-commands*
 	to backend hint clicks and capture a fresh frame.
 
 							*:NBrowserPickHint*
-:NBrowserPickHint [follow|click|right-click|focus|hover|toggle|type|submit|select|upload|yank-url]
+:NBrowserPickHint [follow|click|right-click|focus|jump|hover|toggle|type|submit|select|upload|yank-url]
 	Open a picker for the latest browser hints and run the selected action.
 	The default action is follow. The type and submit actions show input-like
 	hints, prompt for text, then type or type-and-submit into the selected hint.
 	The select, upload, and yank-url actions show only compatible hints, then
 	select an enabled option, prompt for a file path, or yank the link
-	destination.
+	destination. The jump action moves the preview cursor to the selected hint
+	without sending browser input.
 
 							*:NBrowserTypeHint*
 :NBrowserTypeHint {id-or-label} {text}
@@ -642,6 +651,11 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserFocusHintMode
 	Prompt for a browser hint label, focus the matching element, and capture a
 	fresh frame.
+
+							*:NBrowserJumpHintMode*
+:NBrowserJumpHintMode
+	Prompt for a browser hint label and move the Neovim preview cursor to the
+	matching element. This does not send Chromium input by itself.
 
 							*:NBrowserToggleHintMode*
 :NBrowserToggleHintMode
@@ -830,6 +844,7 @@ Default normal-mode mappings:
 <leader>bs  type into hinted field and submit
 <leader>bo  select hinted option
 <leader>bc  toggle hinted checkbox/radio
+<leader>bgj jump cursor to hint
 <
 Existing mappings are left untouched. Choose another prefix or mapping key if
 one is already in use.
@@ -856,6 +871,7 @@ a  address prompt
 n  repeat find forward
 N  repeat find backward
 f  hint mode
+gj jump cursor to hint
 t  type into hinted field
 s  type into hinted field and submit
 gs  submit focused form-capable element
@@ -922,6 +938,7 @@ require("nvim-browser").setup({
       find_previous = "N",
       submit_focused = "gs",
       select_hint_mode = "o",
+      jump_hint_mode = "gj",
       toggle_hint_mode = "c",
       wheel_down = "<ScrollWheelDown>",
       wheel_up = "<ScrollWheelUp>",

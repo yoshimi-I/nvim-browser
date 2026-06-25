@@ -1917,6 +1917,42 @@ function M.viewport_point_for_cell(row, column, geometry)
   }
 end
 
+function M.cursor_position_for_cell(row, column, winid, geometry)
+  winid = winid or state.winid
+  if winid == nil or not vim.api.nvim_win_is_valid(winid) then
+    return nil
+  end
+  geometry = geometry or current_preview_geometry()
+  row = math.max(1, math.min(tonumber(row) or 1, geometry.rows))
+  column = math.max(1, math.min(tonumber(column) or 1, geometry.columns))
+  local bufnr = state.bufnr
+  if bufnr == nil or not vim.api.nvim_buf_is_valid(bufnr) then
+    bufnr = vim.api.nvim_win_get_buf(winid)
+  end
+  local ok, lines = pcall(vim.api.nvim_buf_get_lines, bufnr, row - 1, row, false)
+  if not ok or lines == nil or lines[1] == nil then
+    return nil
+  end
+  local line = lines[1]
+  local display_column = 1
+  local char_index = 0
+  while true do
+    local byte_index = vim.fn.byteidx(line, char_index)
+    if byte_index == -1 then
+      break
+    end
+    local width = vim.fn.strdisplaywidth(vim.fn.strcharpart(line, char_index, 1))
+    if width > 0 then
+      if column >= display_column and column < display_column + width then
+        return { row, byte_index }
+      end
+      display_column = display_column + width
+    end
+    char_index = char_index + 1
+  end
+  return { row, #line }
+end
+
 function M.viewport_drag_point_for_cell(row, column, geometry, edge)
   if geometry == nil then
     geometry = current_preview_geometry()
@@ -4670,6 +4706,42 @@ local function active_hint_for_identifier(id)
     return nil
   end
   return find_hint(state.element_hints, id)
+end
+
+function M.jump_hint(id)
+  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+    return false
+  end
+  local hint = active_hint_for_identifier(id)
+  if hint == nil then
+    return false
+  end
+  local geometry = current_rendered_frame_geometry()
+  if geometry == nil then
+    return false
+  end
+  local x = tonumber(hint.x)
+  local y = tonumber(hint.y)
+  local frame_width = tonumber(geometry.width)
+  local frame_height = tonumber(geometry.height)
+  local columns = tonumber(geometry.columns)
+  local rows = tonumber(geometry.rows)
+  if x == nil or y == nil or frame_width == nil or frame_height == nil or columns == nil or rows == nil then
+    return false
+  end
+  if frame_width <= 0 or frame_height <= 0 or columns <= 0 or rows <= 0 then
+    return false
+  end
+  local column = math.floor((x / frame_width) * columns + 0.5)
+  local row = math.floor((y / frame_height) * rows + 0.5)
+  column = math.min(columns, math.max(1, column))
+  row = math.min(rows, math.max(1, row))
+  local cursor = M.cursor_position_for_cell(row, column, state.winid, { rows = rows, columns = columns })
+  if cursor == nil then
+    return false
+  end
+  local ok = pcall(vim.api.nvim_win_set_cursor, state.winid, cursor)
+  return ok
 end
 
 local function hint_href_for_identifier(id)

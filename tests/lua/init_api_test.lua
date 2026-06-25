@@ -24,6 +24,8 @@ assert(type(browser.hover_here) == "function", "hover_here API should exist")
 assert(type(browser.hover_hint) == "function", "hover_hint API should exist")
 assert(type(browser.focus_hint) == "function", "focus_hint API should exist")
 assert(type(browser.focus_hint_mode) == "function", "focus_hint_mode API should exist")
+assert(type(browser.jump_hint) == "function", "jump_hint API should exist")
+assert(type(browser.jump_hint_mode) == "function", "jump_hint_mode API should exist")
 assert(type(browser.wheel_point) == "function", "wheel_point API should exist")
 assert(type(browser.wheel_mouse) == "function", "wheel_mouse API should exist")
 assert(type(browser.type_point) == "function", "type_point API should exist")
@@ -1665,6 +1667,7 @@ end)
 
 local original_hints = browser.hints
 local original_click_hint = browser.click_hint
+_G.nvim_browser_original_jump_hint_api = browser.jump_hint
 local original_type_hint = browser.type_hint
 local original_select_hint = browser.select_hint
 local original_upload_hint = browser.upload_hint
@@ -1688,6 +1691,7 @@ local original_terminal_wheel_point = terminal.wheel_point
 local original_terminal_wheel_mouse = terminal.wheel_mouse
 _G.nvim_browser_original_terminal_wheel_here = terminal.wheel_here
 local original_terminal_type_hint = terminal.type_hint
+_G.nvim_browser_original_terminal_jump_hint = terminal.jump_hint
 local original_terminal_select_hint = terminal.select_hint
 local original_terminal_upload_hint = terminal.upload_hint
 local original_terminal_toggle_hint = terminal.toggle_hint
@@ -1909,6 +1913,8 @@ assert(_G.nvim_browser_smoke_report_lines:find("input: ok", 1, true), "smoke rep
 assert(_G.nvim_browser_smoke_report_lines:find("submit: ok", 1, true), "smoke report should include submit status")
 assert(_G.nvim_browser_smoke_report_lines:find("frame cells: 80x20", 1, true), "smoke report should include frame cell geometry")
 assert(_G.nvim_browser_smoke_report_lines:find("reader: ok", 1, true), "ANSI fallback smoke report should include reader status")
+_G.nvim_browser_smoke_cursor = vim.api.nvim_win_get_cursor(_G.nvim_browser_smoke_winid)
+assert(_G.nvim_browser_smoke_cursor[1] == 8 and _G.nvim_browser_smoke_cursor[2] == 11, "smoke should place the cursor from hint center coordinates")
 
 _G.nvim_browser_smoke_report = nil
 _G.nvim_browser_smoke_title = _G.nvim_browser_smoke_fixture_title
@@ -2306,6 +2312,17 @@ assert(browser.pick_hint(function(items, _, on_choice)
 end, { action = "focus" }) == true, "pick_hint should support focus action")
 assert(picked_focus == "s", "pick_hint should pass selected label to focus_hint")
 
+_G.nvim_browser_picked_jump = nil
+browser.jump_hint = function(label)
+  _G.nvim_browser_picked_jump = label
+  return true
+end
+assert(browser.pick_hint(function(items, _, on_choice)
+  on_choice(items[2])
+end, { action = "jump" }) == true, "pick_hint should support jump action")
+assert(_G.nvim_browser_picked_jump == "s", "pick_hint should pass selected label to jump_hint")
+browser.jump_hint = _G.nvim_browser_original_jump_hint_api
+
 local picked_hover = nil
 browser.hover_hint = function(label)
   picked_hover = label
@@ -2406,6 +2423,7 @@ assert(browser.pick_hint({
 assert(browser.pick_hint_action_available("bogus") == false, "invalid picker actions should be detectable")
 assert(browser.pick_hint_action_available("toggle") == true, "valid picker actions should be detectable")
 assert(browser.pick_hint_action_available("right-click") == true, "right-click picker action should be detectable")
+assert(browser.pick_hint_action_available("jump") == true, "jump picker action should be detectable")
 assert(browser.pick_hint_action_available("type") == true, "type picker action should be detectable")
 assert(browser.pick_hint_action_available("submit") == true, "submit picker action should be detectable")
 assert(browser.pick_hint_action_available("select") == true, "select picker action should be detectable")
@@ -2800,6 +2818,14 @@ assert(browser.type_hint("s", "hello world", { submit = true }) == true, "type_h
 assert(typed_hint.label == "s", "type_hint should pass hint label to terminal")
 assert(typed_hint.text == "hello world", "type_hint should pass text to terminal")
 assert(typed_hint.submit == true, "type_hint should pass submit option to terminal")
+
+_G.nvim_browser_jumped_hint = nil
+terminal.jump_hint = function(label)
+  _G.nvim_browser_jumped_hint = label
+  return "jumped"
+end
+assert(browser.jump_hint("s") == "jumped", "jump_hint should delegate to terminal")
+assert(_G.nvim_browser_jumped_hint == "s", "jump_hint should pass hint label to terminal")
 
 local selected_hint = nil
 terminal.select_hint = function(label, choice)
@@ -3518,6 +3544,22 @@ assert(table.concat(focus_prompts, "|") == "nvim-browser hint: ", "focus_hint_mo
 assert(focused_hint == "i", "focus_hint_mode should pass the prompted hint label")
 
 browser.hints = function()
+  return { { id = 5, hint_label = "j" } }
+end
+_G.nvim_browser_jump_prompts = {}
+_G.nvim_browser_jumped_hint = nil
+terminal.jump_hint = function(label)
+  _G.nvim_browser_jumped_hint = label
+  return true
+end
+assert(browser.jump_hint_mode(function(prompt)
+  table.insert(_G.nvim_browser_jump_prompts, prompt)
+  return "j"
+end) == true, "jump_hint_mode should jump to the prompted hint")
+assert(table.concat(_G.nvim_browser_jump_prompts, "|") == "nvim-browser hint: ", "jump_hint_mode should prompt for hint")
+assert(_G.nvim_browser_jumped_hint == "j", "jump_hint_mode should pass the prompted hint label")
+
+browser.hints = function()
   return {}
 end
 assert(browser.type_hint_mode(function()
@@ -3535,6 +3577,9 @@ end) == false, "toggle_hint_mode should return false without active hints")
 assert(browser.focus_hint_mode(function()
   error("input should not be called without hints")
 end) == false, "focus_hint_mode should return false without active hints")
+assert(browser.jump_hint_mode(function()
+  error("input should not be called without hints")
+end) == false, "jump_hint_mode should return false without active hints")
 
 browser.hints = function()
   return { { id = 2, hint_label = "s" } }
@@ -3554,6 +3599,9 @@ end) == false, "toggle_hint_mode should cancel on empty hint label")
 assert(browser.focus_hint_mode(function()
   return ""
 end) == false, "focus_hint_mode should cancel on empty hint label")
+assert(browser.jump_hint_mode(function()
+  return ""
+end) == false, "jump_hint_mode should cancel on empty hint label")
 
 local empty_text_responses = { "s", "" }
 assert(browser.type_hint_mode(function()
@@ -3621,6 +3669,7 @@ terminal.wheel_point = original_terminal_wheel_point
 terminal.wheel_mouse = original_terminal_wheel_mouse
 terminal.wheel_here = _G.nvim_browser_original_terminal_wheel_here
 terminal.type_hint = original_terminal_type_hint
+terminal.jump_hint = _G.nvim_browser_original_terminal_jump_hint
 terminal.select_hint = original_terminal_select_hint
 terminal.upload_hint = original_terminal_upload_hint
 terminal.toggle_hint = original_terminal_toggle_hint

@@ -64,7 +64,8 @@ can be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   buffer names, hint overlays, and request lifecycle.
 - Browser previews should stay cursor-addressable where possible. ANSI and Kitty
   Unicode previews support cursor-to-viewport clicks, double-clicks,
-  right-clicks, and hint overlays.
+  right-clicks, hint overlays, and jumping the Neovim cursor to a hinted
+  element before running cursor-local browser actions.
 - The action picker should expose common cursor-addressable browser input
   directly so users can discover click, double-click, right-click, hover, and
   type-at-cursor without memorizing separate commands.
@@ -80,6 +81,12 @@ can be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   runtime-reported frame cells so resize, Kitty Unicode cell caps, and CDP
   coordinate mapping can be debugged before trusting click or text-mode
   workflows.
+- Chromium hint `x`/`y` values are viewport center coordinates, not top-left
+  corners. Any hint-to-preview-cell conversion should map those center
+  coordinates directly through the rendered frame geometry. Computed preview
+  cells are one-based, but `nvim_win_set_cursor` takes a zero-based column.
+- Hint cursor jumping is local Neovim cursor movement only. It must not dispatch
+  Chromium/CDP input or capture a fresh frame by itself.
 - `:NBrowserSmoke` should prove the browser surface is usable from Neovim, not
   only that Chromium loaded a page. The smoke fixture should require fresh
   input hints with viewport geometry, place the preview cursor over the input
@@ -116,9 +123,9 @@ can be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   page `contextmenu` handlers, CDP mouse-move hovers, native CDP mouse-wheel
   input at preview coordinates, native CDP drag selection and region yanking
   from preview-cell regions, hints,
-  hinted focus for search/input workflows, hinted right-clicks, hinted
-  `<select>` option selection with Neovim pickers when option metadata is
-  available, hinted `<input type="file">` uploads through CDP
+  hinted focus for search/input workflows, hinted preview-cursor jumps, hinted
+  right-clicks, hinted `<select>` option selection with Neovim pickers when
+  option metadata is available, hinted `<input type="file">` uploads through CDP
   `DOM.setFileInputFiles`, hinted checkbox/radio toggles, direct href following,
   current URL, hinted link URL, and whole-page text snapshot yanking,
   focused-element metadata, and submit-current-focus form UX.

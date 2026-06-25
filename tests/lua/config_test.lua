@@ -135,6 +135,10 @@ assert(
   "global keymaps should include a hinted checkbox/radio toggle mapping"
 )
 assert(
+  configured.keymaps.mappings.jump_hint_mode == "gj",
+  "global keymaps should include a hinted cursor jump mapping"
+)
+assert(
   configured.preview_keymaps.mappings.type_hint_mode == "t",
   "preview-local keymaps should include a hinted input mapping"
 )
@@ -149,6 +153,10 @@ assert(
 assert(
   configured.preview_keymaps.mappings.toggle_hint_mode == "c",
   "preview-local keymaps should include a hinted checkbox/radio toggle mapping"
+)
+assert(
+  configured.preview_keymaps.mappings.jump_hint_mode == "gj",
+  "preview-local keymaps should include a hinted cursor jump mapping"
 )
 assert(
   configured.preview_keymaps.mappings.submit_focused == "gs",

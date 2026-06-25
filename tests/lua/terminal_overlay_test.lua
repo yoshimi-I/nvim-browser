@@ -1735,7 +1735,42 @@ terminal._test.apply_serve_response({
     viewport = { width = 500, height = 220, device_scale_factor = 1 },
   },
 })
+terminal._test.apply_payload_to_buffer(
+  vim.api.nvim_win_get_buf(image_win),
+  "refreshed interactive frame",
+  false,
+  true,
+  { "nvbrowser", "serve", "--output", "kitty-unicode" },
+  { columns = 50, rows = 11, width = 500, height = 220 }
+)
+terminal._test.set_element_hints({
+  { id = 10, hint_label = "s", kind = "input", label = "Search", x = 115, y = 70, width = 50, height = 40 },
+}, { columns = 50, rows = 11, width = 500, height = 220 })
+vim.api.nvim_win_set_cursor(image_win, { 1, 0 })
+terminal._test.set_cursor_addressable_preview(false)
+assert(terminal.jump_hint("s") == false, "jump_hint should require a cursor-addressable preview")
+terminal._test.set_cursor_addressable_preview(true)
+assert(terminal.jump_hint("s") == true, "jump_hint should move the preview cursor to a hinted element")
+_G.nvim_browser_hinted_cursor = vim.api.nvim_win_get_cursor(image_win)
+assert(_G.nvim_browser_hinted_cursor[1] == 4, "jump_hint should place the cursor on the hint center row")
+_G.nvim_browser_hinted_virtcol = vim.api.nvim_win_call(image_win, function()
+  return vim.fn.virtcol(".")
+end)
+assert(_G.nvim_browser_hinted_virtcol == 12, "jump_hint should place the cursor at the hint center screen cell")
 assert(terminal.click_here() == true, "matching refreshed frame geometry should allow cursor click again")
+_G.nvim_browser_jump_click_point = nil
+for _, request in ipairs(footer_click_requests) do
+  local ok, decoded = pcall(vim.json.decode, request.payload)
+  if ok and decoded.type == "click_point" then
+    _G.nvim_browser_jump_click_point = decoded
+  end
+end
+assert(
+  _G.nvim_browser_jump_click_point ~= nil
+    and _G.nvim_browser_jump_click_point.x == 115
+    and _G.nvim_browser_jump_click_point.y == 70,
+  "jump_hint should position cursor-local clicks at the hinted center point"
+)
 terminal._test.set_pending_operation(nil)
 assert(terminal.double_click_here() == true, "matching refreshed frame geometry should allow cursor double-click again")
 

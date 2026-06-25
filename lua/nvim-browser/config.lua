@@ -83,6 +83,7 @@ M.options = {
       submit_hint_mode = "s",
       select_hint_mode = "o",
       toggle_hint_mode = "c",
+      jump_hint_mode = "gj",
     },
   },
   preview_keymaps = {
@@ -118,6 +119,7 @@ M.options = {
       submit_focused = "gs",
       select_hint_mode = "o",
       toggle_hint_mode = "c",
+      jump_hint_mode = "gj",
       input_text_mode = "i",
       paste_register = "p",
       yank_selection = "y",

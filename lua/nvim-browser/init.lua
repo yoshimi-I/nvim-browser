@@ -732,31 +732,18 @@ smoke_cursor_for_hint = function(hint, geometry)
   end
   local x = tonumber(hint.x)
   local y = tonumber(hint.y)
-  local width = tonumber(hint.width)
-  local height = tonumber(hint.height)
   local frame_width = tonumber(geometry.width)
   local frame_height = tonumber(geometry.height)
   local columns = tonumber(geometry.columns)
   local rows = tonumber(geometry.rows)
-  if
-    x == nil
-    or y == nil
-    or width == nil
-    or height == nil
-    or frame_width == nil
-    or frame_height == nil
-    or columns == nil
-    or rows == nil
-  then
+  if x == nil or y == nil or frame_width == nil or frame_height == nil or columns == nil or rows == nil then
     return nil, "incomplete hint geometry"
   end
-  if width <= 0 or height <= 0 or frame_width <= 0 or frame_height <= 0 or columns <= 0 or rows <= 0 then
+  if frame_width <= 0 or frame_height <= 0 or columns <= 0 or rows <= 0 then
     return nil, "invalid frame geometry"
   end
-  local center_x = x + (width / 2)
-  local center_y = y + (height / 2)
-  local column = math.floor((center_x / frame_width) * columns + 0.5)
-  local row = math.floor((center_y / frame_height) * rows + 0.5)
+  local column = math.floor((x / frame_width) * columns + 0.5)
+  local row = math.floor((y / frame_height) * rows + 0.5)
   column = math.min(columns, math.max(1, column))
   row = math.min(rows, math.max(1, row))
   return { row = row, column = column }, nil
@@ -772,7 +759,11 @@ smoke_place_cursor_on_hint = function(hint)
   if winid == nil or not vim.api.nvim_win_is_valid(winid) then
     return false, "preview window invalid"
   end
-  local ok, err = pcall(vim.api.nvim_win_set_cursor, winid, { cursor.row, cursor.column - 1 })
+  local position = terminal.cursor_position_for_cell(cursor.row, cursor.column, winid, terminal_state.rendered_frame_geometry)
+  if position == nil then
+    return false, "cursor placement failed"
+  end
+  local ok, err = pcall(vim.api.nvim_win_set_cursor, winid, position)
   if not ok then
     return false, "cursor placement failed: " .. tostring(err)
   end
@@ -2195,6 +2186,10 @@ function M.type_here(text, opts)
   return terminal.type_here(text, opts)
 end
 
+function M.jump_hint(id)
+  return terminal.jump_hint(id)
+end
+
 function M.click_mouse(mousepos)
   return terminal.click_mouse(mousepos)
 end
@@ -2374,6 +2369,9 @@ local function pick_hint_action(action)
   end
   if action == "focus" then
     return M.focus_hint
+  end
+  if action == "jump" then
+    return M.jump_hint
   end
   if action == "hover" then
     return M.hover_hint
@@ -2730,6 +2728,18 @@ function M.focus_hint_mode(input)
     return false
   end
   return M.focus_hint(label)
+end
+
+function M.jump_hint_mode(input)
+  input = input or vim.fn.input
+  if #M.hints() == 0 then
+    return false
+  end
+  local label = input("nvim-browser hint: ")
+  if label == nil or label == "" then
+    return false
+  end
+  return M.jump_hint(label)
 end
 
 function M.upload_hint_mode(input)

@@ -75,6 +75,7 @@ local command_names = {
   "NBrowserRightClickHint",
   "NBrowserHoverHint",
   "NBrowserFocusHint",
+  "NBrowserJumpHint",
   "NBrowserFollowHint",
   "NBrowserTypeHint",
   "NBrowserSubmitHint",
@@ -89,6 +90,7 @@ local command_names = {
   "NBrowserSelectHintMode",
   "NBrowserUploadHintMode",
   "NBrowserFocusHintMode",
+  "NBrowserJumpHintMode",
   "NBrowserToggleHintMode",
   "NBrowserHintMode",
   "NBrowserCurrentUrl",
@@ -952,7 +954,7 @@ function M.register(browser, opts)
   end, {
     nargs = "?",
     complete = function()
-      return { "follow", "click", "right-click", "focus", "hover", "toggle", "type", "submit", "select", "upload", "yank-url" }
+      return { "follow", "click", "right-click", "focus", "jump", "hover", "toggle", "type", "submit", "select", "upload", "yank-url" }
     end,
   })
 
@@ -982,6 +984,14 @@ function M.register(browser, opts)
 
   vim.api.nvim_create_user_command("NBrowserFocusHint", function(opts)
     if not browser.focus_hint(opts.args) then
+      warn_hint_unavailable()
+    end
+  end, {
+    nargs = 1,
+  })
+
+  vim.api.nvim_create_user_command("NBrowserJumpHint", function(opts)
+    if not browser.jump_hint or not browser.jump_hint(opts.args) then
       warn_hint_unavailable()
     end
   end, {
@@ -1149,6 +1159,21 @@ function M.register(browser, opts)
       return
     end
     if not browser.focus_hint(label) then
+      warn_hint_unavailable()
+    end
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserJumpHintMode", function()
+    local hints = browser.hints()
+    if #hints == 0 then
+      warn_no_hints()
+      return
+    end
+    local label = input("nvim-browser hint: ")
+    if label == nil or label == "" then
+      return
+    end
+    if not browser.jump_hint(label) then
       warn_hint_unavailable()
     end
   end, {})

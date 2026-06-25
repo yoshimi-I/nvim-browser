@@ -28,6 +28,8 @@ for _, name in ipairs({
   "NBrowserReader",
   "NBrowserCalibrateHere",
   "NBrowserOpenDownload",
+  "NBrowserJumpHint",
+  "NBrowserJumpHintMode",
 }) do
   assert(vim.tbl_contains(lazy_command_names, name), "full lazy command list should include " .. name)
 end
@@ -71,6 +73,7 @@ local selected_hint = nil
 local uploaded_hint = nil
 local toggled_hint = nil
 local focused_hint = nil
+local jumped_hint = nil
 local typed_here = nil
 local submitted_here = nil
 local input_text = nil
@@ -171,6 +174,10 @@ local browser = {
   end,
   focus_hint = function(identifier)
     focused_hint = identifier
+    return true
+  end,
+  jump_hint = function(identifier)
+    jumped_hint = identifier
     return true
   end,
   address = function(input)
@@ -657,6 +664,7 @@ vim.cmd("NBrowserPickHint right-click")
 assert(picked_action == "right-click", "NBrowserPickHint should pass explicit right-click action")
 local pick_hint_completions = vim.fn.getcompletion("NBrowserPickHint ", "cmdline")
 assert(vim.tbl_contains(pick_hint_completions, "right-click"), "NBrowserPickHint completion should include right-click")
+assert(vim.tbl_contains(pick_hint_completions, "jump"), "NBrowserPickHint completion should include jump")
 assert(vim.tbl_contains(pick_hint_completions, "type"), "NBrowserPickHint completion should include type")
 assert(vim.tbl_contains(pick_hint_completions, "submit"), "NBrowserPickHint completion should include submit")
 assert(vim.tbl_contains(pick_hint_completions, "select"), "NBrowserPickHint completion should include select")
@@ -1272,6 +1280,10 @@ assert(input_text == "s", "NBrowserInputMode should type prompted text into the 
 vim.cmd("NBrowserTextMode")
 assert(text_mode_called == true, "NBrowserTextMode should start interactive browser text mode")
 
+jumped_hint = nil
+vim.cmd("NBrowserJumpHint s")
+assert(jumped_hint == "s", "NBrowserJumpHint should pass the label to browser.jump_hint")
+
 vim.cmd("NBrowserTypeHint s hello world")
 assert(typed_hint == "s:hello world", "NBrowserTypeHint should pass the label and text to browser.type_hint")
 
@@ -1434,6 +1446,19 @@ assert(
   table.concat(select_prompts, "|") == "nvim-browser hint: |nvim-browser option: ",
   "NBrowserSelectHintMode should prompt for hint then option"
 )
+
+jumped_hint = nil
+hint_responses = { "s" }
+local jump_prompts = {}
+commands.register(browser, {
+  input = function(prompt)
+    table.insert(jump_prompts, prompt)
+    return table.remove(hint_responses, 1)
+  end,
+})
+vim.cmd("NBrowserJumpHintMode")
+assert(jumped_hint == "s", "NBrowserJumpHintMode should prompt and jump to a hint")
+assert(table.concat(jump_prompts, "|") == "nvim-browser hint: ", "NBrowserJumpHintMode should prompt for hint")
 
 toggled_hint = nil
 hint_responses = { "c" }
@@ -1598,6 +1623,9 @@ local failed_browser = {
   focus_hint = function()
     return false
   end,
+  jump_hint = function()
+    return false
+  end,
   type_here = function()
     return false
   end,
@@ -1689,6 +1717,9 @@ assert(warnings[#warnings] == "nvim-browser: hint input failed, stale, or browse
 vim.cmd("NBrowserFocusHint s")
 assert(warnings[#warnings] == "nvim-browser: hint not found, stale, or browser session is inactive", "NBrowserFocusHint should warn when focus_hint fails")
 
+vim.cmd("NBrowserJumpHint s")
+assert(warnings[#warnings] == "nvim-browser: hint not found, stale, or browser session is inactive", "NBrowserJumpHint should warn when jump_hint fails")
+
 vim.cmd("NBrowserTypeHere missing")
 assert(warnings[#warnings] == "nvim-browser: cursor text input requires an active cursor-addressable browser preview", "NBrowserTypeHere should warn when cursor typing fails")
 
@@ -1726,6 +1757,12 @@ vim.cmd("NBrowserFocusHintMode")
 assert(
   warnings[#warnings] == "nvim-browser: hint not found, stale, or browser session is inactive",
   "NBrowserFocusHintMode should warn when hinted focus mode fails"
+)
+
+vim.cmd("NBrowserJumpHintMode")
+assert(
+  warnings[#warnings] == "nvim-browser: hint not found, stale, or browser session is inactive",
+  "NBrowserJumpHintMode should warn when hinted jump mode fails"
 )
 
 vim.cmd("NBrowserStop")
@@ -1802,6 +1839,10 @@ assert(no_hint_input_called == false, "NBrowserToggleHintMode should not prompt 
 vim.cmd("NBrowserFocusHintMode")
 assert(warnings[#warnings] == "nvim-browser: no browser hints available", "NBrowserFocusHintMode should warn when no hints exist")
 assert(no_hint_input_called == false, "NBrowserFocusHintMode should not prompt when no hints exist")
+
+vim.cmd("NBrowserJumpHintMode")
+assert(warnings[#warnings] == "nvim-browser: no browser hints available", "NBrowserJumpHintMode should warn when no hints exist")
+assert(no_hint_input_called == false, "NBrowserJumpHintMode should not prompt when no hints exist")
 
 local hint_error_browser = {
   hints = function()
