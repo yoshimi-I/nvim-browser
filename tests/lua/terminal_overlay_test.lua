@@ -4322,6 +4322,9 @@ terminal.close()
 jobstart_calls = {}
 assert(terminal.refresh() == false, "refresh after close should not restart the closed serve session")
 assert(#jobstart_calls == 0, "refresh after close should not start a replacement serve job")
+jobstart_calls = {}
+assert(terminal.reload() == false, "reload after close should not restart the closed serve session")
+assert(#jobstart_calls == 0, "reload after close should not start a replacement serve job")
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--markdown", "/tmp/docs/README.md" })
 assert(terminal.navigate("https://example.com/from-markdown") == true, "test setup should create a pending navigation from markdown")
 _G.nvim_browser_stop_with_backend_error()
@@ -5847,6 +5850,156 @@ jobstart_calls = {}
 assert(terminal.refresh() == true, "refresh after URL-to-image post-frame exit should restart the serve session")
 assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == nil, "URL-to-image restart should drop the old URL target")
 assert(_G.nvim_browser_command_option(jobstart_calls[1], "--image") == "/tmp/url-post-frame-exit.png", "URL-to-image restart should use an image wrapper")
+
+terminal.close()
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/reload-post-frame-start" })
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "reload URL post-frame exit",
+  url = "https://example.com/reload-post-frame-next",
+  title = "Reload Post Frame URL",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Reload Post Frame URL"
+end), "test setup should render a URL frame before reload post-frame exit")
+serve_exit(nil, 11)
+assert(vim.wait(1000, function()
+  return terminal.state().mode == nil and terminal.state().serve_exit ~= nil
+end), "URL reload post-frame serve exit should expose restart metadata")
+jobstart_calls = {}
+sent_requests = {}
+assert(terminal.reload() == true, "reload after URL post-frame exit should restart the serve session")
+assert(#jobstart_calls == 1, "URL post-frame exit reload should start one replacement serve job")
+assert(
+  _G.nvim_browser_command_option(jobstart_calls[1], "--url") == "https://example.com/reload-post-frame-next",
+  "URL post-frame exit reload should target the last rendered URL"
+)
+
+terminal.close()
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--markdown", "/tmp/reload-post-frame-start.md" })
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "reload markdown post-frame exit",
+  url = "file:///tmp/nvbrowser-reload-post-frame-markdown-wrapper.html",
+  display_url = "file:///tmp/reload-post-frame-exit.md",
+  title = "Reload Post Frame Markdown",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Reload Post Frame Markdown"
+end), "test setup should render a Markdown frame before reload post-frame exit")
+serve_exit(nil, 12)
+assert(vim.wait(1000, function()
+  return terminal.state().mode == nil and terminal.state().serve_exit ~= nil
+end), "Markdown reload post-frame serve exit should expose restart metadata")
+jobstart_calls = {}
+sent_requests = {}
+assert(terminal.reload() == true, "reload after Markdown post-frame exit should restart the serve session")
+assert(#jobstart_calls == 1, "Markdown post-frame exit reload should start one replacement serve job")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == nil, "Markdown post-frame exit reload should not restart as a raw URL")
+assert(
+  _G.nvim_browser_command_option(jobstart_calls[1], "--markdown") == "/tmp/reload-post-frame-exit.md",
+  "Markdown post-frame exit reload should preserve the Markdown wrapper target"
+)
+
+terminal.close()
+terminal.open({
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--image-fit",
+  "contain",
+  "--url",
+  "https://example.com/reload-post-frame-image-start",
+})
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "reload URL to image post-frame exit",
+  url = "file:///tmp/nvbrowser-reload-url-post-frame-image-wrapper.html",
+  display_url = "file:///tmp/reload-url-post-frame-exit.png",
+  title = "Reload URL Post Frame Image",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Reload URL Post Frame Image"
+end), "test setup should render an image display URL before reload post-frame exit")
+serve_exit(nil, 13)
+assert(vim.wait(1000, function()
+  return terminal.state().mode == nil and terminal.state().serve_exit ~= nil
+end), "URL-to-image reload post-frame serve exit should expose restart metadata")
+jobstart_calls = {}
+sent_requests = {}
+assert(terminal.reload() == true, "reload after URL-to-image post-frame exit should restart the serve session")
+assert(#jobstart_calls == 1, "URL-to-image post-frame exit reload should start one replacement serve job")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == nil, "URL-to-image reload should drop the old URL target")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--image") == "/tmp/reload-url-post-frame-exit.png", "URL-to-image reload should use an image wrapper")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--image-fit") == "contain", "URL-to-image reload should preserve image fit")
+
+terminal.close()
+terminal.open({
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--image-fit",
+  "contain",
+  "--markdown",
+  "/tmp/reload-markdown-post-frame-image-start.md",
+})
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "reload Markdown to image post-frame exit",
+  url = "file:///tmp/nvbrowser-reload-markdown-post-frame-image-wrapper.html",
+  display_url = "file:///tmp/reload-markdown-post-frame-exit.png",
+  title = "Reload Markdown Post Frame Image",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Reload Markdown Post Frame Image"
+end), "test setup should render an image display URL from a Markdown-origin serve before reload post-frame exit")
+serve_exit(nil, 14)
+assert(vim.wait(1000, function()
+  return terminal.state().mode == nil and terminal.state().serve_exit ~= nil
+end), "Markdown-to-image reload post-frame serve exit should expose restart metadata")
+jobstart_calls = {}
+sent_requests = {}
+assert(terminal.reload() == true, "reload after Markdown-to-image post-frame exit should restart the serve session")
+assert(#jobstart_calls == 1, "Markdown-to-image post-frame exit reload should start one replacement serve job")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--markdown") == nil, "Markdown-to-image reload should drop the old Markdown target")
+assert(
+  _G.nvim_browser_command_option(jobstart_calls[1], "--image") == "/tmp/reload-markdown-post-frame-exit.png",
+  "Markdown-to-image reload should use an image wrapper"
+)
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--image-fit") == "contain", "Markdown-to-image reload should preserve image fit")
+
+terminal.close()
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/reload-post-frame-markdown-start" })
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "reload URL to markdown post-frame exit",
+  url = "file:///tmp/nvbrowser-reload-url-post-frame-markdown-wrapper.html",
+  display_url = "file:///tmp/reload-url-post-frame-exit.md",
+  title = "Reload URL Post Frame Markdown",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Reload URL Post Frame Markdown"
+end), "test setup should render a Markdown display URL before reload post-frame exit")
+serve_exit(nil, 15)
+assert(vim.wait(1000, function()
+  return terminal.state().mode == nil and terminal.state().serve_exit ~= nil
+end), "URL-to-Markdown reload post-frame serve exit should expose restart metadata")
+jobstart_calls = {}
+sent_requests = {}
+assert(terminal.reload() == true, "reload after URL-to-Markdown post-frame exit should restart the serve session")
+assert(#jobstart_calls == 1, "URL-to-Markdown post-frame exit reload should start one replacement serve job")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == nil, "URL-to-Markdown reload should drop the old URL target")
+assert(
+  _G.nvim_browser_command_option(jobstart_calls[1], "--markdown") == "/tmp/reload-url-post-frame-exit.md",
+  "URL-to-Markdown reload should use a Markdown wrapper"
+)
 
 local reused_bufnr = second_state.bufnr
 terminal.open({ "nvbrowser", "show-image", "/tmp/image.png", "--output", "ansi" })

@@ -527,6 +527,7 @@ local function command_with_target(command, target)
     adjusted[url_index + 1] = target
     return adjusted
   end
+  local image_fit = command_string_option_value(adjusted, "--image-fit")
   for index, value in ipairs(adjusted) do
     if value == "--url" or value == "--markdown" or value == "--image" then
       table.remove(adjusted, index + 1)
@@ -549,6 +550,10 @@ local function command_with_target(command, target)
   if is_raster_image_path(target) then
     table.insert(adjusted, "--image")
     table.insert(adjusted, target)
+    if image_fit ~= nil and image_fit ~= "" then
+      table.insert(adjusted, "--image-fit")
+      table.insert(adjusted, image_fit)
+    end
     return adjusted
   end
   table.insert(adjusted, "--url")
@@ -3190,7 +3195,7 @@ end
 
 function M.reload()
   if state.mode ~= "serve" or state.job_id == nil then
-    return restart_stopped_serve((state.stopped_operation and state.stopped_operation.target) or state.current_url or state.last_target)
+    return restart_stopped_serve()
   end
   request_resize()
   return send_pending_request({ type = "reload" }, state.current_url or state.last_target or "reload")
