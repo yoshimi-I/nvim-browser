@@ -1907,9 +1907,14 @@ function _G.nvim_browser_request_sequence()
   return table.concat(sequence, ",")
 end
 
+function _G.nvim_browser_buffer_text(bufnr)
+  return table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+end
+
 vim.fn.jobstart = function(command, opts)
   table.insert(jobstart_calls, command)
   serve_stdout = opts and opts.on_stdout or nil
+  _G.nvim_browser_serve_stderr = opts and opts.on_stderr or nil
   serve_exit = opts and opts.on_exit or nil
   return 1234
 end
@@ -1942,6 +1947,66 @@ assert(
 assert(#fake_timers == 1, "serve sessions should start a live refresh timer by default")
 assert(fake_timers[1].starts[1].timeout == 1500, "live refresh should use the default interval as its initial delay")
 assert(fake_timers[1].starts[1].repeat_ms == 1500, "live refresh should repeat at the configured interval")
+
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "error",
+  error = "first frame failed",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().status_error == "first frame failed"
+end), "first-frame serve errors should update status")
+_G.nvim_browser_first_frame_error_text = _G.nvim_browser_buffer_text(first_state.bufnr)
+assert(
+  _G.nvim_browser_first_frame_error_text:find("Browser startup failed", 1, true),
+  "first-frame serve errors should replace startup text with a failure message"
+)
+assert(
+  _G.nvim_browser_first_frame_error_text:find("first frame failed", 1, true),
+  "first-frame serve errors should show the backend error"
+)
+serve_exit(nil, 2)
+assert(vim.wait(1000, function()
+  return terminal.state().mode == nil
+end), "serve exit after a first-frame JSON error should close the active serve state")
+assert(
+  terminal.state().status_error == "first frame failed",
+  "serve exit after a first-frame JSON error should preserve the specific backend error"
+)
+_G.nvim_browser_first_frame_error_exit_text = _G.nvim_browser_buffer_text(first_state.bufnr)
+assert(
+  _G.nvim_browser_first_frame_error_exit_text:find("first frame failed", 1, true),
+  "serve exit after a first-frame JSON error should keep the specific backend error in the preview"
+)
+
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/stderr-fail" })
+_G.nvim_browser_stderr_failure_state = terminal.state()
+_G.nvim_browser_serve_stderr(nil, { "Chrome failed to start", "profile is locked", "" })
+serve_exit(nil, 2)
+assert(vim.wait(1000, function()
+  return terminal.state().status_error ~= nil and terminal.state().status_error:find("Chrome failed to start", 1, true)
+end), "first-frame serve exits should preserve stderr in status")
+_G.nvim_browser_stderr_failure_text = _G.nvim_browser_buffer_text(_G.nvim_browser_stderr_failure_state.bufnr)
+assert(
+  _G.nvim_browser_stderr_failure_text:find("Browser startup failed: exit 2", 1, true),
+  "first-frame serve exits should show the exit code"
+)
+assert(
+  _G.nvim_browser_stderr_failure_text:find("Chrome failed to start", 1, true),
+  "first-frame serve exits should show captured stderr"
+)
+assert(
+  _G.nvim_browser_stderr_failure_text:find("profile is locked", 1, true),
+  "first-frame serve exits should show multiple stderr lines"
+)
+
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/large-stderr-fail" })
+_G.nvim_browser_serve_stderr(nil, { string.rep("x", 3000) })
+serve_exit(nil, 4)
+assert(vim.wait(1000, function()
+  return terminal.state().status_error ~= nil and terminal.state().status_error:find("%.%.%.", 1, false)
+end), "large single-line stderr should be truncated in status")
+assert(#terminal.state().status_error < 2200, "large single-line stderr should be bounded")
 
 _G.nvim_browser_original_tmux_for_serve_egress = vim.env.TMUX
 _G.nvim_browser_serve_egress_payloads = {}
@@ -5298,6 +5363,20 @@ assert(vim.wait(1000, function()
   return terminal.state().current_title == "Quiet Reset"
 end), "new serve responses should not be suppressed by stale quiet request ids")
 terminal._test.clear_in_flight_capture()
+_G.nvim_browser_post_frame_exit_bufnr = terminal.state().bufnr
+serve_exit(nil, 3)
+assert(vim.wait(1000, function()
+  return terminal.state().mode == nil
+end), "serve exit after a good frame should close the active serve state")
+_G.nvim_browser_post_frame_exit_text = _G.nvim_browser_buffer_text(_G.nvim_browser_post_frame_exit_bufnr)
+assert(
+  _G.nvim_browser_post_frame_exit_text:find("Browser session exited: 3", 1, true),
+  "serve exit after a good frame should use the normal exit message"
+)
+assert(
+  not _G.nvim_browser_post_frame_exit_text:find("Browser startup failed", 1, true),
+  "serve exit after a good frame should not be treated as a startup failure"
+)
 
 local reused_bufnr = second_state.bufnr
 terminal.open({ "nvbrowser", "show-image", "/tmp/image.png", "--output", "ansi" })

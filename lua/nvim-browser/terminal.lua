@@ -10,6 +10,7 @@ local state = {
   generation = 0,
   last_payload = nil,
   last_payload_is_unicode = false,
+  has_rendered_frame = false,
   last_target = nil,
   stream_buffer = "",
   mode = nil,
@@ -2429,6 +2430,60 @@ local function preview_lines(message, target)
   return lines
 end
 
+local function compact_error_text(value)
+  if value == nil or value == vim.NIL then
+    return nil
+  end
+  local text
+  if type(value) == "table" then
+    local parts = {}
+    for _, item in ipairs(value) do
+      if item ~= nil and item ~= vim.NIL and tostring(item) ~= "" then
+        table.insert(parts, tostring(item))
+      end
+    end
+    text = table.concat(parts, "\n")
+  else
+    text = tostring(value)
+  end
+  text = text:gsub("\r\n", "\n"):gsub("\r", "\n")
+  text = text:gsub("^%s+", ""):gsub("%s+$", "")
+  if text == "" then
+    return nil
+  end
+  if #text > 2048 then
+    text = text:sub(1, 2044) .. "\n..."
+  end
+  return text
+end
+
+local function failure_preview_lines(message, target, details)
+  local lines = {
+    message,
+    "",
+    "Target: " .. (target or ""),
+  }
+  details = compact_error_text(details)
+  if details ~= nil then
+    table.insert(lines, "")
+    for line in details:gmatch("([^\n]*)\n?") do
+      if line == "" and #lines > 0 and lines[#lines] == "" then
+        -- skip repeated blank separators in backend output
+      elseif line ~= "" then
+        table.insert(lines, line)
+      end
+    end
+  end
+  if state.mode == "serve" and is_valid_window() then
+    return append_preview_footer(lines, current_preview_geometry())
+  end
+  local height = is_valid_window() and vim.api.nvim_win_get_height(state.winid) or 24
+  while #lines < height do
+    table.insert(lines, "")
+  end
+  return lines
+end
+
 local function ensure_window()
   if is_valid_window() then
     vim.api.nvim_set_current_win(state.winid)
@@ -2456,6 +2511,7 @@ function M.open(command)
   state.generation = state.generation + 1
   state.last_payload = nil
   state.last_payload_is_unicode = false
+  state.has_rendered_frame = false
   state.last_target = command_target(command)
   state.stream_buffer = ""
   state.mode = nil
@@ -2479,6 +2535,7 @@ function M.open(command)
   state.rendered_frame_geometry = nil
   state.rendered_frame_url = nil
   state.rendered_frame_dom_epoch = nil
+  state.has_rendered_frame = false
   state.status = nil
   state.status_error = nil
   state.hint_error = nil
@@ -2532,6 +2589,7 @@ function M.open(command)
     local uses_kitty = command_uses_kitty_serve(command)
     local uses_kitty_unicode = command_uses_kitty_unicode_serve(command)
     local stream_buffer = ""
+    local stderr_chunks = {}
     state.cursor_addressable_preview = uses_kitty_unicode or command_uses_ansi_serve(command)
 
     vim.bo[state.bufnr].modifiable = true
@@ -2621,6 +2679,7 @@ function M.open(command)
           state.rendered_frame_geometry = rendered_frame_geometry_from_runtime(response.runtime)
           state.rendered_frame_url = response.url ~= nil and response.url ~= vim.NIL and tostring(response.url) or state.current_url
           state.rendered_frame_dom_epoch = state.dom_epoch
+          state.has_rendered_frame = true
           apply_payload_to_buffer(bufnr, response.payload, uses_kitty, uses_kitty_unicode, command, geometry)
           if uses_kitty then
             emit_terminal_graphics(response.payload, state.winid)
@@ -2637,7 +2696,20 @@ function M.open(command)
         end
 
         if response.status == "error" then
-          refresh_preview_footer(bufnr, geometry)
+          state.status_error = compact_error_text(response.error) or "browser request failed"
+          if not state.has_rendered_frame then
+            vim.bo[bufnr].modifiable = true
+            vim.api.nvim_buf_set_lines(
+              bufnr,
+              0,
+              -1,
+              false,
+              failure_preview_lines("Browser startup failed", target, state.status_error)
+            )
+            vim.bo[bufnr].modifiable = false
+          else
+            refresh_preview_footer(bufnr, geometry)
+          end
           if
             state.cursor_addressable_preview
             and #state.element_hints > 0
@@ -2672,6 +2744,20 @@ function M.open(command)
           handle_line(line)
         end
       end,
+      on_stderr = function(_, data)
+        if not data then
+          return
+        end
+        for _, line in ipairs(data) do
+          local compacted = compact_error_text(line)
+          if compacted ~= nil then
+            table.insert(stderr_chunks, compacted)
+          end
+        end
+        while #table.concat(stderr_chunks, "\n") > 2048 and #stderr_chunks > 1 do
+          table.remove(stderr_chunks, 1)
+        end
+      end,
       on_exit = function(_, code)
         vim.schedule(function()
           if state.stop_timer ~= nil then
@@ -2682,6 +2768,7 @@ function M.open(command)
           if generation ~= state.generation or state.bufnr ~= bufnr then
             return
           end
+          local had_rendered_frame = state.has_rendered_frame
           state.job_id = nil
           stop_text_mode_flush_timer()
           stop_resize_timer()
@@ -2702,6 +2789,7 @@ function M.open(command)
           state.rendered_frame_geometry = nil
           state.rendered_frame_url = nil
           state.rendered_frame_dom_epoch = nil
+          state.has_rendered_frame = false
           state.focused_element = nil
           state.latest_download = nil
           state.download_history = {}
@@ -2717,12 +2805,28 @@ function M.open(command)
           if vim.api.nvim_buf_is_valid(bufnr) then
             vim.bo[bufnr].modifiable = true
             if code ~= 0 then
+              local stderr_summary = compact_error_text(stderr_chunks)
+              local prior_status_error = not had_rendered_frame and compact_error_text(state.status_error) or nil
+              state.status = "error"
+              if prior_status_error ~= nil then
+                state.status_error = prior_status_error
+                if stderr_summary ~= nil then
+                  state.status_error = state.status_error .. ": " .. stderr_summary
+                end
+              else
+                state.status_error = "browser exited " .. tostring(code)
+                if stderr_summary ~= nil then
+                  state.status_error = state.status_error .. ": " .. stderr_summary
+                end
+              end
               vim.api.nvim_buf_set_lines(
                 bufnr,
                 0,
                 -1,
                 false,
-                preview_lines("Browser session exited: " .. code, target)
+                had_rendered_frame
+                    and preview_lines("Browser session exited: " .. code, target)
+                  or failure_preview_lines("Browser startup failed: exit " .. code, target, state.status_error)
               )
             else
               local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -2866,6 +2970,7 @@ function M.close()
   state.rendered_frame_geometry = nil
   state.rendered_frame_url = nil
   state.rendered_frame_dom_epoch = nil
+  state.has_rendered_frame = false
   state.status = nil
   state.status_error = nil
   state.hint_error = nil
