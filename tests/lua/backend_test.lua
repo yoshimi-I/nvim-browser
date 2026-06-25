@@ -352,6 +352,57 @@ assert(vim.deep_equal(file_url_html_command, {
   "file:///tmp/site/index.html",
 }), "existing file URL HTML targets should be preserved")
 
+local file_url_markdown_command = backend.command_for("nvbrowser", "open", "file:///tmp/docs/README.md", {
+  graphics = "ansi",
+})
+assert(vim.deep_equal(file_url_markdown_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--markdown",
+  "/tmp/docs/README.md",
+}), "file URL Markdown targets should route through Markdown wrappers")
+
+local file_url_markdown_fragment_command = backend.command_for("nvbrowser", "open", "file:///tmp/docs/README.md#intro", {
+  graphics = "ansi",
+})
+assert(vim.deep_equal(file_url_markdown_fragment_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  "file:///tmp/docs/README.md#intro",
+}), "file URL Markdown fragments should remain direct browser URLs")
+
+local localhost_file_url_image_command = backend.command_for("nvbrowser", "open", "file://localhost/tmp/image%20space.png", {
+  graphics = "ansi",
+  image_fit = "contain",
+})
+assert(vim.deep_equal(localhost_file_url_image_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--image-fit",
+  "contain",
+  "--image",
+  "/tmp/image space.png",
+}), "localhost file URL raster images should route through image wrappers")
+
+local remote_file_url_image_command = backend.command_for("nvbrowser", "open", "file://server/tmp/image.png", {
+  graphics = "ansi",
+})
+assert(vim.deep_equal(remote_file_url_image_command, {
+  "nvbrowser",
+  "serve",
+  "--output",
+  "ansi",
+  "--url",
+  "file://server/tmp/image.png",
+}), "remote-authority file URL raster images should remain direct browser URLs")
+
 local svg_command = backend.command_for("nvbrowser", "open", "/tmp/site/icon.svg", {
   graphics = "ansi",
 })

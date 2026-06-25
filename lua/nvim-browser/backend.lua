@@ -118,6 +118,23 @@ local function is_browser_url(target)
   return target:match("^https?://") or target:match("^file://")
 end
 
+local function local_path_from_file_url(target)
+  if type(target) ~= "string" or not target:match("^file://") or target:find("[#?]") ~= nil then
+    return nil
+  end
+  local authority = target:match("^file://([^/]*)")
+  if authority ~= nil and authority ~= "" and authority:lower() ~= "localhost" then
+    return nil
+  end
+  local path = target:match("^file://[^/]*(/.*)$")
+  if path == nil or path == "" then
+    return nil
+  end
+  return path:gsub("%%(%x%x)", function(hex)
+    return string.char(tonumber(hex, 16))
+  end)
+end
+
 local function browser_graphics_output(opts)
   return M.resolve_graphics(opts).browser_output
 end
@@ -158,17 +175,41 @@ local function add_navigation_timeout(command, opts)
   return command
 end
 
+local function serve_command(binary, opts)
+  local command = { binary, "serve", "--output", browser_graphics_output(opts) }
+  add_navigation_timeout(command, opts)
+  add_cdp_ws_url(command, opts)
+  add_user_data_dir(command, opts)
+  add_download_dir(command, opts)
+  return command
+end
+
 function M.command_for(binary, action, target, opts)
   if action == "inspect" then
     return { binary, "inspect", target }
   end
 
+  local local_file_url_path = local_path_from_file_url(target)
+  if local_file_url_path ~= nil then
+    local local_file_url_extension = extension_for(local_file_url_path)
+    if local_file_url_extension == "md" or local_file_url_extension == "markdown" then
+      local command = serve_command(binary, opts)
+      table.insert(command, "--markdown")
+      table.insert(command, local_file_url_path)
+      return command
+    end
+    if is_raster_image_extension(local_file_url_extension) then
+      local command = serve_command(binary, opts)
+      table.insert(command, "--image-fit")
+      table.insert(command, opts and opts.image_fit or "original")
+      table.insert(command, "--image")
+      table.insert(command, local_file_url_path)
+      return command
+    end
+  end
+
   if is_browser_url(target) then
-    local command = { binary, "serve", "--output", browser_graphics_output(opts) }
-    add_navigation_timeout(command, opts)
-    add_cdp_ws_url(command, opts)
-    add_user_data_dir(command, opts)
-    add_download_dir(command, opts)
+    local command = serve_command(binary, opts)
     table.insert(command, "--url")
     table.insert(command, target)
     return command
@@ -176,22 +217,14 @@ function M.command_for(binary, action, target, opts)
 
   local extension = extension_for(target)
   if extension == "md" or extension == "markdown" then
-    local command = { binary, "serve", "--output", browser_graphics_output(opts) }
-    add_navigation_timeout(command, opts)
-    add_cdp_ws_url(command, opts)
-    add_user_data_dir(command, opts)
-    add_download_dir(command, opts)
+    local command = serve_command(binary, opts)
     table.insert(command, "--markdown")
     table.insert(command, vim.fn.fnamemodify(target, ":p"))
     return command
   end
 
   if is_browser_file_extension(extension) then
-    local command = { binary, "serve", "--output", browser_graphics_output(opts) }
-    add_navigation_timeout(command, opts)
-    add_cdp_ws_url(command, opts)
-    add_user_data_dir(command, opts)
-    add_download_dir(command, opts)
+    local command = serve_command(binary, opts)
     if is_raster_image_extension(extension) then
       table.insert(command, "--image-fit")
       table.insert(command, opts and opts.image_fit or "original")
