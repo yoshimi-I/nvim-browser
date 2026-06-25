@@ -28,7 +28,7 @@ use nvbrowser_core::{
 };
 use serde::{Deserialize, Serialize};
 
-const SERVE_PROTOCOL_VERSION: u32 = 28;
+const SERVE_PROTOCOL_VERSION: u32 = 29;
 
 #[derive(Debug, Parser)]
 #[command(name = "nvbrowser")]
@@ -3195,10 +3195,15 @@ mod tests {
             Ok(PointInfo {
                 session_id: request.session_id,
                 page_id: request.page_id,
+                kind: Some(ElementHintKind::Link),
                 tag: Some("a".to_string()),
                 label: Some("Docs".to_string()),
                 href: Some("https://example.com/docs".to_string()),
                 target: Some("_blank".to_string()),
+                checked: None,
+                options: Vec::new(),
+                clickable: true,
+                focusable: true,
             })
         }
 
@@ -4714,10 +4719,15 @@ mod tests {
             point: Some(PointInfo {
                 session_id: SessionId::new(1),
                 page_id: PageId::new(1),
+                kind: Some(ElementHintKind::Link),
                 tag: Some("a".to_string()),
                 label: Some("Docs".to_string()),
                 href: Some("https://example.com/docs".to_string()),
                 target: Some("_blank".to_string()),
+                checked: None,
+                options: Vec::new(),
+                clickable: true,
+                focusable: true,
             }),
             hints: Vec::new(),
             hint_error: None,
@@ -4732,7 +4742,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":19,"status":"ok","url":"https://example.com","title":"Example","point":{"session_id":1,"page_id":1,"tag":"a","label":"Docs","href":"https://example.com/docs","target":"_blank"}}"#
+            r#"{"id":19,"status":"ok","url":"https://example.com","title":"Example","point":{"session_id":1,"page_id":1,"kind":"link","tag":"a","label":"Docs","href":"https://example.com/docs","target":"_blank","clickable":true,"focusable":true}}"#
         );
     }
 
@@ -4781,7 +4791,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":28,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":29,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 

@@ -138,7 +138,8 @@ can be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   option metadata is available, cursor-local `<select>` option selection by
   preview point, hinted `<input type="file">` uploads through CDP
   `DOM.setFileInputFiles`, hinted and cursor-local checkbox/radio toggles,
-  direct href following, current URL, hinted link URL, live DOM point inspection
+  smart cursor activation that dispatches links/forms/buttons from live point
+  metadata, direct href following, current URL, hinted link URL, live DOM point inspection
   at the preview cursor, link URL yanking from the preview cursor, and
   whole-page text snapshot yanking, focused-element metadata, and
   submit-current-focus form UX.

@@ -1763,6 +1763,12 @@ local function action_items(opts, report_error)
       end,
     },
     {
+      label = "Activate cursor",
+      run = function()
+        return M.activate_here()
+      end,
+    },
+    {
       label = "Yank link URL at cursor",
       run = function()
         return M.yank_point_url_here('"')
@@ -2809,6 +2815,121 @@ function M.select_hint_mode(input_or_opts, maybe_opts)
     opts.on_error("action_failed")
   end
   return ok
+end
+
+local function point_kind(point)
+  local kind = point and point.kind or nil
+  if kind ~= nil and kind ~= vim.NIL and kind ~= "" then
+    return tostring(kind)
+  end
+  local tag = point and point.tag or nil
+  if tag == nil or tag == vim.NIL then
+    return nil
+  end
+  tag = tostring(tag):lower()
+  if tag == "a" and point.href ~= nil and point.href ~= vim.NIL and point.href ~= "" then
+    return "link"
+  end
+  if tag == "textarea" then
+    return "text_area"
+  end
+  if tag == "input" then
+    return nil
+  end
+  return tag
+end
+
+local function point_xy(point)
+  if type(point) ~= "table" then
+    return nil, nil
+  end
+  local x = tonumber(point.x)
+  local y = tonumber(point.y)
+  if x == nil or y == nil then
+    return nil, nil
+  end
+  return x, y
+end
+
+local function enabled_point_options(point)
+  local options = type(point) == "table" and point.options or nil
+  if type(options) ~= "table" then
+    return {}
+  end
+  local enabled = {}
+  for _, option in ipairs(options) do
+    if type(option) == "table" and option.disabled ~= true then
+      table.insert(enabled, option)
+    end
+  end
+  return enabled
+end
+
+function M.activate_here(opts)
+  opts = opts or {}
+  local input = opts.input or vim.fn.input
+  local select = opts.select or vim.ui.select
+
+  return terminal.point_info_here(function(response)
+    if response.status ~= "ok" or type(response.point) ~= "table" then
+      vim.api.nvim_echo({ { "nvim-browser: cursor activation requires an active cursor-addressable browser preview or actionable element", "WarningMsg" } }, false, {})
+      return
+    end
+
+    local point = response.point
+    local kind = point_kind(point)
+    local x, y = point_xy(point)
+    local href = point.href
+    if href ~= nil and href ~= vim.NIL and href ~= "" and kind == "link" then
+      M.navigate(tostring(href))
+      return
+    end
+
+    if kind == "checkbox" or kind == "radio" then
+      if x ~= nil and y ~= nil then
+        terminal.toggle_point(x, y)
+      end
+      return
+    end
+
+    if kind == "input" or kind == "text_area" or kind == "editable" then
+      local text = input("nvim-browser text: ")
+      if text ~= nil and text ~= "" and x ~= nil and y ~= nil then
+        terminal.type_point(x, y, text)
+      end
+      return
+    end
+
+    if kind == "select" then
+      local options = enabled_point_options(point)
+      if #options > 0 then
+        select(options, {
+          prompt = "nvim-browser option: ",
+          format_item = select_option_picker_label,
+        }, function(option)
+          if option == nil then
+            return
+          end
+          local choice = select_option_choice(option)
+          if choice ~= nil and x ~= nil and y ~= nil then
+            terminal.select_point(x, y, choice)
+          end
+        end)
+      else
+        local choice = input("nvim-browser option: ")
+        if choice ~= nil and choice ~= "" and x ~= nil and y ~= nil then
+          terminal.select_point(x, y, choice)
+        end
+      end
+      return
+    end
+
+    if kind == "button" or point.clickable == true then
+      if x ~= nil and y ~= nil then
+        terminal.click_point(x, y)
+      end
+    end
+  end)
 end
 
 function M.focus_hint_mode(input)

@@ -115,6 +115,7 @@ M.options = {
       right_click_here = "gr",
       hover_here = "gh",
       follow_point_url_here = "gf",
+      activate_here = "ga",
       point_info_here = "gi",
       type_here = "gI",
       submit_here = "gS",

@@ -27,17 +27,18 @@ use crate::{
     renderer::{
         BrowserHistoryAvailability, BrowserHistoryRequest, ClickHintRequest, ClickPointRequest,
         DialogAction, DialogEvent, DialogKind, DomEpochRequest, DownloadInfo, DragPointRequest,
-        ElementHint, ElementHintsRequest, FindTextRequest, FindTextResult, FocusHintRequest,
-        FocusSelectorRequest, FocusedElement, FocusedElementRequest, FrameArtifact,
-        HistoryNavigationRequest, HistoryNavigationResult, HoverHintRequest, HoverPointRequest,
-        InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
-        PageMetadata, PageMetadataRequest, PageMetrics, PageMetricsRequest, PageTextRequest,
-        PageTextSnapshot, PointInfo, PointInfoRequest, ReloadRequest, ReloadResult,
-        RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
-        RightClickHintRequest, RightClickPointRequest, ScrollRequest, ScrollResult,
-        SelectHintRequest, SelectPointRequest, SelectionTextRequest, SelectionTextResult,
-        ShutdownResult, StopLoadingRequest, StopLoadingResult, TextInputRequest, ToggleHintRequest,
-        TogglePointRequest, UploadHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
+        ElementHint, ElementHintKind, ElementHintsRequest, FindTextRequest, FindTextResult,
+        FocusHintRequest, FocusSelectorRequest, FocusedElement, FocusedElementRequest,
+        FrameArtifact, HistoryNavigationRequest, HistoryNavigationResult, HoverHintRequest,
+        HoverPointRequest, InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest,
+        NavigationResult, PageMetadata, PageMetadataRequest, PageMetrics, PageMetricsRequest,
+        PageTextRequest, PageTextSnapshot, PointInfo, PointInfoRequest, ReloadRequest,
+        ReloadResult, RenderFrameRequest, RenderedFrame, Renderer, RendererError,
+        RendererErrorKind, RightClickHintRequest, RightClickPointRequest, ScrollRequest,
+        ScrollResult, SelectHintRequest, SelectOptionHint, SelectPointRequest,
+        SelectionTextRequest, SelectionTextResult, ShutdownResult, StopLoadingRequest,
+        StopLoadingResult, TextInputRequest, ToggleHintRequest, TogglePointRequest,
+        UploadHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
 };
@@ -908,10 +909,15 @@ impl Renderer for ChromiumRenderer {
         Ok(PointInfo {
             session_id: request.session_id,
             page_id: request.page_id,
+            kind: extracted.kind,
             tag: extracted.tag,
             label: extracted.label,
             href: extracted.href,
             target: extracted.target,
+            checked: extracted.checked,
+            options: extracted.options,
+            clickable: extracted.clickable,
+            focusable: extracted.focusable,
         })
     }
 
@@ -2035,6 +2041,28 @@ const POINT_INFO_SCRIPT: &str = r#"
   const x = __X__;
   const y = __Y__;
   const normalizeText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+  const labelledByText = (element) => {
+    const raw = element ? normalizeText(element.getAttribute('aria-labelledby')) : '';
+    if (raw.length === 0) return null;
+    const text = raw.split(' ').map((id) => {
+      const label = element.ownerDocument.getElementById(id);
+      return label ? normalizeText(label.textContent) : '';
+    }).filter(Boolean).join(' ');
+    return text.length > 0 ? text : null;
+  };
+  const labelElementText = (element) => {
+    if (!element) return null;
+    if (element.labels && element.labels.length > 0) {
+      const text = Array.from(element.labels).map((label) => normalizeText(label.textContent)).filter(Boolean).join(' ');
+      if (text.length > 0) return text;
+    }
+    const wrapping = typeof element.closest === 'function' ? element.closest('label') : null;
+    if (wrapping) {
+      const text = normalizeText(wrapping.textContent);
+      if (text.length > 0) return text;
+    }
+    return null;
+  };
   const labelFor = (element, anchor) => {
     const inputType = element && element.tagName && element.tagName.toLowerCase() === 'input'
       ? (element.getAttribute('type') || 'text').toLowerCase()
@@ -2043,6 +2071,8 @@ const POINT_INFO_SCRIPT: &str = r#"
     const candidates = [
       anchor && anchor.getAttribute('aria-label'),
       element && element.getAttribute('aria-label'),
+      labelledByText(element),
+      labelElementText(element),
       anchor && anchor.getAttribute('title'),
       element && element.getAttribute('title'),
       element && element.getAttribute('placeholder'),
@@ -2059,6 +2089,33 @@ const POINT_INFO_SCRIPT: &str = r#"
     }
     return null;
   };
+  const kindFor = (element) => {
+    if (!element || !element.tagName) return null;
+    const tag = element.tagName.toLowerCase();
+    const role = (element.getAttribute('role') || '').toLowerCase();
+    if (tag === 'a' || role === 'link') return 'link';
+    if (tag === 'button' || role === 'button') return 'button';
+    if (tag === 'input') {
+      const type = (element.getAttribute('type') || 'text').toLowerCase();
+      if (type === 'file') return 'file';
+      if (type === 'checkbox') return 'checkbox';
+      if (type === 'radio') return 'radio';
+      return 'input';
+    }
+    if (tag === 'textarea') return 'text_area';
+    if (tag === 'select') return 'select';
+    if (element.isContentEditable) return 'editable';
+    return 'other';
+  };
+  const optionsFor = (element) => {
+    if (!element || !element.tagName || element.tagName.toLowerCase() !== 'select') return [];
+    return Array.from(element.options || []).map((option) => ({
+      value: option.value,
+      label: normalizeText(option.label || option.textContent || option.value),
+      disabled: option.disabled === true,
+      selected: option.selected === true
+    }));
+  };
   const hrefFor = (anchor) => {
     if (!anchor) return null;
     const raw = anchor.getAttribute('href');
@@ -2073,6 +2130,40 @@ const POINT_INFO_SCRIPT: &str = r#"
     if (!anchor) return null;
     const target = normalizeText(anchor.getAttribute('target'));
     return target.length > 0 ? target : null;
+  };
+  const actionableElementFor = (element) => {
+    if (!element || typeof element.closest !== 'function') return element;
+    const direct = element.closest('a[href],button,input,select,textarea,[contenteditable="true"],[role="button"],[role="link"]');
+    if (direct) return direct;
+    const label = element.closest('label');
+    if (label && label.control) return label.control;
+    if (label && typeof label.querySelector === 'function') {
+      const input = label.querySelector('input,select,textarea');
+      if (input) return input;
+    }
+    return element;
+  };
+  const clickableFor = (element, anchor) => {
+    const kind = kindFor(element);
+    return Boolean(anchor)
+      || kind === 'button'
+      || kind === 'checkbox'
+      || kind === 'radio'
+      || kind === 'select'
+      || element.onclick != null
+      || element.getAttribute('role') === 'button'
+      || element.getAttribute('role') === 'link';
+  };
+  const focusableFor = (element) => {
+    if (!element) return false;
+    const tag = element.tagName ? element.tagName.toLowerCase() : '';
+    return tag === 'input'
+      || tag === 'textarea'
+      || tag === 'select'
+      || tag === 'button'
+      || tag === 'a'
+      || element.isContentEditable
+      || element.tabIndex >= 0;
   };
   const elementAtPoint = (root, pointX, pointY, depth) => {
     const element = root && typeof root.elementFromPoint === 'function'
@@ -2094,15 +2185,22 @@ const POINT_INFO_SCRIPT: &str = r#"
   };
   const element = elementAtPoint(document, x, y, 0);
   if (!element) {
-    return JSON.stringify({ tag: null, label: null, href: null, target: null });
+    return JSON.stringify({ kind: null, tag: null, label: null, href: null, target: null, checked: null, options: [], clickable: false, focusable: false });
   }
-  const anchor = element.closest && element.closest('a[href]');
-  const tag = element.tagName ? element.tagName.toLowerCase() : null;
+  const actionable = actionableElementFor(element);
+  const anchor = actionable && actionable.closest && actionable.closest('a[href]');
+  const tag = actionable && actionable.tagName ? actionable.tagName.toLowerCase() : null;
+  const kind = kindFor(actionable);
   return JSON.stringify({
+    kind,
     tag,
-    label: labelFor(element, anchor),
+    label: labelFor(actionable, anchor),
     href: hrefFor(anchor),
-    target: targetFor(anchor)
+    target: targetFor(anchor),
+    checked: (kind === 'checkbox' || kind === 'radio') ? actionable.checked === true : null,
+    options: optionsFor(actionable),
+    clickable: clickableFor(actionable, anchor),
+    focusable: focusableFor(actionable)
   });
 })()
 "#;
@@ -3433,10 +3531,20 @@ struct ExtractedPageText {
 
 #[derive(Debug, Deserialize)]
 struct ExtractedPointInfo {
+    #[serde(default)]
+    kind: Option<ElementHintKind>,
     tag: Option<String>,
     label: Option<String>,
     href: Option<String>,
     target: Option<String>,
+    #[serde(default)]
+    checked: Option<bool>,
+    #[serde(default)]
+    options: Vec<SelectOptionHint>,
+    #[serde(default)]
+    clickable: bool,
+    #[serde(default)]
+    focusable: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -4477,6 +4585,9 @@ mod tests {
         assert!(script.contains("elementAtPoint(document, x, y, 0)"));
         assert!(script.contains("root.elementFromPoint(pointX, pointY)"));
         assert!(script.contains("closest('a[href]')"));
+        assert!(script.contains("actionableElementFor(element)"));
+        assert!(script.contains("kindFor(actionable)"));
+        assert!(script.contains("optionsFor(actionable)"));
         assert!(script.contains("new URL(raw, anchor.ownerDocument.baseURI).href"));
         assert!(script.contains("elementAtPoint(frameDocument, innerX, innerY, depth + 1)"));
         assert!(script.contains("element.clientLeft || 0"));
@@ -4487,14 +4598,20 @@ mod tests {
     #[test]
     fn parses_point_info_json_from_chromium_script() {
         let point = parse_point_info_json(
-            r##"{"tag":"span","label":"Docs","href":"https://example.com/docs","target":"_blank"}"##,
+            r##"{"kind":"select","tag":"select","label":"Country","href":"https://example.com/docs","target":"_blank","checked":false,"options":[{"value":"ca","label":"Canada","disabled":false,"selected":true}],"clickable":true,"focusable":true}"##,
         )
         .expect("point info should parse");
 
-        assert_eq!(point.tag.as_deref(), Some("span"));
-        assert_eq!(point.label.as_deref(), Some("Docs"));
+        assert_eq!(point.kind, Some(ElementHintKind::Select));
+        assert_eq!(point.tag.as_deref(), Some("select"));
+        assert_eq!(point.label.as_deref(), Some("Country"));
         assert_eq!(point.href.as_deref(), Some("https://example.com/docs"));
         assert_eq!(point.target.as_deref(), Some("_blank"));
+        assert_eq!(point.checked, Some(false));
+        assert_eq!(point.options[0].value, "ca");
+        assert_eq!(point.options[0].label, "Canada");
+        assert!(point.clickable);
+        assert!(point.focusable);
     }
 
     #[test]

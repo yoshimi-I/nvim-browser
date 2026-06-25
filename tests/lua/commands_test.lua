@@ -33,6 +33,7 @@ for _, name in ipairs({
   "NBrowserPointInfo",
   "NBrowserYankPointUrl",
   "NBrowserFollowPointUrl",
+  "NBrowserActivateHere",
 }) do
   assert(vim.tbl_contains(lazy_command_names, name), "full lazy command list should include " .. name)
 end
@@ -88,6 +89,7 @@ local yanked_current_url_register = nil
 local yanked_hint_url = nil
 local yanked_point_url_register = nil
 local followed_point_url = false
+local activated_here = false
 local point_info_called = false
 local point_info_should_fail = false
 local yanked_page_text_register = nil
@@ -299,6 +301,13 @@ local browser = {
       return false
     end
     followed_point_url = true
+    return true
+  end,
+  activate_here = function()
+    if activated_here == "fail" then
+      return false
+    end
+    activated_here = true
     return true
   end,
   point_info_here = function(on_response)
@@ -1417,6 +1426,9 @@ assert(selected_here == "Canada", "NBrowserSelectHere should select at the previ
 
 vim.cmd("NBrowserToggleHere")
 assert(toggled_here == true, "NBrowserToggleHere should toggle at the preview cursor")
+
+vim.cmd("NBrowserActivateHere")
+assert(activated_here == true, "NBrowserActivateHere should activate the element at the preview cursor")
 
 typed_hint = nil
 local hint_prompts = {}

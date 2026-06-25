@@ -53,6 +53,7 @@ local command_names = {
   "NBrowserYankHintUrl",
   "NBrowserYankPointUrl",
   "NBrowserFollowPointUrl",
+  "NBrowserActivateHere",
   "NBrowserScreenshot",
   "NBrowserInputMode",
   "NBrowserTextMode",
@@ -240,6 +241,10 @@ function M.register(browser, opts)
 
   local function warn_submit_focused_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: focused element is not submittable or browser session is inactive", "WarningMsg" } }, false, {})
+  end
+
+  local function warn_activate_here_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: cursor activation requires an active cursor-addressable browser preview or actionable element", "WarningMsg" } }, false, {})
   end
 
   local function current_hint_error()
@@ -1161,6 +1166,12 @@ function M.register(browser, opts)
   vim.api.nvim_create_user_command("NBrowserToggleHere", function()
     if browser.toggle_here == nil or not browser.toggle_here() then
       warn_cursor_toggle_unavailable()
+    end
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserActivateHere", function()
+    if browser.activate_here == nil or not browser.activate_here() then
+      warn_activate_here_unavailable()
     end
   end, {})
 

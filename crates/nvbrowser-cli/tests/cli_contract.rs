@@ -409,7 +409,7 @@ fn doctor_outputs_backend_json_without_launching_chrome() {
     );
     assert_eq!(json["backend"]["user_data_dir"], "/tmp/nvbrowser-profile");
     assert_eq!(
-        json["protocol"]["serve"], 28,
+        json["protocol"]["serve"], 29,
         "doctor JSON should expose the serve protocol version"
     );
 }

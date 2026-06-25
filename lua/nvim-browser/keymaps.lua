@@ -414,6 +414,12 @@ function M.setup_buffer(browser, bufnr, opts)
     end
   end, "nvim-browser: yank cursor link URL", buffer_opts)
 
+  set_mapping(nil, mapping_lhs(mappings, "activate_here", "ga"), function()
+    if browser.activate_here ~= nil then
+      browser.activate_here()
+    end
+  end, "nvim-browser: activate cursor element", buffer_opts)
+
   set_mapping(nil, mapping_lhs(mappings, "key_enter", "<CR>"), function()
     browser.press_key("Enter")
   end, "nvim-browser: press Enter", buffer_opts)

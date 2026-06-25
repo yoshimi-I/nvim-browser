@@ -882,7 +882,7 @@ impl ElementHintsRequest {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ElementHintKind {
     Link,
@@ -897,7 +897,7 @@ pub enum ElementHintKind {
     Other,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct SelectOptionHint {
     pub value: String,
     pub label: String,
@@ -950,6 +950,8 @@ pub struct PointInfo {
     pub session_id: SessionId,
     pub page_id: PageId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ElementHintKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
@@ -957,6 +959,18 @@ pub struct PointInfo {
     pub href: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<SelectOptionHint>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub clickable: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub focusable: bool,
+}
+
+const fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl ClickPointRequest {
@@ -1400,10 +1414,15 @@ mod tests {
             Ok(PointInfo {
                 session_id: request.session_id,
                 page_id: request.page_id,
+                kind: Some(ElementHintKind::Link),
                 tag: Some("a".to_string()),
                 label: Some("Docs".to_string()),
                 href: Some("https://example.com/docs".to_string()),
                 target: None,
+                checked: None,
+                options: Vec::new(),
+                clickable: true,
+                focusable: true,
             })
         }
 
@@ -1557,6 +1576,36 @@ mod tests {
         assert_eq!(text.page_id, page_id);
         assert_eq!(key.session_id, session_id);
         assert_eq!(key.page_id, page_id);
+    }
+
+    #[test]
+    fn point_info_serializes_action_metadata() {
+        let info = PointInfo {
+            session_id: SessionId::new(1),
+            page_id: PageId::new(2),
+            kind: Some(ElementHintKind::Select),
+            tag: Some("select".to_string()),
+            label: Some("Country".to_string()),
+            href: None,
+            target: None,
+            checked: None,
+            options: vec![SelectOptionHint {
+                value: "ca".to_string(),
+                label: "Canada".to_string(),
+                disabled: false,
+                selected: true,
+            }],
+            clickable: true,
+            focusable: true,
+        };
+
+        let json = serde_json::to_value(&info).expect("point info should serialize");
+
+        assert_eq!(json["kind"], "select");
+        assert_eq!(json["options"][0]["value"], "ca");
+        assert_eq!(json["options"][0]["label"], "Canada");
+        assert_eq!(json["clickable"], true);
+        assert_eq!(json["focusable"], true);
     }
 
     #[test]

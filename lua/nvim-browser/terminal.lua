@@ -4169,11 +4169,20 @@ function M.point_info_here(on_response)
   if point == nil then
     return false
   end
+  local function handle_response(response)
+    if type(response) == "table" and type(response.point) == "table" then
+      response.point.x = response.point.x or point.x
+      response.point.y = response.point.y or point.y
+    end
+    if type(on_response) == "function" then
+      on_response(response)
+    end
+  end
   return send_pending_request({
     type = "point_info",
     x = point.x,
     y = point.y,
-  }, state.current_url or state.last_target or "inspect", "inspect", on_response)
+  }, state.current_url or state.last_target or "inspect", "inspect", handle_response)
 end
 
 function M.yank_point_url_here(register)

@@ -69,6 +69,7 @@ Example lazy.nvim setup:
     "NBrowserYankHintUrl",
     "NBrowserYankPointUrl",
     "NBrowserFollowPointUrl",
+    "NBrowserActivateHere",
     "NBrowserScreenshot",
     "NBrowserInputMode",
     "NBrowserTextMode",
@@ -545,6 +546,13 @@ COMMANDS                                           *nvim-browser-commands*
 	interception. It requires an ANSI or Kitty Unicode cursor-addressable
 	browser preview.
 
+							*:NBrowserActivateHere*
+:NBrowserActivateHere
+	Inspect the live DOM under the preview cursor and choose the obvious
+	cursor action: follow links, toggle checkbox/radio inputs, prompt and type
+	into text inputs, pick an enabled select option, or click buttons and other
+	clickable elements.
+
 							*:NBrowserWheelDownHere*
 :NBrowserWheelDownHere [pixels]
 	Send native Chromium mouse-wheel input downward at the viewport point under
@@ -921,6 +929,7 @@ p  paste register into focused element
 y  yank browser selection into register; Visual y yanks the Visual preview region
 Y  yank active browser URL into register
 gY yank link URL under cursor into register
+ga activate element under cursor
 gI type text at cursor
 gS type text at cursor and submit
 gO select dropdown option at cursor
@@ -967,6 +976,7 @@ require("nvim-browser").setup({
       right_click_here = "gr",
       follow_point_url_here = "gf",
       yank_point_url_here = "gY",
+      activate_here = "ga",
       point_info_here = "gi",
       type_here = "gI",
       submit_here = "gS",
@@ -1003,6 +1013,8 @@ Set a mapping value to `false` to preserve that key, for example
 `preview_keymaps = { mappings = { yank_point_url_here = false } }`.
 To preserve Vim's built-in `gi`, use
 `preview_keymaps = { mappings = { point_info_here = false } }`.
+To disable smart cursor activation, use
+`preview_keymaps = { mappings = { activate_here = false } }`.
 To disable cursor-local select prompts, use
 `preview_keymaps = { mappings = { select_here = false } }`.
 To disable cursor-local toggle input, use

@@ -4300,6 +4300,8 @@ assert(vim.wait(1000, function()
   return _G.nvim_browser_observed_point_response ~= nil
 end), "point info responses should reach the caller callback")
 assert(_G.nvim_browser_observed_point_response.point.href == "https://example.com/docs", "point info callback should receive href metadata")
+assert(_G.nvim_browser_observed_point_response.point.x == _G.nvim_browser_expected_point.x, "point info callback should receive the inspected viewport x")
+assert(_G.nvim_browser_observed_point_response.point.y == _G.nvim_browser_expected_point.y, "point info callback should receive the inspected viewport y")
 
 vim.fn.setreg("b", "before-point-url-yank")
 sent_requests = {}

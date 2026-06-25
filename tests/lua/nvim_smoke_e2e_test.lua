@@ -4,7 +4,7 @@ end
 
 local root = vim.fn.getcwd()
 package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.path
-local expected_serve_protocol = 28
+local expected_serve_protocol = 29
 
 local function fail(message)
   error("nvim smoke e2e: " .. message, 0)

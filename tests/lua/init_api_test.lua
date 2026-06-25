@@ -53,6 +53,7 @@ assert(type(browser.yank_point_url_here) == "function", "cursor URL yank API sho
 assert(type(browser.follow_point_url_here) == "function", "cursor link follow API should exist")
 assert(type(browser.point_info_here) == "function", "cursor point info API should exist")
 assert(type(browser.inspect_point_here) == "function", "cursor point inspection API should exist")
+assert(type(browser.activate_here) == "function", "smart cursor activation API should exist")
 assert(type(browser.yank_page_text) == "function", "page text yank API should exist")
 assert(type(browser.screenshot) == "function", "active browser screenshot API should exist")
 assert(type(browser.downloads) == "function", "download history API should exist")
@@ -1852,7 +1853,9 @@ original_terminal_downloads = terminal.downloads
 local original_terminal_yank_current_url = terminal.yank_current_url
 local original_terminal_yank_hint_url = terminal.yank_hint_url
 _G.nvim_browser_original_terminal_yank_point_url_here = terminal.yank_point_url_here
+_G.nvim_browser_original_terminal_follow_point_url_here = terminal.follow_point_url_here
 _G.nvim_browser_original_terminal_point_info_here = terminal.point_info_here
+_G.nvim_browser_original_terminal_click_here = terminal.click_here
 local original_terminal_find_text = terminal.find_text
 local original_terminal_find_next = terminal.find_next
 local original_terminal_find_previous = terminal.find_previous
@@ -2891,6 +2894,102 @@ _G.nvim_browser_point_info_callback_arg = function() end
 assert(browser.point_info_here(_G.nvim_browser_point_info_callback_arg) == "point-info", "point_info_here should delegate to terminal")
 assert(_G.nvim_browser_point_info_callback == _G.nvim_browser_point_info_callback_arg, "point_info_here should pass callbacks to terminal")
 
+_G.nvim_browser_activate_point = nil
+_G.nvim_browser_activate_calls = {}
+terminal.point_info_here = function(callback)
+  if _G.nvim_browser_activate_point == false then
+    return false
+  end
+  callback({ status = "ok", point = _G.nvim_browser_activate_point })
+  return true
+end
+terminal.navigate = function(target)
+  table.insert(_G.nvim_browser_activate_calls, "navigate:" .. tostring(target))
+  return true
+end
+terminal.toggle_point = function(x, y)
+  table.insert(_G.nvim_browser_activate_calls, "toggle:" .. tostring(x) .. ":" .. tostring(y))
+  return true
+end
+terminal.click_point = function(x, y)
+  table.insert(_G.nvim_browser_activate_calls, "click:" .. tostring(x) .. ":" .. tostring(y))
+  return true
+end
+terminal.type_point = function(x, y, text)
+  table.insert(_G.nvim_browser_activate_calls, "type:" .. tostring(x) .. ":" .. tostring(y) .. ":" .. tostring(text))
+  return true
+end
+terminal.select_point = function(x, y, choice)
+  table.insert(_G.nvim_browser_activate_calls, "select:" .. tostring(x) .. ":" .. tostring(y) .. ":" .. tostring(choice))
+  return true
+end
+
+_G.nvim_browser_activate_point = { kind = "link", href = "https://example.com/docs", x = 11, y = 21 }
+assert(browser.activate_here() == true, "activate_here should request cursor point inspection")
+assert(
+  _G.nvim_browser_activate_calls[#_G.nvim_browser_activate_calls] == "navigate:https://example.com/docs",
+  "activate_here should navigate to the inspected link href"
+)
+
+_G.nvim_browser_activate_point = { kind = "checkbox", label = "Newsletter", checked = false, x = 12, y = 22 }
+assert(browser.activate_here() == true, "activate_here should inspect checkbox points")
+assert(_G.nvim_browser_activate_calls[#_G.nvim_browser_activate_calls] == "toggle:12:22", "activate_here should toggle checkboxes at the inspected point")
+
+_G.nvim_browser_activate_point = { kind = "radio", label = "Plan", checked = false, x = 13, y = 23 }
+assert(browser.activate_here() == true, "activate_here should inspect radio points")
+assert(_G.nvim_browser_activate_calls[#_G.nvim_browser_activate_calls] == "toggle:13:23", "activate_here should toggle radios at the inspected point")
+
+_G.nvim_browser_activate_point = { kind = "input", label = "Search", x = 14, y = 24 }
+assert(browser.activate_here({
+  input = function(prompt)
+    assert(prompt == "nvim-browser text: ", "activate_here should prompt for text input")
+    return "query"
+  end,
+}) == true, "activate_here should inspect input points")
+assert(_G.nvim_browser_activate_calls[#_G.nvim_browser_activate_calls] == "type:14:24:query", "activate_here should type into text inputs at the inspected point")
+
+_G.nvim_browser_before_legacy_input_activate_calls = #_G.nvim_browser_activate_calls
+_G.nvim_browser_activate_point = { tag = "input", label = "Legacy checkbox", x = 15, y = 25 }
+assert(browser.activate_here() == true, "activate_here should inspect legacy input points")
+assert(
+  #_G.nvim_browser_activate_calls == _G.nvim_browser_before_legacy_input_activate_calls,
+  "activate_here should not guess an action for protocol-old generic input points"
+)
+
+_G.nvim_browser_activate_point = {
+  kind = "select",
+  label = "Country",
+  x = 16,
+  y = 26,
+  options = {
+    { value = "us", label = "United States", disabled = false, selected = false },
+    { value = "ca", label = "Canada", disabled = false, selected = false },
+  },
+}
+assert(browser.activate_here({
+  select = function(items, opts, on_choice)
+    assert(opts.prompt == "nvim-browser option: ", "activate_here should prompt for select options")
+    on_choice(items[2])
+  end,
+}) == true, "activate_here should inspect select points")
+assert(_G.nvim_browser_activate_calls[#_G.nvim_browser_activate_calls] == "select:16:26:ca", "activate_here should select the chosen option value at the inspected point")
+
+_G.nvim_browser_activate_point = { kind = "button", label = "Submit", clickable = true, x = 17, y = 27 }
+assert(browser.activate_here() == true, "activate_here should inspect button points")
+assert(_G.nvim_browser_activate_calls[#_G.nvim_browser_activate_calls] == "click:17:27", "activate_here should click buttons at the inspected point")
+
+_G.nvim_browser_activate_point = { tag = "div", label = "Card", clickable = true, x = 18, y = 28 }
+assert(browser.activate_here() == true, "activate_here should inspect clickable generic points")
+assert(_G.nvim_browser_activate_calls[#_G.nvim_browser_activate_calls] == "click:18:28", "activate_here should click generic clickable elements at the inspected point")
+
+_G.nvim_browser_before_unsupported_activate_calls = #_G.nvim_browser_activate_calls
+_G.nvim_browser_activate_point = { tag = "span", label = "Plain text" }
+assert(browser.activate_here() == true, "activate_here should still complete point inspection for unsupported points")
+assert(#_G.nvim_browser_activate_calls == _G.nvim_browser_before_unsupported_activate_calls, "activate_here should not send browser input for unsupported points")
+
+_G.nvim_browser_activate_point = false
+assert(browser.activate_here() == false, "activate_here should return false when cursor point inspection cannot start")
+
 local clicked_mouse = nil
 terminal.click_mouse = function(mousepos)
   clicked_mouse = mousepos
@@ -3893,7 +3992,9 @@ terminal.screenshot = original_terminal_screenshot
 terminal.yank_current_url = original_terminal_yank_current_url
 terminal.yank_hint_url = original_terminal_yank_hint_url
 terminal.yank_point_url_here = _G.nvim_browser_original_terminal_yank_point_url_here
+terminal.follow_point_url_here = _G.nvim_browser_original_terminal_follow_point_url_here
 terminal.point_info_here = _G.nvim_browser_original_terminal_point_info_here
+terminal.click_here = _G.nvim_browser_original_terminal_click_here
 terminal.find_text = original_terminal_find_text
 terminal.find_next = original_terminal_find_next
 terminal.find_previous = original_terminal_find_previous

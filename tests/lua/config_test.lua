@@ -87,6 +87,7 @@ assert(configured.viewport.cell_width_px == 10, "viewport cell width should defa
 assert(configured.viewport.cell_height_px == 20, "viewport cell height should default to the existing 20px geometry")
 assert(configured.preview_keymaps.mappings.stop == "<Esc>", "preview-local keymaps should include a stop mapping")
 assert(configured.preview_keymaps.mappings.input_text_mode == "i", "preview-local keymaps should include focused input mode")
+assert(configured.preview_keymaps.mappings.activate_here == "ga", "preview-local keymaps should include smart cursor activation")
 assert(configured.preview_keymaps.mappings.paste_register == "p", "preview-local keymaps should include register paste")
 assert(configured.preview_keymaps.mappings.yank_selection == "y", "preview-local keymaps should include browser selection yank")
 assert(configured.preview_keymaps.mappings.yank_current_url == "Y", "preview-local keymaps should include current URL yank")

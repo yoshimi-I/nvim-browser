@@ -111,6 +111,7 @@ With lazy.nvim:
     "NBrowserYankHintUrl",
     "NBrowserYankPointUrl",
     "NBrowserFollowPointUrl",
+    "NBrowserActivateHere",
     "NBrowserScreenshot",
     "NBrowserInputMode",
     "NBrowserTextMode",
@@ -471,6 +472,7 @@ Then run:
 :NBrowserYankHintUrl a +
 :NBrowserYankPointUrl +
 :NBrowserFollowPointUrl
+:NBrowserActivateHere
 :NBrowserScreenshot /tmp/page.png
 :NBrowserKey Enter
 :NBrowserKey A ctrl
@@ -734,6 +736,10 @@ and writes the link URL under that point. It requires an ANSI or Kitty Unicode
 cursor-addressable browser preview.
 `:NBrowserFollowPointUrl` uses the same live DOM inspection path and opens the
 link URL under the preview cursor in the active preview without sending a click.
+`:NBrowserActivateHere` inspects the live DOM under the preview cursor and
+chooses the obvious cursor action: follow links, toggle checkbox/radio inputs,
+prompt and type into text inputs, pick an enabled select option, or click
+buttons and other clickable elements.
 `:NBrowserScreenshot [path]` captures the active browser session viewport to a
 PNG file without replacing the Neovim preview frame. Without a path, it writes a
 timestamped PNG under Neovim's cache directory.
@@ -794,9 +800,10 @@ element, `o` select a hinted option, `c` toggle a hinted checkbox/radio, `i`
 type into the focused element with browser text mode, `p` paste the selected
 register into the focused element, `y` yank the browser selection into the
 selected register, `Y` yank the active browser URL into the selected register,
-`gY` yank the link URL under the cursor into the selected register, `gI` type
-text at the cursor, `gS` type text at the cursor and submit, `gO` select a
-dropdown option at the cursor, `gC` toggle a checkbox/radio at the cursor, `<CR>`
+`gY` yank the link URL under the cursor into the selected register, `ga`
+activate the element at the cursor, `gI` type text at the cursor, `gS` type
+text at the cursor and submit, `gO` select a dropdown option at the cursor,
+`gC` toggle a checkbox/radio at the cursor, `<CR>`
 Enter, `<Tab>` Tab, `<S-Tab>` reverse Tab, `<BS>`
 Backspace, `x` Delete, `ge` browser Escape, `A` Ctrl-A select-all, `gl` address
 prompt, arrow keys, `gc` click the browser viewport at the cursor, `gd`
@@ -813,6 +820,8 @@ example, keep preview keymaps enabled but preserve Vim's built-in `gf` with
 `preview_keymaps = { mappings = { follow_point_url_here = false } }`, or disable
 cursor link URL yank with
 `preview_keymaps = { mappings = { yank_point_url_here = false } }`, or disable
+smart cursor activation with
+`preview_keymaps = { mappings = { activate_here = false } }`, or disable
 cursor inspect with
 `preview_keymaps = { mappings = { point_info_here = false } }`, or disable
 cursor select with `preview_keymaps = { mappings = { select_here = false } }`,

@@ -66,19 +66,20 @@ browser frames into stable row-major image tiles. Tile payloads clear the full
 stable tile ID range before reusing IDs so frame replacement is deterministic
 when a large capture is followed by a smaller one.
 
-The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 26
+The persistent `serve` protocol is JSONL over stdin/stdout. Protocol version 29
 includes URL, Markdown-wrapper, and raster-image-wrapper navigation requests so
 Neovim can reuse an active Chromium session when the target type changes. It
 also includes lightweight `page_state` requests for idle metadata refresh,
 multi-download reporting through a `downloads` array while preserving the
-single `download` compatibility field, and auto-handled JavaScript dialog
-reporting through `dialog`/`dialogs`. Wrapper-backed Markdown and raster image
-responses keep `url` as the Chromium-loaded wrapper URL and can include
-`display_url` for the original user-facing source file. Responses can include `history`
-availability from Chromium navigation history so Neovim can avoid sending dead
-Back/Forward requests. Lightweight and captured responses can include
-`dom_epoch`, a Chromium-backed mutation freshness signal used by Neovim to
-schedule an adaptive full-frame capture when page content changes without
+single `download` compatibility field, auto-handled JavaScript dialog reporting
+through `dialog`/`dialogs`, and cursor point metadata for smart activation.
+Wrapper-backed Markdown and raster image responses keep `url` as the
+Chromium-loaded wrapper URL and can include `display_url` for the original
+user-facing source file. Responses can include `history` availability from
+Chromium navigation history so Neovim can avoid sending dead Back/Forward
+requests. Lightweight and captured responses can include `dom_epoch`, a
+Chromium-backed mutation freshness signal used by Neovim to schedule an
+adaptive full-frame capture when page content changes without
 URL/title/scroll/focus changes. The same protocol also covers
 screenshot, click, right-click, hover, wheel, focus, form, text, key, reader,
 selection, find, and hint actions. Most browser actions default to returning a
