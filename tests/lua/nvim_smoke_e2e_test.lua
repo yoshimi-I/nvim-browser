@@ -174,6 +174,19 @@ local function diagnostics(profile)
     .. tostring(smoke_echo)
 end
 
+local function expected_frame_cells_line()
+  local runtime = browser.runtime_metadata()
+  if type(runtime) ~= "table" or type(runtime.cells) ~= "table" then
+    return nil
+  end
+  local columns = tonumber(runtime.cells.columns)
+  local rows = tonumber(runtime.cells.rows)
+  if columns == nil or rows == nil then
+    return nil
+  end
+  return "frame cells: " .. tostring(columns) .. "x" .. tostring(rows)
+end
+
 local function common_ready(profile)
   local runtime = browser.runtime_metadata()
   local health = browser.frame_health()
@@ -205,6 +218,10 @@ local function common_ready(profile)
     end
   end
   if smoke_echo:find(profile.expected_output_line, 1, true) == nil then
+    return false
+  end
+  local frame_cells_line = expected_frame_cells_line()
+  if frame_cells_line == nil or smoke_echo:find(frame_cells_line, 1, true) == nil then
     return false
   end
   if profile.expect_reader and smoke_echo:find("reader: ok", 1, true) == nil then
@@ -258,6 +275,9 @@ local function assert_common(profile, state, stderr_chunks)
   profile_assert(profile, smoke_echo:find("status: ok", 1, true), profile.name .. ": NBrowserSmoke should report a successful smoke result")
   profile_assert(profile, not smoke_echo:find("status: failed", 1, true), profile.name .. ": NBrowserSmoke should not report failure after a healthy smoke run")
   profile_assert(profile, smoke_echo:find(profile.expected_output_line, 1, true), profile.name .. ": smoke report should show effective output")
+  local frame_cells_line = expected_frame_cells_line()
+  profile_assert(profile, frame_cells_line ~= nil, profile.name .. ": runtime should expose numeric frame cell geometry")
+  profile_assert(profile, smoke_echo:find(frame_cells_line, 1, true), profile.name .. ": smoke report should show runtime frame cells")
   profile_assert(profile, smoke_echo:find("interaction: ok", 1, true), profile.name .. ": smoke report should show a completed interaction loop")
   profile_assert(profile, smoke_echo:find("focus: ok", 1, true), profile.name .. ": smoke report should show focused input")
   profile_assert(profile, smoke_echo:find("input: ok", 1, true), profile.name .. ": smoke report should show typed text")

@@ -2050,7 +2050,9 @@ end
 terminal.open({ "nvbrowser", "serve", "--output", "kitty-unicode", "--url", "https://example.com/tmux" })
 _G.nvim_browser_serve_egress_payloads = {}
 _G.nvim_browser_serve_egress_events = {}
-_G.nvim_browser_raw_unicode_payload = "\27_Ga=T,q=2,U=1,i=1,c=10,r=5,f=100,s=100,v=100,m=0;unicode-frame\27\\"
+_G.nvim_browser_raw_unicode_payload = "\27_Ga=T,q=2,U=1,i=1,c=10,r=5,f=100,s=100,v=100,m=1;"
+  .. string.rep("x", 5000)
+  .. "\27\\\27_Gm=0;unicode-frame\27\\"
 _G.nvim_browser_tmx_preview_geometry = terminal.state().current_preview_geometry
 serve_stdout(nil, { vim.json.encode({
   id = 1,
@@ -2148,6 +2150,18 @@ assert(
   terminal.state().last_terminal_graphics_egress_is_kitty_unicode == true,
   "kitty-unicode serve frames should expose the last terminal graphics egress classification"
 )
+assert(
+  terminal.state().last_terminal_graphics_payload_bytes > 4096,
+  "kitty-unicode serve frames should expose large terminal graphics payload byte length"
+)
+assert(
+  terminal.state().last_terminal_graphics_egress_bytes > terminal.state().last_terminal_graphics_payload_bytes,
+  "tmux kitty-unicode serve frames should expose terminal-wrapped graphics egress byte length"
+)
+assert(
+  terminal.state().last_terminal_graphics_egress_reason == "frame",
+  "kitty-unicode serve frames should expose fresh-frame graphics egress reason"
+)
 _G.nvim_browser_graphics_egress_count_after_frame = terminal.state().terminal_graphics_egress_count
 _G.nvim_browser_wrapped_unicode_payload = _G.nvim_browser_serve_egress_payloads[1]
 _G.nvim_browser_assert_redraw_before_payload("unicode-frame", "kitty-unicode serve frame")
@@ -2171,6 +2185,10 @@ assert(vim.wait(1000, function()
   return false
 end), "kitty-unicode previews should replay the last terminal payload on preview BufEnter")
 _G.nvim_browser_assert_redraw_before_payload("unicode-frame", "kitty-unicode BufEnter replay")
+assert(
+  terminal.state().last_terminal_graphics_egress_reason == "focus-replay",
+  "kitty-unicode BufEnter replay should expose focus-replay graphics egress reason"
+)
 _G.nvim_browser_serve_egress_payloads = {}
 _G.nvim_browser_serve_egress_events = {}
 vim.api.nvim_exec_autocmds("WinEnter", { buffer = _G.nvim_browser_tmux_state.bufnr, modeline = false })
@@ -2215,6 +2233,10 @@ assert(
   terminal.state().terminal_graphics_egress_count > _G.nvim_browser_graphics_egress_count_after_frame,
   "kitty-unicode focus replay should count terminal graphics egress"
 )
+assert(
+  terminal.state().last_terminal_graphics_egress_reason == "focus",
+  "explicit focus replay should expose focus graphics egress reason"
+)
 _G.nvim_browser_serve_egress_payloads = {}
 _G.nvim_browser_serve_egress_events = {}
 assert(terminal.toggle() == false, "first toggle should close the active preview window")
@@ -2231,6 +2253,10 @@ assert(
   "replayed kitty-unicode payload should be wrapped at egress instead of storing tmux-wrapped data"
 )
 _G.nvim_browser_assert_redraw_before_payload("unicode-frame", "kitty-unicode toggle replay")
+assert(
+  terminal.state().last_terminal_graphics_egress_reason == "toggle-reopen",
+  "kitty-unicode toggle reopen should expose toggle-reopen graphics egress reason"
+)
 _G.nvim_browser_serve_egress_payloads = {}
 _G.nvim_browser_serve_egress_events = {}
 terminal.open({ "nvbrowser", "browse", "https://example.com/capture", "--output", "kitty-unicode" })

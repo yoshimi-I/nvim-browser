@@ -1246,6 +1246,9 @@ smoke_report = function(status, reason, details)
     local geometry = terminal_state.rendered_frame_geometry
     table.insert(lines, "frame: " .. tostring(geometry.width or "?") .. "x" .. tostring(geometry.height or "?"))
   end
+  if type(runtime) == "table" and type(runtime.cells) == "table" then
+    table.insert(lines, "frame cells: " .. tostring(runtime.cells.columns or "?") .. "x" .. tostring(runtime.cells.rows or "?"))
+  end
   if type(health) == "table" then
     if health.stale == false and health.refresh_pending == false then
       table.insert(lines, "frame health: ok")

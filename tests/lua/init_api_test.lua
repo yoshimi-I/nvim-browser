@@ -1856,6 +1856,7 @@ assert(_G.nvim_browser_smoke_report_lines:find("interaction: ok", 1, true), "smo
 assert(_G.nvim_browser_smoke_report_lines:find("focus: ok", 1, true), "smoke report should include focus status")
 assert(_G.nvim_browser_smoke_report_lines:find("input: ok", 1, true), "smoke report should include input status")
 assert(_G.nvim_browser_smoke_report_lines:find("submit: ok", 1, true), "smoke report should include submit status")
+assert(_G.nvim_browser_smoke_report_lines:find("frame cells: 80x20", 1, true), "smoke report should include frame cell geometry")
 assert(_G.nvim_browser_smoke_report_lines:find("reader: ok", 1, true), "ANSI fallback smoke report should include reader status")
 
 _G.nvim_browser_smoke_report = nil

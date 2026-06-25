@@ -12,6 +12,9 @@ local state = {
   last_payload_is_unicode = false,
   terminal_graphics_egress_count = 0,
   last_terminal_graphics_egress_is_kitty_unicode = false,
+  last_terminal_graphics_payload_bytes = 0,
+  last_terminal_graphics_egress_bytes = 0,
+  last_terminal_graphics_egress_reason = nil,
   suppress_focus_replay = false,
   focus_replay_scheduled = false,
   has_rendered_frame = false,
@@ -2570,12 +2573,16 @@ local function is_kitty_unicode_payload(payload)
   return false
 end
 
-local function record_terminal_graphics_egress(payload)
+local function record_terminal_graphics_egress(payload, reason)
   state.terminal_graphics_egress_count = state.terminal_graphics_egress_count + 1
   state.last_terminal_graphics_egress_is_kitty_unicode = is_kitty_unicode_payload(payload)
+  state.last_terminal_graphics_payload_bytes = type(payload) == "string" and #payload or 0
+  local escaped = terminal_escape(payload)
+  state.last_terminal_graphics_egress_bytes = type(escaped) == "string" and #escaped or 0
+  state.last_terminal_graphics_egress_reason = reason
 end
 
-local function emit_terminal_graphics(payload, winid)
+local function emit_terminal_graphics(payload, winid, reason)
   if payload == nil or payload == "" then
     return
   end
@@ -2587,16 +2594,16 @@ local function emit_terminal_graphics(payload, winid)
   send_terminal_escape(kitty_cleanup_escape())
   vim.api.nvim_chan_send(vim.v.stderr, cursor_position_escape(winid))
   send_terminal_escape(payload)
-  record_terminal_graphics_egress(payload)
+  record_terminal_graphics_egress(payload, reason or "frame")
 end
 
-local function send_kitty_unicode_frame(payload)
+local function send_kitty_unicode_frame(payload, reason)
   if payload == nil or payload == "" then
     return
   end
   vim.cmd("redraw")
   send_terminal_escape(payload)
-  record_terminal_graphics_egress(payload)
+  record_terminal_graphics_egress(payload, reason or "frame")
 end
 
 local function preview_has_current_focus()
@@ -2616,7 +2623,7 @@ replay_focused_kitty_unicode_frame = function()
   if not state.last_payload_is_unicode or state.last_payload == nil then
     return false
   end
-  send_kitty_unicode_frame(state.last_payload)
+  send_kitty_unicode_frame(state.last_payload, "focus-replay")
   return true
 end
 
@@ -2720,6 +2727,9 @@ function M.open(command)
   state.last_payload_is_unicode = false
   state.terminal_graphics_egress_count = 0
   state.last_terminal_graphics_egress_is_kitty_unicode = false
+  state.last_terminal_graphics_payload_bytes = 0
+  state.last_terminal_graphics_egress_bytes = 0
+  state.last_terminal_graphics_egress_reason = nil
   state.has_rendered_frame = false
   state.last_target = command_target(command)
   state.stream_buffer = ""
@@ -2913,9 +2923,9 @@ function M.open(command)
           state.has_rendered_frame = true
           apply_payload_to_buffer(bufnr, response.payload, uses_kitty, uses_kitty_unicode, command, geometry)
           if uses_kitty then
-            emit_terminal_graphics(response.payload, state.winid)
+            emit_terminal_graphics(response.payload, state.winid, "frame")
           elseif uses_kitty_unicode then
-            send_kitty_unicode_frame(response.payload)
+            send_kitty_unicode_frame(response.payload, "frame")
           end
           if state.cursor_addressable_preview and geometry ~= nil then
             hints_overlay.apply(bufnr, state.element_hints, state.element_hints_geometry)
@@ -3148,9 +3158,9 @@ function M.open(command)
           end
 
           if code == 0 and uses_kitty then
-            emit_terminal_graphics(payload, is_valid_window_id(state.winid) and state.winid or winid)
+            emit_terminal_graphics(payload, is_valid_window_id(state.winid) and state.winid or winid, "frame")
           elseif code == 0 and uses_kitty_unicode then
-            send_kitty_unicode_frame(payload)
+            send_kitty_unicode_frame(payload, "frame")
           end
         end)
       end,
@@ -3173,9 +3183,9 @@ function M.focus()
   vim.api.nvim_set_current_win(state.winid)
   state.suppress_focus_replay = false
   if state.last_payload_is_unicode and state.last_payload ~= nil then
-    send_kitty_unicode_frame(state.last_payload)
+    send_kitty_unicode_frame(state.last_payload, "focus")
   else
-    emit_terminal_graphics(state.last_payload, state.winid)
+    emit_terminal_graphics(state.last_payload, state.winid, "focus")
   end
   return true
 end
@@ -3199,6 +3209,9 @@ function M.close()
   state.last_payload_is_unicode = false
   state.terminal_graphics_egress_count = 0
   state.last_terminal_graphics_egress_is_kitty_unicode = false
+  state.last_terminal_graphics_payload_bytes = 0
+  state.last_terminal_graphics_egress_bytes = 0
+  state.last_terminal_graphics_egress_reason = nil
   state.last_target = nil
   state.stream_buffer = ""
   state.mode = nil
@@ -4767,9 +4780,9 @@ function M.toggle()
     vim.api.nvim_win_set_buf(state.winid, state.bufnr)
     state.suppress_focus_replay = false
     if state.last_payload_is_unicode and state.last_payload ~= nil then
-      send_kitty_unicode_frame(state.last_payload)
+      send_kitty_unicode_frame(state.last_payload, "toggle-reopen")
     else
-      emit_terminal_graphics(state.last_payload, state.winid)
+      emit_terminal_graphics(state.last_payload, state.winid, "toggle-reopen")
     end
     if state.cursor_addressable_preview and same_preview_geometry(state.element_hints_geometry, current_preview_geometry()) then
       hints_overlay.apply(state.bufnr, state.element_hints, state.element_hints_geometry)
@@ -4835,6 +4848,9 @@ function M.state()
     last_payload_is_unicode = state.last_payload_is_unicode,
     terminal_graphics_egress_count = state.terminal_graphics_egress_count,
     last_terminal_graphics_egress_is_kitty_unicode = state.last_terminal_graphics_egress_is_kitty_unicode,
+    last_terminal_graphics_payload_bytes = state.last_terminal_graphics_payload_bytes,
+    last_terminal_graphics_egress_bytes = state.last_terminal_graphics_egress_bytes,
+    last_terminal_graphics_egress_reason = state.last_terminal_graphics_egress_reason,
     mode = state.mode,
     serve_output = state.serve_output,
     serve_output_label = state.serve_output_label,

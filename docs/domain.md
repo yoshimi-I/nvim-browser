@@ -75,6 +75,16 @@ can be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   see. If the active preview geometry no longer matches the last rendered frame,
   Neovim should refresh instead of sending click, double-click, hover, type,
   wheel, or drag coordinates to Chromium.
+- Rendered frame geometry is the contract behind cursor-addressable browser
+  input. Smoke and state diagnostics should expose both viewport pixels and
+  runtime-reported frame cells so resize, Kitty Unicode cell caps, and CDP
+  coordinate mapping can be debugged before trusting click or text-mode
+  workflows.
+- Kitty Unicode terminal graphics diagnostics should keep raw payload bytes and
+  terminal egress bytes separate. Multiplexer wrapping belongs at egress time, so
+  replay can re-wrap the stored raw payload for the active transport. Egress
+  reason values distinguish fresh frames from focus, focus replay, and toggle
+  reopen recovery.
 - `:NBrowserTextMode` is the default path for form typing from a focused browser
   preview. It should feel closer to browser input than a command prompt.
 - Interaction latency matters. Text mode printable/editing input should avoid

@@ -377,7 +377,9 @@ verifies a healthy frame through plugin state, and runs both the `ZELLIJ=1` ANSI
 fallback profile and the direct Kitty Unicode profile. The fallback profile
 waits for the auto-opened Reader buffer and reports `reader: ok`; the Kitty
 Unicode profile verifies `terminal graphics: ok` and
-`kitty unicode payload: ok`.
+`kitty unicode payload: ok`. Both profiles report `frame cells:` from runtime
+metadata so viewport cell geometry stays visible alongside rendered frame
+pixels.
 It is skipped unless `NVBROWSER_NVIM_E2E=1` is set, and it skips when a compatible
 `nvbrowser` binary or Chromium backend is unavailable.
 
