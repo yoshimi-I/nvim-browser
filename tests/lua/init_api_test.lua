@@ -815,6 +815,7 @@ local function with_action_stubs(fn)
     double_click_here = browser.double_click_here,
     right_click_here = browser.right_click_here,
     hover_here = browser.hover_here,
+    wheel_here = browser.wheel_here,
     type_here = browser.type_here,
   }
   browser.open = function(target)
@@ -963,6 +964,10 @@ local function with_action_stubs(fn)
     table.insert(action_calls, "hover_here")
     return true
   end
+  browser.wheel_here = function(delta_y, delta_x)
+    table.insert(action_calls, "wheel_here:" .. tostring(delta_y) .. ":" .. tostring(delta_x))
+    return true
+  end
   browser.type_here = function(text)
     table.insert(action_calls, "type_here:" .. tostring(text))
     return true
@@ -1013,6 +1018,8 @@ with_action_stubs(function()
 	    "Double-click cursor",
 	    "Right-click cursor",
 	    "Hover cursor",
+	    "Wheel down at cursor",
+	    "Wheel up at cursor",
 	    "Type at cursor",
 	    "Submit focused",
 	    "Open download",
@@ -1185,6 +1192,32 @@ with_action_stubs(function()
 	    end,
 	  }) == true, "Hover cursor action should run")
 	  assert(action_calls[#action_calls] == "hover_here", "Hover cursor action should call hover_here")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Wheel down at cursor" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Wheel down cursor action should run")
+	  assert(action_calls[#action_calls] == "wheel_here:120:0", "Wheel down cursor action should call wheel_here with a positive delta")
+
+	  action_calls = {}
+	  assert(browser.actions({
+	    select = function(items, _, on_choice)
+	      for _, item in ipairs(items) do
+	        if item.label == "Wheel up at cursor" then
+	          on_choice(item)
+	          return
+	        end
+	      end
+	    end,
+	  }) == true, "Wheel up cursor action should run")
+	  assert(action_calls[#action_calls] == "wheel_here:-120:0", "Wheel up cursor action should call wheel_here with a negative delta")
 
 	  action_calls = {}
 	  assert(browser.actions({
@@ -1625,6 +1658,7 @@ local original_terminal_follow_hint = terminal.follow_hint
 local original_terminal_click_mouse = terminal.click_mouse
 local original_terminal_wheel_point = terminal.wheel_point
 local original_terminal_wheel_mouse = terminal.wheel_mouse
+_G.nvim_browser_original_terminal_wheel_here = terminal.wheel_here
 local original_terminal_type_hint = terminal.type_hint
 local original_terminal_select_hint = terminal.select_hint
 local original_terminal_upload_hint = terminal.upload_hint
@@ -2309,6 +2343,14 @@ assert(wheeled_point.x == 12.5, "wheel_point should pass x coordinate to termina
 assert(wheeled_point.y == 24.25, "wheel_point should pass y coordinate to terminal")
 assert(wheeled_point.delta_y == 120, "wheel_point should pass vertical wheel delta to terminal")
 assert(wheeled_point.delta_x == 0, "wheel_point should pass horizontal wheel delta to terminal")
+
+terminal.wheel_here = function(delta_y, delta_x)
+  _G.nvim_browser_wheeled_here = { delta_y = delta_y, delta_x = delta_x }
+  return true
+end
+assert(browser.wheel_here(120, 0) == true, "wheel_here should delegate to terminal cursor wheel")
+assert(_G.nvim_browser_wheeled_here.delta_y == 120, "wheel_here should pass vertical wheel delta to terminal")
+assert(_G.nvim_browser_wheeled_here.delta_x == 0, "wheel_here should pass horizontal wheel delta to terminal")
 
 local found_point = nil
 terminal.find_text = function(query, opts)
@@ -3045,6 +3087,7 @@ terminal.follow_hint = original_terminal_follow_hint
 terminal.click_mouse = original_terminal_click_mouse
 terminal.wheel_point = original_terminal_wheel_point
 terminal.wheel_mouse = original_terminal_wheel_mouse
+terminal.wheel_here = _G.nvim_browser_original_terminal_wheel_here
 terminal.type_hint = original_terminal_type_hint
 terminal.select_hint = original_terminal_select_hint
 terminal.upload_hint = original_terminal_upload_hint

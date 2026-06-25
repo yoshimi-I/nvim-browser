@@ -1549,6 +1549,32 @@ assert(terminal.state().pending_operation == nil, "matching wheel response shoul
 
 footer_click_requests = {}
 vim.api.nvim_win_set_cursor(image_win, { 6, 24 })
+_G.nvim_browser_expected_cursor_wheel_point = terminal.viewport_point_for_cell(6, vim.api.nvim_win_call(image_win, function()
+  return vim.fn.virtcol(".")
+end), { columns = 50, rows = 11, width = 450, height = 165 })
+assert(terminal.wheel_here(120, 0) == true, "cursor wheel should send a browser wheel")
+_G.nvim_browser_cursor_wheel_seen = false
+assert(vim.wait(1000, function()
+  for _, request in ipairs(footer_click_requests) do
+    local ok, decoded = pcall(vim.json.decode, request.payload)
+    if
+      ok
+      and decoded.type == "wheel_point"
+      and decoded.x == _G.nvim_browser_expected_cursor_wheel_point.x
+      and decoded.y == _G.nvim_browser_expected_cursor_wheel_point.y
+      and decoded.delta_y == 120
+      and decoded.delta_x == 0
+    then
+      _G.nvim_browser_cursor_wheel_seen = true
+      return true
+    end
+  end
+  return false
+end), "cursor wheel should map preview cells to viewport pixels")
+assert(_G.nvim_browser_cursor_wheel_seen, "cursor wheel should produce a native wheel request")
+
+footer_click_requests = {}
+vim.api.nvim_win_set_cursor(image_win, { 6, 24 })
 expected_cursor_right_click_point = terminal.viewport_point_for_cell(6, vim.api.nvim_win_call(image_win, function()
   return vim.fn.virtcol(".")
 end), { columns = 50, rows = 11, width = 450, height = 165 })
@@ -1653,6 +1679,7 @@ terminal.configure({
 })
 assert(terminal.click_here() == false, "stale rendered frame geometry should block cursor click")
 assert(terminal.double_click_here() == false, "stale rendered frame geometry should block cursor double-click")
+assert(terminal.wheel_here(120, 0) == false, "stale rendered frame geometry should block cursor wheel")
 assert(terminal.hover_here() == false, "stale rendered frame geometry should block cursor hover")
 assert(terminal.type_here("stale text") == false, "stale rendered frame geometry should block cursor typing")
 assert(terminal.select_region(6, 10, 6, 25) == false, "stale rendered frame geometry should block region selection")

@@ -50,6 +50,7 @@ local hovered_hint = nil
 local right_clicked = nil
 local right_clicked_here = false
 local double_clicked_here = false
+local wheeled_here = nil
 local right_clicked_hint = nil
 local page_scroll_direction = nil
 local scrolled_top_count = 0
@@ -104,6 +105,10 @@ local browser = {
   end,
   hover_here = function()
     hovered_here = true
+    return true
+  end,
+  wheel_here = function(delta_y, delta_x)
+    wheeled_here = { delta_y = delta_y, delta_x = delta_x }
     return true
   end,
   hover_hint = function(identifier)
@@ -1353,6 +1358,13 @@ assert(clicked == nil, "NBrowserFollowHint should not call click_hint when follo
 vim.cmd("NBrowserHoverHere")
 assert(hovered_here == true, "NBrowserHoverHere should call hover_here")
 
+vim.cmd("NBrowserWheelDownHere")
+assert(wheeled_here.delta_y == 120 and wheeled_here.delta_x == 0, "NBrowserWheelDownHere should default to wheel down at cursor")
+
+wheeled_here = nil
+vim.cmd("NBrowserWheelUpHere 240")
+assert(wheeled_here.delta_y == -240 and wheeled_here.delta_x == 0, "NBrowserWheelUpHere should pass an explicit upward wheel delta")
+
 vim.cmd("NBrowserRightClick 12.5 24.25")
 assert(right_clicked.x == "12.5", "NBrowserRightClick should pass the x coordinate")
 assert(right_clicked.y == "24.25", "NBrowserRightClick should pass the y coordinate")
@@ -1481,6 +1493,9 @@ local failed_browser = {
   type_here = function()
     return false
   end,
+  wheel_here = function()
+    return false
+  end,
   downloads = function()
     return {}
   end,
@@ -1565,6 +1580,9 @@ assert(warnings[#warnings] == "nvim-browser: cursor text input requires an activ
 
 vim.cmd("NBrowserSubmitHere missing")
 assert(warnings[#warnings] == "nvim-browser: cursor text input requires an active cursor-addressable browser preview", "NBrowserSubmitHere should warn when cursor submit fails")
+
+vim.cmd("NBrowserWheelDownHere")
+assert(warnings[#warnings] == "nvim-browser: cursor wheel requires an active cursor-addressable browser preview", "NBrowserWheelDownHere should warn when cursor wheel fails")
 
 vim.cmd("NBrowserTypeHintMode")
 assert(

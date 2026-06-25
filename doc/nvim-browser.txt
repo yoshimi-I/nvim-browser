@@ -203,7 +203,7 @@ COMMANDS                                           *nvim-browser-commands*
 :NBrowserActions
 	Open a compact picker for common browser actions such as opening,
 	previewing, inspecting, resuming, bookmarking, address, reload, back,
-	forward, find, hints, text mode, cursor click/double-click/right-click/hover/type,
+	forward, find, hints, text mode, cursor click/double-click/right-click/hover/wheel/type,
 	downloads, screenshot, reader, status, zoom, doctor, and close. Focused
 	preview buffers map ? to this picker by default.
 
@@ -397,6 +397,18 @@ COMMANDS                                           *nvim-browser-commands*
 	Move the Chromium mouse cursor to the viewport point under the preview
 	cursor and capture a fresh frame. This can reveal CSS hover menus and
 	tooltips. The preview footer row is ignored.
+
+							*:NBrowserWheelDownHere*
+:NBrowserWheelDownHere [pixels]
+	Send native Chromium mouse-wheel input downward at the viewport point under
+	the preview cursor. The default delta is 120 pixels. The preview footer row
+	is ignored.
+
+							*:NBrowserWheelUpHere*
+:NBrowserWheelUpHere [pixels]
+	Send native Chromium mouse-wheel input upward at the viewport point under
+	the preview cursor. The default delta is 120 pixels. The preview footer row
+	is ignored.
 
 							*:NBrowserHints*
 :NBrowserHints

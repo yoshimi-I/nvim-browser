@@ -1369,6 +1369,18 @@ local function action_items(opts, report_error)
       end,
     },
     {
+      label = "Wheel down at cursor",
+      run = function()
+        return M.wheel_here(120, 0)
+      end,
+    },
+    {
+      label = "Wheel up at cursor",
+      run = function()
+        return M.wheel_here(-120, 0)
+      end,
+    },
+    {
       label = "Type at cursor",
       run = function()
         local text = (opts.input or vim.fn.input)("nvim-browser type at cursor: ")
@@ -1776,6 +1788,10 @@ end
 
 function M.hover_here()
   return terminal.hover_here()
+end
+
+function M.wheel_here(delta_y, delta_x)
+  return terminal.wheel_here(delta_y, delta_x)
 end
 
 function M.type_here(text, opts)

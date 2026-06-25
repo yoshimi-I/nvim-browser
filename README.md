@@ -343,6 +343,8 @@ Then run:
 :NBrowserClickHere
 :NBrowserRightClickHere
 :NBrowserHoverHere
+:NBrowserWheelDownHere
+:NBrowserWheelUpHere 240
 :NBrowserHints
 :NBrowserClickHint 1
 :NBrowserRightClickHint 1
@@ -411,6 +413,10 @@ tooltips without leaving Neovim. Preview scroll-wheel events are also sent as
 native Chromium mouse-wheel input at the mouse position when the preview is
 cursor-addressable, then fall back to page-level scrolling if coordinates are
 not available.
+`:NBrowserWheelDownHere [pixels]` and `:NBrowserWheelUpHere [pixels]` send
+native Chromium mouse-wheel input at the preview cursor. The default delta is
+120 pixels. Use them for nested scroll containers without moving focus out of
+Neovim.
 
 Browser preview footers show the latest serve status, title or URL, scroll
 progress, focused element kind/label, latest handled JavaScript dialog, latest
@@ -517,7 +523,7 @@ Lua mappings can call `require("nvim-browser").address()` or pass a value
 directly with `require("nvim-browser").address("example.com")`.
 `:NBrowserActions` opens a compact picker for common browser actions such as
 opening, previewing, inspecting, resuming, bookmarking, address, reload, history
-movement, find, hints, text mode, cursor click/double-click/right-click/hover/type,
+movement, find, hints, text mode, cursor click/double-click/right-click/hover/wheel/type,
 downloads, screenshot, reader, status, zoom, doctor, and close. Preview buffers
 map `?` to this picker by default.
 

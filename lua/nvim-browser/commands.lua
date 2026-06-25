@@ -237,6 +237,10 @@ function M.register(browser, opts)
     vim.api.nvim_echo({ { "nvim-browser: cursor text input requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
   end
 
+  local function warn_cursor_wheel_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: cursor wheel requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+  end
+
   local function follow_hint(label)
     if browser.follow_hint ~= nil then
       return browser.follow_hint(label)
@@ -765,6 +769,22 @@ function M.register(browser, opts)
       vim.api.nvim_echo({ { "nvim-browser: cursor hover requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
     end
   end, {})
+
+  vim.api.nvim_create_user_command("NBrowserWheelDownHere", function(opts)
+    if not browser.wheel_here(tonumber(opts.args) or 120, 0) then
+      warn_cursor_wheel_unavailable()
+    end
+  end, {
+    nargs = "?",
+  })
+
+  vim.api.nvim_create_user_command("NBrowserWheelUpHere", function(opts)
+    if not browser.wheel_here(-(tonumber(opts.args) or 120), 0) then
+      warn_cursor_wheel_unavailable()
+    end
+  end, {
+    nargs = "?",
+  })
 
   vim.api.nvim_create_user_command("NBrowserHints", function()
     local hints = browser.hints()
