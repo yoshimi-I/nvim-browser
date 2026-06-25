@@ -8,6 +8,7 @@ local core_command_names = {
   "NBrowserRefresh",
   "NBrowserReload",
   "NBrowserDoctor",
+  "NBrowserSmoke",
   "NBrowserStatus",
   "NBrowserToggle",
   "NBrowserClose",
@@ -1239,6 +1240,10 @@ function M.register(browser, opts)
     if browser.refresh_doctor_async ~= nil then
       browser.refresh_doctor_async(echo_report)
     end
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserSmoke", function()
+    browser.smoke()
   end, {})
 
   vim.api.nvim_create_user_command("NBrowserCalibrate", function(opts)

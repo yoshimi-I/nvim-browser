@@ -60,6 +60,7 @@ terminal._test.handle_find_text_response({ status = "ok", found = true, match_co
 assert(browser.last_find_found() == true, "last_find_found should expose terminal find state")
 assert(browser.last_find_match_count() == 4, "last_find_match_count should expose terminal find match count")
 assert(type(browser.doctor) == "function", "doctor API should exist")
+assert(type(browser.smoke) == "function", "smoke API should exist")
 assert(type(browser.calibrate) == "function", "calibrate API should exist")
 assert(type(browser.calibrate_here) == "function", "guided calibration API should exist")
 assert(type(browser.page_metrics) == "function", "page_metrics API should exist")
@@ -1737,6 +1738,101 @@ assert(#browser.history() == 0, "open should wait for serve metadata before reco
 browser.open("https://example.com/direct-open")
 assert(browser.history()[1].url == "https://example.com/direct-open", "open should record direct URL targets immediately")
 terminal.open = original_terminal_open
+
+_G.nvim_browser_original_terminal_open_for_smoke = terminal.open
+_G.nvim_browser_original_terminal_state_for_smoke = terminal.state
+_G.nvim_browser_original_defer_fn_for_smoke = vim.defer_fn
+_G.nvim_browser_smoke_opened_command = nil
+terminal.open = function(command)
+  _G.nvim_browser_smoke_opened_command = command
+end
+terminal.state = function()
+  return {
+    mode = "serve",
+    job_id = 1,
+    has_buffer = true,
+    current_url = vim.uri_from_fname(root .. "/data/html/smoke.html"),
+    current_title = "nvim-browser smoke",
+    status = "ok",
+    serve_output = "ansi",
+    serve_output_label = "ANSI fallback",
+    runtime_metadata = {
+      output = "ansi",
+      output_label = "ANSI fallback",
+      renderer = "chromium-cdp",
+      transport = "stdio-jsonl",
+      cells = { columns = 80, rows = 20 },
+      viewport = { width = 800, height = 400 },
+    },
+    rendered_frame_geometry = { width = 80, height = 20 },
+    rendered_frame_url = vim.uri_from_fname(root .. "/data/html/smoke.html"),
+    frame_health = { stale = false, refresh_pending = false },
+  }
+end
+vim.defer_fn = function(callback)
+  callback()
+end
+browser.clear_history()
+_G.nvim_browser_last_target_before_smoke = browser.last_target()
+_G.nvim_browser_smoke_report = nil
+assert(browser.smoke({ timeout_ms = 1, interval_ms = 1, on_report = function(report)
+  _G.nvim_browser_smoke_report = report
+end }) == true, "smoke should start through the browser runtime")
+assert(_G.nvim_browser_smoke_opened_command ~= nil, "smoke should open the bundled fixture through terminal.open")
+assert(_G.nvim_browser_smoke_opened_command[2] == "serve", "smoke should use the persistent serve runtime")
+assert(vim.tbl_contains(_G.nvim_browser_smoke_opened_command, "--url"), "smoke should open the fixture as a browser URL")
+assert(
+  table.concat(_G.nvim_browser_smoke_opened_command, " "):find(vim.uri_from_fname(root .. "/data/html/smoke.html"), 1, true),
+  "smoke should target the bundled smoke fixture"
+)
+assert(#browser.history() == 0, "smoke should not record the fixture in user history")
+assert(browser.last_target() == _G.nvim_browser_last_target_before_smoke, "smoke should not set the fixture as the resume target")
+assert(browser.record_history(vim.uri_from_fname(root .. "/data/html/smoke.html"), "nvim-browser smoke") == false, "smoke metadata should not be recorded into session state")
+assert(browser.last_target() == _G.nvim_browser_last_target_before_smoke, "smoke metadata should not persist as last target")
+assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == true, "smoke should report a healthy frame")
+assert(table.concat(_G.nvim_browser_smoke_report.lines, "\n"):find("output: ANSI fallback", 1, true), "smoke report should include effective fallback output")
+
+_G.nvim_browser_smoke_report = nil
+_G.nvim_browser_smoke_fake_now = 0
+terminal.state = function()
+  return {
+    mode = "serve",
+    job_id = 1,
+    has_buffer = true,
+    current_url = "https://previous.example/smoke-title",
+    current_title = "nvim-browser smoke",
+    status = "ok",
+    pending_operation = { label = "loading", target = vim.uri_from_fname(root .. "/data/html/smoke.html") },
+    serve_output = "ansi",
+    runtime_metadata = {
+      output = "ansi",
+      renderer = "chromium-cdp",
+      cells = { columns = 80, rows = 20 },
+      viewport = { width = 800, height = 400 },
+    },
+    rendered_frame_geometry = { width = 80, height = 20 },
+    rendered_frame_url = "https://previous.example/smoke-title",
+    frame_health = { stale = false, refresh_pending = false },
+  }
+end
+assert(browser.smoke({
+  timeout_ms = 1,
+  interval_ms = 1,
+  clock = {
+    now = function()
+      _G.nvim_browser_smoke_fake_now = _G.nvim_browser_smoke_fake_now + 1
+      return _G.nvim_browser_smoke_fake_now
+    end,
+  },
+  on_report = function(report)
+    _G.nvim_browser_smoke_report = report
+  end,
+}) == true, "smoke should report previous-page false positives as failures")
+assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == false, "smoke should not pass while the smoke navigation is still pending")
+assert(table.concat(_G.nvim_browser_smoke_report.lines, "\n"):find("reason:", 1, true), "failed smoke should explain the failed readiness condition")
+terminal.open = _G.nvim_browser_original_terminal_open_for_smoke
+terminal.state = _G.nvim_browser_original_terminal_state_for_smoke
+vim.defer_fn = _G.nvim_browser_original_defer_fn_for_smoke
 
 browser.hints = function()
   return {}

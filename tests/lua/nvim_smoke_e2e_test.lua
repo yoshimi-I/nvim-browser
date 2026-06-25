@@ -80,32 +80,29 @@ vim.cmd("runtime plugin/nvim-browser.lua")
 if vim.fn.exists(":NBrowserOpen") ~= 2 then
   fail(":NBrowserOpen is not registered")
 end
+if vim.fn.exists(":NBrowserSmoke") ~= 2 then
+  fail(":NBrowserSmoke is not registered")
+end
 
 local browser = require("nvim-browser")
 local terminal = require("nvim-browser.terminal")
 local original_nvim_chan_send = vim.api.nvim_chan_send
+local original_nvim_echo = vim.api.nvim_echo
+local smoke_echo = nil
 vim.api.nvim_chan_send = function(channel, data)
   if channel == vim.v.stderr and type(data) == "string" and data:find("\27", 1, true) then
     return
   end
   return original_nvim_chan_send(channel, data)
 end
+vim.api.nvim_echo = function(chunks, history, opts)
+  if type(chunks) == "table" and chunks[1] ~= nil then
+    smoke_echo = chunks[1][1]
+  end
+  return original_nvim_echo(chunks, history, opts)
+end
 
-local fixture_path = vim.fn.tempname() .. ".html"
-vim.fn.writefile({
-  "<!doctype html>",
-  "<html>",
-  "<head>",
-  "  <meta charset=\"utf-8\">",
-  "  <title>NBrowser Neovim Smoke Fixture</title>",
-  "  <style>body { font-family: sans-serif; } #ready { color: #157347; }</style>",
-  "</head>",
-  "<body>",
-  "  <h1 id=\"ready\">NBrowser Neovim Smoke Fixture</h1>",
-  "  <p>deterministic local browser smoke</p>",
-  "</body>",
-  "</html>",
-}, fixture_path)
+local fixture_path = root .. "/data/html/smoke.html"
 
 local original_zellij = vim.env.ZELLIJ
 local original_tmux = vim.env.TMUX
@@ -121,14 +118,14 @@ browser.setup({
   backend_diagnostics = false,
 })
 
-vim.cmd("NBrowserOpen " .. vim.fn.fnameescape(fixture_path))
+vim.cmd("NBrowserSmoke")
 
 local ready = vim.wait(20000, function()
   local runtime = browser.runtime_metadata()
   local health = browser.frame_health()
   local state = terminal.state()
   return browser.status() == "ok"
-    and browser.current_title() == "NBrowser Neovim Smoke Fixture"
+    and browser.current_title() == "nvim-browser smoke"
     and type(runtime) == "table"
     and runtime.output == "ansi"
     and state.serve_output == "ansi"
@@ -136,6 +133,9 @@ local ready = vim.wait(20000, function()
     and type(health) == "table"
     and health.stale == false
     and health.refresh_pending == false
+    and smoke_echo ~= nil
+    and smoke_echo:find("nvim-browser smoke", 1, true) ~= nil
+    and smoke_echo:find("status: ok", 1, true) ~= nil
 end, 50)
 
 if not ready then
@@ -180,9 +180,13 @@ assert(
     .. " buffer_tail="
     .. vim.inspect({ lines[#lines - 2], lines[#lines - 1], lines[#lines] })
 )
+assert(smoke_echo ~= nil and smoke_echo:find("nvim-browser smoke", 1, true), "NBrowserSmoke should echo a smoke report")
+assert(smoke_echo:find("status: ok", 1, true), "NBrowserSmoke should report a successful smoke result")
+assert(not smoke_echo:find("status: failed", 1, true), "NBrowserSmoke should not report failure after a healthy smoke run")
+assert(smoke_echo:find("output: ANSI fallback", 1, true), "smoke report should show the effective ANSI fallback output")
 
 browser.close()
 vim.api.nvim_chan_send = original_nvim_chan_send
-vim.fn.delete(fixture_path)
+vim.api.nvim_echo = original_nvim_echo
 vim.env.ZELLIJ = original_zellij
 vim.env.TMUX = original_tmux

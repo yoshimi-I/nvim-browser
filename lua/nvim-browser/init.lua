@@ -17,17 +17,26 @@ local state = {
   session_loaded_path = nil,
   viewport_explicitly_configured = false,
   guided_calibration = nil,
+  smoke_target = nil,
 }
 
 local history_limit = 50
 local session_version = 1
 
 local function plugin_root()
-  return vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h")
+  return vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h")
 end
 
 local function calibration_fixture_path()
   return plugin_root() .. "/data/html/calibrate.html"
+end
+
+local function smoke_fixture_path()
+  return plugin_root() .. "/data/html/smoke.html"
+end
+
+local function smoke_fixture_url()
+  return vim.uri_from_fname(smoke_fixture_path())
 end
 
 local function default_session_path()
@@ -227,6 +236,9 @@ end
 local function record_target(target, title)
   target = normalize_history_value(target)
   if target == nil then
+    return false
+  end
+  if state.smoke_target ~= nil and target == state.smoke_target then
     return false
   end
   add_history_entry(target, title)
@@ -671,9 +683,12 @@ function M.inspect(target)
   setup_preview_keymaps()
 end
 
-function M.open(target)
+local function open_target(target, opts)
+  opts = opts or {}
   target = resolve_target(target)
-  record_target(target)
+  if opts.record ~= false then
+    record_target(target)
+  end
   local previous_bufnr = terminal.state().bufnr
   terminal.open(backend.command_for(M.config.binary, "open", target, M.config))
   local current_bufnr = terminal.state().bufnr
@@ -684,8 +699,45 @@ function M.open(target)
   return true
 end
 
+function M.open(target)
+  return open_target(target, { record = true })
+end
+
 function M.preview()
   M.open(vim.fn.expand("%:p"))
+end
+
+local smoke_is_ready
+local smoke_report
+local emit_smoke_report
+
+function M.smoke(opts)
+  opts = opts or {}
+  local timeout_ms = math.max(1, math.floor(tonumber(opts.timeout_ms) or 20000))
+  local interval_ms = math.max(1, math.floor(tonumber(opts.interval_ms) or 100))
+  local clock = opts.clock or vim.uv or vim.loop
+  local deadline = clock.now() + timeout_ms
+  local last_reason = nil
+
+  state.smoke_target = smoke_fixture_url()
+  open_target(state.smoke_target, { record = false })
+
+  local function poll()
+    local ready, reason = smoke_is_ready()
+    last_reason = reason or last_reason
+    if ready then
+      emit_smoke_report(smoke_report("ok"), opts)
+      return
+    end
+    if clock.now() >= deadline then
+      emit_smoke_report(smoke_report("failed", last_reason or "timeout"), opts)
+      return
+    end
+    vim.defer_fn(poll, interval_ms)
+  end
+
+  vim.defer_fn(poll, 1)
+  return true
 end
 
 function M.calibrate(cell_width_px, cell_height_px)
@@ -1081,6 +1133,104 @@ local function runtime_status_label(runtime)
     return nil
   end
   return table.concat(parts, " ")
+end
+
+local function smoke_output_label(runtime, terminal_state)
+  runtime = type(runtime) == "table" and runtime or {}
+  terminal_state = type(terminal_state) == "table" and terminal_state or {}
+  return status_labels.runtime_output_label(runtime.output, runtime.output_label)
+    or terminal_state.serve_output_label
+    or terminal_state.serve_output
+    or "unknown"
+end
+
+smoke_report = function(status, reason)
+  local terminal_state = terminal.state()
+  local runtime = M.runtime_metadata()
+  local health = M.frame_health()
+  local output = smoke_output_label(runtime, terminal_state)
+  local lines = {
+    "nvim-browser smoke",
+    "status: " .. status,
+    "output: " .. output,
+  }
+  if type(runtime) == "table" then
+    local runtime_label = runtime_status_label(runtime)
+    if runtime_label ~= nil then
+      table.insert(lines, "runtime: " .. runtime_label)
+    end
+  end
+  if terminal_state.rendered_frame_geometry ~= nil then
+    local geometry = terminal_state.rendered_frame_geometry
+    table.insert(lines, "frame: " .. tostring(geometry.width or "?") .. "x" .. tostring(geometry.height or "?"))
+  end
+  if type(health) == "table" then
+    if health.stale == false and health.refresh_pending == false then
+      table.insert(lines, "frame health: ok")
+    else
+      table.insert(
+        lines,
+        "frame health: stale=" .. tostring(health.stale) .. " refreshing=" .. tostring(health.refresh_pending)
+      )
+    end
+  end
+  if reason ~= nil and reason ~= "" then
+    table.insert(lines, "reason: " .. tostring(reason))
+  end
+  if output == "ANSI fallback" then
+    table.insert(lines, "zellij: ANSI fallback active")
+  end
+  return {
+    ok = status == "ok",
+    status = status,
+    output = output,
+    reason = reason,
+    lines = lines,
+  }
+end
+
+smoke_is_ready = function()
+  local terminal_state = terminal.state()
+  local runtime = M.runtime_metadata()
+  local health = M.frame_health()
+  local target = state.smoke_target or smoke_fixture_url()
+  if terminal_state.pending_operation ~= nil then
+    return false, "operation pending"
+  end
+  if terminal_state.current_url ~= target then
+    return false, "url=" .. tostring(terminal_state.current_url)
+  end
+  if terminal_state.rendered_frame_url ~= nil and terminal_state.rendered_frame_url ~= target then
+    return false, "frame url=" .. tostring(terminal_state.rendered_frame_url)
+  end
+  if M.status() ~= "ok" then
+    return false, "status=" .. tostring(M.status())
+  end
+  if M.current_title() ~= "nvim-browser smoke" then
+    return false, "title=" .. tostring(M.current_title())
+  end
+  if type(runtime) ~= "table" then
+    return false, "missing runtime metadata"
+  end
+  if terminal_state.rendered_frame_geometry == nil then
+    return false, "missing rendered frame"
+  end
+  if type(health) ~= "table" then
+    return false, "missing frame health"
+  end
+  if health.stale ~= false or health.refresh_pending ~= false then
+    return false, "frame not healthy"
+  end
+  return true, nil
+end
+
+emit_smoke_report = function(report, opts)
+  if opts ~= nil and type(opts.on_report) == "function" then
+    opts.on_report(report)
+    return
+  end
+  local highlight = report.ok and "None" or "WarningMsg"
+  vim.api.nvim_echo({ { table.concat(report.lines or {}, "\n"), highlight } }, false, {})
 end
 
 local function focused_element_label(focused)
@@ -2373,7 +2523,11 @@ function M.toggle()
 end
 
 function M.last_target()
-  return terminal.state().last_target or state.last_target
+  local target = terminal.state().last_target
+  if target ~= nil and target ~= state.smoke_target then
+    return target
+  end
+  return state.last_target
 end
 
 function M.current_url()

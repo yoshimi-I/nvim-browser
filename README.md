@@ -79,6 +79,7 @@ With lazy.nvim:
     "NBrowserRefresh",
     "NBrowserReload",
     "NBrowserDoctor",
+    "NBrowserSmoke",
     "NBrowserStatus",
     "NBrowserToggle",
     "NBrowserClose",
@@ -287,9 +288,9 @@ Run the opt-in Neovim smoke test against real Chromium/CDP:
 NVBROWSER_NVIM_E2E=1 nvim --headless -u NONE -l tests/lua/nvim_smoke_e2e_test.lua
 ```
 
-The smoke opens a deterministic local HTML fixture through `:NBrowserOpen`,
-verifies a healthy ANSI frame through plugin state, and checks that
-`ZELLIJ=1` plus explicit Kitty graphics resolves to the Zellij-safe ANSI path.
+The smoke opens the bundled deterministic HTML fixture through `:NBrowserSmoke`,
+verifies a healthy ANSI frame through plugin state, and checks that `ZELLIJ=1`
+plus explicit Kitty graphics resolves to the Zellij-safe ANSI path.
 It is skipped unless `NVBROWSER_NVIM_E2E=1` is set, and it skips when a compatible
 `nvbrowser` binary or Chromium backend is unavailable.
 
@@ -409,6 +410,7 @@ Then run:
 :NBrowserReader
 :NBrowserReaderFollow
 :NBrowserDoctor
+:NBrowserSmoke
 :NBrowserCalibrate 9 18
 :NBrowserCalibrateHere
 :NBrowserToggle

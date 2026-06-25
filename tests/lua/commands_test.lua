@@ -10,6 +10,7 @@ local essential_commands = {
   "NBrowserRefresh",
   "NBrowserReload",
   "NBrowserDoctor",
+  "NBrowserSmoke",
   "NBrowserStatus",
   "NBrowserToggle",
   "NBrowserClose",
@@ -54,6 +55,7 @@ local screenshot_on_response = nil
 local pressed_key = nil
 local text_mode_called = false
 local doctor_called = false
+_G.nvim_browser_smoke_called = false
 local refresh_doctor_called = false
 local doctor_report = { lines = { "nvim-browser doctor", "browser output: kitty-unicode" } }
 local calibrated = nil
@@ -302,6 +304,10 @@ local browser = {
   doctor = function()
     doctor_called = true
     return doctor_report
+  end,
+  smoke = function()
+    _G.nvim_browser_smoke_called = true
+    return true
   end,
   refresh_doctor_async = function(callback)
     refresh_doctor_called = true
@@ -772,6 +778,9 @@ vim.cmd("NBrowserDoctor")
 assert(doctor_called == true, "NBrowserDoctor should call browser.doctor")
 assert(refresh_doctor_called == true, "NBrowserDoctor should ask for an async calibration refresh when available")
 assert(echoed == "nvim-browser doctor\ncalibration fixture: observed click", "NBrowserDoctor should echo refreshed doctor lines")
+
+vim.cmd("NBrowserSmoke")
+assert(_G.nvim_browser_smoke_called == true, "NBrowserSmoke should call browser.smoke")
 
 vim.cmd("NBrowserCalibrate 9 18")
 assert(calibrated.cell_width_px == 9, "NBrowserCalibrate should pass numeric cell width")

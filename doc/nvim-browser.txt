@@ -37,6 +37,7 @@ Example lazy.nvim setup:
     "NBrowserRefresh",
     "NBrowserReload",
     "NBrowserDoctor",
+    "NBrowserSmoke",
     "NBrowserStatus",
     "NBrowserToggle",
     "NBrowserClose",
@@ -653,6 +654,14 @@ COMMANDS                                           *nvim-browser-commands*
 	Standalone image CLI Kitty output is tmux-wrapped by the Rust binary.
 	Browser serve sessions keep JSONL payloads raw and apply tmux passthrough
 	at the Neovim terminal egress boundary.
+
+							*:NBrowserSmoke*
+:NBrowserSmoke
+	Open the bundled deterministic smoke fixture through the normal
+	Chromium/CDP browser runtime, then report whether a healthy rendered frame
+	was received. The report includes the effective output mode, runtime
+	metadata, frame geometry, and frame health. Inside Zellij with Kitty
+	graphics configured, a healthy smoke report shows "output: ANSI fallback".
 
 							*:NBrowserCalibrate*
 :NBrowserCalibrate [cell_width_px cell_height_px]
