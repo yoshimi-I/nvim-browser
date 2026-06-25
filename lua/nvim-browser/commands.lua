@@ -51,6 +51,7 @@ local command_names = {
   "NBrowserYankPageText",
   "NBrowserYankUrl",
   "NBrowserYankHintUrl",
+  "NBrowserYankPointUrl",
   "NBrowserScreenshot",
   "NBrowserInputMode",
   "NBrowserTextMode",
@@ -67,6 +68,7 @@ local command_names = {
   "NBrowserDoubleClickHere",
   "NBrowserRightClickHere",
   "NBrowserHoverHere",
+  "NBrowserPointInfo",
   "NBrowserWheelDownHere",
   "NBrowserWheelUpHere",
   "NBrowserHints",
@@ -327,6 +329,36 @@ function M.register(browser, opts)
 
   local function warn_hint_url_yank_unavailable()
     vim.api.nvim_echo({ { "nvim-browser: hint URL not found, stale, non-link, or register is invalid", "WarningMsg" } }, false, {})
+  end
+
+  local function warn_point_url_yank_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: cursor URL yank requires an active cursor-addressable browser preview and a link under the cursor", "WarningMsg" } }, false, {})
+  end
+
+  local function warn_point_info_unavailable()
+    vim.api.nvim_echo({ { "nvim-browser: cursor point inspection requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+  end
+
+  local function echo_point_info(response)
+    if response.status ~= "ok" or type(response.point) ~= "table" then
+      warn_point_info_unavailable()
+      return
+    end
+    local point = response.point
+    local parts = {}
+    if point.tag ~= nil and point.tag ~= vim.NIL and point.tag ~= "" then
+      table.insert(parts, tostring(point.tag))
+    end
+    if point.label ~= nil and point.label ~= vim.NIL and point.label ~= "" then
+      table.insert(parts, tostring(point.label))
+    end
+    if point.href ~= nil and point.href ~= vim.NIL and point.href ~= "" then
+      table.insert(parts, "-> " .. tostring(point.href))
+    end
+    if point.target ~= nil and point.target ~= vim.NIL and point.target ~= "" then
+      table.insert(parts, "target=" .. tostring(point.target))
+    end
+    vim.api.nvim_echo({ { #parts > 0 and table.concat(parts, " ") or "no element" } }, false, {})
   end
 
   local function warn_screenshot_unavailable()
@@ -669,6 +701,15 @@ function M.register(browser, opts)
     nargs = "+",
   })
 
+  vim.api.nvim_create_user_command("NBrowserYankPointUrl", function(opts)
+    local register = opts.args ~= "" and opts.args or nil
+    if not browser.yank_point_url_here or not browser.yank_point_url_here(register) then
+      warn_point_url_yank_unavailable()
+    end
+  end, {
+    nargs = "?",
+  })
+
   vim.api.nvim_create_user_command("NBrowserScreenshot", function(opts)
     local path = opts.args ~= nil and opts.args ~= "" and opts.args or nil
     local saved_path = nil
@@ -871,6 +912,12 @@ function M.register(browser, opts)
   vim.api.nvim_create_user_command("NBrowserHoverHere", function()
     if not browser.hover_here() then
       vim.api.nvim_echo({ { "nvim-browser: cursor hover requires an active cursor-addressable browser preview", "WarningMsg" } }, false, {})
+    end
+  end, {})
+
+  vim.api.nvim_create_user_command("NBrowserPointInfo", function()
+    if not browser.point_info_here or not browser.point_info_here(echo_point_info) then
+      warn_point_info_unavailable()
     end
   end, {})
 

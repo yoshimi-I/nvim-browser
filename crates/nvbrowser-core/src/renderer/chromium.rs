@@ -32,10 +32,11 @@ use crate::{
         HistoryNavigationRequest, HistoryNavigationResult, HoverHintRequest, HoverPointRequest,
         InputResult, InteractionSettleResult, KeyPressRequest, NavigateRequest, NavigationResult,
         PageMetadata, PageMetadataRequest, PageMetrics, PageMetricsRequest, PageTextRequest,
-        PageTextSnapshot, ReloadRequest, ReloadResult, RenderFrameRequest, RenderedFrame, Renderer,
-        RendererError, RendererErrorKind, RightClickHintRequest, RightClickPointRequest,
-        ScrollRequest, ScrollResult, SelectHintRequest, SelectionTextRequest, SelectionTextResult,
-        ShutdownResult, StopLoadingRequest, StopLoadingResult, TextInputRequest, ToggleHintRequest,
+        PageTextSnapshot, PointInfo, PointInfoRequest, ReloadRequest, ReloadResult,
+        RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
+        RightClickHintRequest, RightClickPointRequest, ScrollRequest, ScrollResult,
+        SelectHintRequest, SelectionTextRequest, SelectionTextResult, ShutdownResult,
+        StopLoadingRequest, StopLoadingResult, TextInputRequest, ToggleHintRequest,
         UploadHintRequest, WheelPointRequest, ZoomRequest, ZoomResult,
     },
     session::{FrameId, FrameMetadata, PageId, SessionId, Viewport},
@@ -845,6 +846,28 @@ impl Renderer for ChromiumRenderer {
         Ok(InputResult {
             session_id: request.session_id,
             page_id: request.page_id,
+        })
+    }
+
+    fn point_info(&mut self, request: PointInfoRequest) -> Result<PointInfo, RendererError> {
+        let script = point_info_script(request.x, request.y)?;
+        let text = self
+            .tab
+            .evaluate(&script, true)
+            .map_err(render_error)?
+            .value
+            .and_then(|value| value.as_str().map(str::to_string))
+            .ok_or_else(|| {
+                RendererError::new(RendererErrorKind::InvalidState, "point info was invalid")
+            })?;
+        let extracted = parse_point_info_json(&text).map_err(render_error)?;
+        Ok(PointInfo {
+            session_id: request.session_id,
+            page_id: request.page_id,
+            tag: extracted.tag,
+            label: extracted.label,
+            href: extracted.href,
+            target: extracted.target,
         })
     }
 
@@ -1953,6 +1976,89 @@ const CLICK_HINT_ACTION_SCRIPT: &str = r#"
   return JSON.stringify({
     x: Math.max(0, Math.min(window.innerWidth || x, x)),
     y: Math.max(0, Math.min(window.innerHeight || y, y))
+  });
+})()
+"#;
+
+fn point_info_script(x: f64, y: f64) -> Result<String, RendererError> {
+    let x = serde_json::to_string(&x).map_err(render_error)?;
+    let y = serde_json::to_string(&y).map_err(render_error)?;
+    Ok(POINT_INFO_SCRIPT.replace("__X__", &x).replace("__Y__", &y))
+}
+
+const POINT_INFO_SCRIPT: &str = r#"
+(() => {
+  const x = __X__;
+  const y = __Y__;
+  const normalizeText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+  const labelFor = (element, anchor) => {
+    const inputType = element && element.tagName && element.tagName.toLowerCase() === 'input'
+      ? (element.getAttribute('type') || 'text').toLowerCase()
+      : '';
+    const passwordLike = inputType === 'password';
+    const candidates = [
+      anchor && anchor.getAttribute('aria-label'),
+      element && element.getAttribute('aria-label'),
+      anchor && anchor.getAttribute('title'),
+      element && element.getAttribute('title'),
+      element && element.getAttribute('placeholder'),
+      !passwordLike && element && element.value,
+      anchor && anchor.innerText,
+      element && element.innerText,
+      anchor && anchor.textContent,
+      element && element.textContent
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate !== 'string') continue;
+      const label = normalizeText(candidate);
+      if (label.length > 0) return label.slice(0, 160);
+    }
+    return null;
+  };
+  const hrefFor = (anchor) => {
+    if (!anchor) return null;
+    const raw = anchor.getAttribute('href');
+    if (!raw) return null;
+    try {
+      return new URL(raw, anchor.ownerDocument.baseURI).href;
+    } catch (_error) {
+      return anchor.href || raw;
+    }
+  };
+  const targetFor = (anchor) => {
+    if (!anchor) return null;
+    const target = normalizeText(anchor.getAttribute('target'));
+    return target.length > 0 ? target : null;
+  };
+  const elementAtPoint = (root, pointX, pointY, depth) => {
+    const element = root && typeof root.elementFromPoint === 'function'
+      ? root.elementFromPoint(pointX, pointY)
+      : null;
+    if (!element || depth >= 8) return element;
+    const tag = element.tagName ? element.tagName.toLowerCase() : '';
+    if (tag !== 'iframe' && tag !== 'frame') return element;
+    try {
+      const frameDocument = element.contentDocument;
+      if (!frameDocument) return element;
+      const rect = element.getBoundingClientRect();
+      const innerX = pointX - rect.left - (element.clientLeft || 0);
+      const innerY = pointY - rect.top - (element.clientTop || 0);
+      return elementAtPoint(frameDocument, innerX, innerY, depth + 1) || element;
+    } catch (_error) {
+      return element;
+    }
+  };
+  const element = elementAtPoint(document, x, y, 0);
+  if (!element) {
+    return JSON.stringify({ tag: null, label: null, href: null, target: null });
+  }
+  const anchor = element.closest && element.closest('a[href]');
+  const tag = element.tagName ? element.tagName.toLowerCase() : null;
+  return JSON.stringify({
+    tag,
+    label: labelFor(element, anchor),
+    href: hrefFor(anchor),
+    target: targetFor(anchor)
   });
 })()
 "#;
@@ -3166,6 +3272,14 @@ struct ExtractedPageText {
 }
 
 #[derive(Debug, Deserialize)]
+struct ExtractedPointInfo {
+    tag: Option<String>,
+    label: Option<String>,
+    href: Option<String>,
+    target: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct HintPoint {
     x: f64,
     y: f64,
@@ -3179,6 +3293,10 @@ struct UploadHintTarget {
 }
 
 fn parse_page_text_json(text: &str) -> Result<ExtractedPageText, serde_json::Error> {
+    serde_json::from_str(text)
+}
+
+fn parse_point_info_json(text: &str) -> Result<ExtractedPointInfo, serde_json::Error> {
     serde_json::from_str(text)
 }
 
@@ -4154,6 +4272,35 @@ mod tests {
         assert!(PAGE_TEXT_SCRIPT.contains("markdownLink"));
         assert!(!PAGE_TEXT_SCRIPT.contains("innerText"));
         assert!(!PAGE_TEXT_SCRIPT.contains("+ '\\n\\n[truncated]'"));
+    }
+
+    #[test]
+    fn point_info_script_uses_element_from_point_and_anchor_resolution() {
+        let script = point_info_script(12.5, 24.25).expect("point script should build");
+
+        assert!(script.contains("const x = 12.5;"));
+        assert!(script.contains("const y = 24.25;"));
+        assert!(script.contains("elementAtPoint(document, x, y, 0)"));
+        assert!(script.contains("root.elementFromPoint(pointX, pointY)"));
+        assert!(script.contains("closest('a[href]')"));
+        assert!(script.contains("new URL(raw, anchor.ownerDocument.baseURI).href"));
+        assert!(script.contains("elementAtPoint(frameDocument, innerX, innerY, depth + 1)"));
+        assert!(script.contains("element.clientLeft || 0"));
+        assert!(script.contains("inputType === 'password'"));
+        assert!(script.contains("!passwordLike && element && element.value"));
+    }
+
+    #[test]
+    fn parses_point_info_json_from_chromium_script() {
+        let point = parse_point_info_json(
+            r##"{"tag":"span","label":"Docs","href":"https://example.com/docs","target":"_blank"}"##,
+        )
+        .expect("point info should parse");
+
+        assert_eq!(point.tag.as_deref(), Some("span"));
+        assert_eq!(point.label.as_deref(), Some("Docs"));
+        assert_eq!(point.href.as_deref(), Some("https://example.com/docs"));
+        assert_eq!(point.target.as_deref(), Some("_blank"));
     }
 
     #[test]

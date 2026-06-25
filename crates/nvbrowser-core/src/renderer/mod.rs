@@ -82,6 +82,13 @@ pub trait Renderer {
 
     fn wheel_point(&mut self, request: WheelPointRequest) -> Result<InputResult, RendererError>;
 
+    fn point_info(&mut self, _request: PointInfoRequest) -> Result<PointInfo, RendererError> {
+        Err(RendererError::new(
+            RendererErrorKind::InvalidState,
+            "point inspection is not supported by this renderer",
+        ))
+    }
+
     fn find_text(&mut self, request: FindTextRequest) -> Result<FindTextResult, RendererError>;
 
     fn page_text(&mut self, _request: PageTextRequest) -> Result<PageTextSnapshot, RendererError> {
@@ -898,6 +905,39 @@ pub struct ElementHint {
     pub focusable: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct PointInfoRequest {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    pub x: f64,
+    pub y: f64,
+}
+
+impl PointInfoRequest {
+    pub const fn new(session_id: SessionId, page_id: PageId, x: f64, y: f64) -> Self {
+        Self {
+            session_id,
+            page_id,
+            x,
+            y,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PointInfo {
+    pub session_id: SessionId,
+    pub page_id: PageId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub href: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+}
+
 impl ClickPointRequest {
     pub const fn new(session_id: SessionId, page_id: PageId, x: f64, y: f64) -> Self {
         Self {
@@ -1286,6 +1326,17 @@ mod tests {
             })
         }
 
+        fn point_info(&mut self, request: PointInfoRequest) -> Result<PointInfo, RendererError> {
+            Ok(PointInfo {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                tag: Some("a".to_string()),
+                label: Some("Docs".to_string()),
+                href: Some("https://example.com/docs".to_string()),
+                target: None,
+            })
+        }
+
         fn find_text(&mut self, request: FindTextRequest) -> Result<FindTextResult, RendererError> {
             Ok(FindTextResult {
                 session_id: request.session_id,
@@ -1467,6 +1518,9 @@ mod tests {
                 session_id, page_id, 12.5, 24.25, 0.0, 120.0,
             ))
             .expect("point wheel should succeed");
+        let point = renderer
+            .point_info(PointInfoRequest::new(session_id, page_id, 12.5, 24.25))
+            .expect("point info should succeed");
         let drag = renderer
             .drag_point(DragPointRequest::new(
                 session_id, page_id, 12.5, 24.25, 72.0, 24.25,
@@ -1513,6 +1567,9 @@ mod tests {
         assert_eq!(hover.page_id, page_id);
         assert_eq!(wheel.session_id, session_id);
         assert_eq!(wheel.page_id, page_id);
+        assert_eq!(point.session_id, session_id);
+        assert_eq!(point.page_id, page_id);
+        assert_eq!(point.href.as_deref(), Some("https://example.com/docs"));
         assert_eq!(drag.session_id, session_id);
         assert_eq!(drag.page_id, page_id);
     }

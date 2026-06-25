@@ -45,6 +45,8 @@ assert(type(browser.yank_selection) == "function", "browser selection yank API s
 assert(type(browser.yank_region) == "function", "browser region yank API should exist")
 assert(type(browser.yank_current_url) == "function", "current URL yank API should exist")
 assert(type(browser.yank_hint_url) == "function", "hint URL yank API should exist")
+assert(type(browser.yank_point_url_here) == "function", "cursor URL yank API should exist")
+assert(type(browser.point_info_here) == "function", "cursor point info API should exist")
 assert(type(browser.yank_page_text) == "function", "page text yank API should exist")
 assert(type(browser.screenshot) == "function", "active browser screenshot API should exist")
 assert(type(browser.downloads) == "function", "download history API should exist")
@@ -1713,6 +1715,8 @@ local original_terminal_yank_region = terminal.yank_region
 original_terminal_downloads = terminal.downloads
 local original_terminal_yank_current_url = terminal.yank_current_url
 local original_terminal_yank_hint_url = terminal.yank_hint_url
+_G.nvim_browser_original_terminal_yank_point_url_here = terminal.yank_point_url_here
+_G.nvim_browser_original_terminal_point_info_here = terminal.point_info_here
 local original_terminal_find_text = terminal.find_text
 local original_terminal_find_next = terminal.find_next
 local original_terminal_find_previous = terminal.find_previous
@@ -2726,6 +2730,23 @@ assert(browser.yank_hint_url("a", "*") == "hint-yanked", "yank_hint_url should d
 assert(yanked_hint_url.identifier == "a", "yank_hint_url should pass hint identifiers to terminal")
 assert(yanked_hint_url.register == "*", "yank_hint_url should pass explicit registers to terminal")
 
+_G.nvim_browser_yanked_point_url_register = nil
+terminal.yank_point_url_here = function(register)
+  _G.nvim_browser_yanked_point_url_register = register
+  return "point-url-yanked"
+end
+assert(browser.yank_point_url_here("*") == "point-url-yanked", "yank_point_url_here should delegate to terminal")
+assert(_G.nvim_browser_yanked_point_url_register == "*", "yank_point_url_here should pass explicit registers to terminal")
+
+_G.nvim_browser_point_info_callback = nil
+terminal.point_info_here = function(callback)
+  _G.nvim_browser_point_info_callback = callback
+  return "point-info"
+end
+_G.nvim_browser_point_info_callback_arg = function() end
+assert(browser.point_info_here(_G.nvim_browser_point_info_callback_arg) == "point-info", "point_info_here should delegate to terminal")
+assert(_G.nvim_browser_point_info_callback == _G.nvim_browser_point_info_callback_arg, "point_info_here should pass callbacks to terminal")
+
 local clicked_mouse = nil
 terminal.click_mouse = function(mousepos)
   clicked_mouse = mousepos
@@ -3692,6 +3713,8 @@ terminal.downloads = original_terminal_downloads
 terminal.screenshot = original_terminal_screenshot
 terminal.yank_current_url = original_terminal_yank_current_url
 terminal.yank_hint_url = original_terminal_yank_hint_url
+terminal.yank_point_url_here = _G.nvim_browser_original_terminal_yank_point_url_here
+terminal.point_info_here = _G.nvim_browser_original_terminal_point_info_here
 terminal.find_text = original_terminal_find_text
 terminal.find_next = original_terminal_find_next
 terminal.find_previous = original_terminal_find_previous

@@ -65,7 +65,10 @@ can be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
 - Browser previews should stay cursor-addressable where possible. ANSI and Kitty
   Unicode previews support cursor-to-viewport clicks, double-clicks,
   right-clicks, hint overlays, and jumping the Neovim cursor to a hinted
-  element before running cursor-local browser actions.
+  element before running cursor-local browser actions. Cursor-local DOM
+  inspection should use the same rendered-frame geometry as cursor-local input,
+  so yanking a link under the preview cursor and clicking that cursor position
+  refer to the same browser point.
 - The action picker should expose common cursor-addressable browser input
   directly so users can discover click, double-click, right-click, hover, and
   type-at-cursor without memorizing separate commands.
@@ -127,8 +130,9 @@ can be opened, viewed, navigated, clicked, searched, and typed into from Neovim.
   right-clicks, hinted `<select>` option selection with Neovim pickers when
   option metadata is available, hinted `<input type="file">` uploads through CDP
   `DOM.setFileInputFiles`, hinted checkbox/radio toggles, direct href following,
-  current URL, hinted link URL, and whole-page text snapshot yanking,
-  focused-element metadata, and submit-current-focus form UX.
+  current URL, hinted link URL, live DOM point inspection at the preview cursor,
+  link URL yanking from the preview cursor, and whole-page text snapshot
+  yanking, focused-element metadata, and submit-current-focus form UX.
 - Page text is a Chromium/CDP snapshot surface, not a scrape of the terminal
   preview or reader buffer. Whole-page text yank should keep using the
   `page_text` request, validate writable one-character Neovim registers, and

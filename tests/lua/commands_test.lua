@@ -30,6 +30,8 @@ for _, name in ipairs({
   "NBrowserOpenDownload",
   "NBrowserJumpHint",
   "NBrowserJumpHintMode",
+  "NBrowserPointInfo",
+  "NBrowserYankPointUrl",
 }) do
   assert(vim.tbl_contains(lazy_command_names, name), "full lazy command list should include " .. name)
 end
@@ -81,6 +83,8 @@ local pasted_register = nil
 local yanked_register = nil
 local yanked_current_url_register = nil
 local yanked_hint_url = nil
+local yanked_point_url_register = nil
+local point_info_called = false
 local yanked_page_text_register = nil
 local screenshot_path = nil
 local screenshot_on_response = nil
@@ -276,6 +280,28 @@ local browser = {
       return false
     end
     yanked_hint_url = { identifier = identifier, register = register or '"' }
+    return true
+  end,
+  yank_point_url_here = function(register)
+    if register == "ab" then
+      return false
+    end
+    yanked_point_url_register = register or '"'
+    return true
+  end,
+  point_info_here = function(on_response)
+    point_info_called = true
+    if on_response then
+      on_response({
+        status = "ok",
+        point = {
+          tag = "a",
+          label = "Docs",
+          href = "https://example.com/docs",
+          target = "_blank",
+        },
+      })
+    end
     return true
   end,
   yank_page_text = function(register)
@@ -1222,6 +1248,27 @@ assert(warnings[#warnings] == "nvim-browser: hint URL not found, stale, non-link
 
 vim.cmd("NBrowserYankHintUrl a ab")
 assert(warnings[#warnings] == "nvim-browser: hint URL not found, stale, non-link, or register is invalid", "NBrowserYankHintUrl should warn on invalid register names")
+
+yanked_point_url_register = nil
+vim.cmd("NBrowserYankPointUrl")
+assert(yanked_point_url_register == '"', "NBrowserYankPointUrl should default to the unnamed register")
+
+yanked_point_url_register = nil
+vim.cmd("NBrowserYankPointUrl +")
+assert(yanked_point_url_register == "+", "NBrowserYankPointUrl should pass an explicit register")
+
+yanked_point_url_register = nil
+vim.cmd("NBrowserYankPointUrl ab")
+assert(
+  warnings[#warnings] == "nvim-browser: cursor URL yank requires an active cursor-addressable browser preview and a link under the cursor",
+  "NBrowserYankPointUrl should warn when cursor URL yank fails"
+)
+assert(yanked_point_url_register == nil, "NBrowserYankPointUrl should not yank invalid register names")
+
+point_info_called = false
+vim.cmd("NBrowserPointInfo")
+assert(point_info_called == true, "NBrowserPointInfo should call point_info_here")
+assert(echoed:find("a Docs -> https://example.com/docs target=_blank", 1, true), "NBrowserPointInfo should echo inspected element metadata")
 
 yanked_page_text_register = nil
 vim.cmd("NBrowserYankPageText")

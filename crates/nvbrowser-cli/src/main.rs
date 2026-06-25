@@ -19,15 +19,15 @@ use nvbrowser_core::{
     FocusSelectorRequest, FocusedElement, FocusedElementRequest, FrameArtifact,
     HistoryNavigationRequest, HoverHintRequest, HoverPointRequest, KeyPressRequest,
     KittyImageDelete, KittyImageTransfer, NavigateRequest, PageMetadataRequest, PageMetrics,
-    PageMetricsRequest, PageTextRequest, PageTextSnapshot, ReloadRequest, RenderFrameRequest,
-    RenderedFrame, Renderer, RendererError, RendererErrorKind, RightClickHintRequest,
-    RightClickPointRequest, ScrollRequest, SelectHintRequest, SelectionTextRequest, SessionId,
-    StopLoadingRequest, TextInputRequest, ToggleHintRequest, UploadHintRequest, Viewport,
-    WheelPointRequest, ZoomRequest,
+    PageMetricsRequest, PageTextRequest, PageTextSnapshot, PointInfo, PointInfoRequest,
+    ReloadRequest, RenderFrameRequest, RenderedFrame, Renderer, RendererError, RendererErrorKind,
+    RightClickHintRequest, RightClickPointRequest, ScrollRequest, SelectHintRequest,
+    SelectionTextRequest, SessionId, StopLoadingRequest, TextInputRequest, ToggleHintRequest,
+    UploadHintRequest, Viewport, WheelPointRequest, ZoomRequest,
 };
 use serde::{Deserialize, Serialize};
 
-const SERVE_PROTOCOL_VERSION: u32 = 26;
+const SERVE_PROTOCOL_VERSION: u32 = 27;
 
 #[derive(Debug, Parser)]
 #[command(name = "nvbrowser")]
@@ -435,6 +435,11 @@ enum ServeRequest {
         delta_x: f64,
         delta_y: f64,
     },
+    PointInfo {
+        id: u64,
+        x: f64,
+        y: f64,
+    },
     ClickHint {
         id: u64,
         hint_id: u32,
@@ -550,6 +555,8 @@ struct ServeResponse {
     text: Option<PageTextSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     selection: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    point: Option<PointInfo>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     hints: Vec<ElementHint>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1033,6 +1040,7 @@ struct CapturePayload {
     focused: Option<Option<FocusedElement>>,
     text: Option<PageTextSnapshot>,
     selection: Option<String>,
+    point: Option<PointInfo>,
     hints: Vec<ElementHint>,
     hint_error: Option<String>,
     found: Option<bool>,
@@ -1090,6 +1098,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 focused: None,
                 text: None,
                 selection: None,
+                point: None,
                 hints: Vec::new(),
                 hint_error: None,
                 found: None,
@@ -1191,6 +1200,7 @@ impl<R: Renderer> ServeRuntime<R> {
             focused,
             text,
             selection,
+            point,
             hints,
             hint_error,
             found,
@@ -1208,6 +1218,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     capture.focused,
                     capture.text,
                     capture.selection,
+                    capture.point,
                     capture.hints,
                     capture.hint_error,
                     capture.found,
@@ -1219,6 +1230,7 @@ impl<R: Renderer> ServeRuntime<R> {
                 )
             })
             .unwrap_or((
+                None,
                 None,
                 None,
                 None,
@@ -1251,6 +1263,7 @@ impl<R: Renderer> ServeRuntime<R> {
             focused,
             text,
             selection,
+            point,
             hints,
             hint_error,
             found,
@@ -1495,6 +1508,31 @@ impl<R: Renderer> ServeRuntime<R> {
                 self.settle_after_interaction()?;
                 self.capture_payload(false).map(Some)
             }
+            ServeRequest::PointInfo { x, y, .. } => {
+                let point = self.renderer.point_info(PointInfoRequest::new(
+                    self.session.id(),
+                    self.session.active_page_id(),
+                    x,
+                    y,
+                ))?;
+                Ok(Some(CapturePayload {
+                    payload: None,
+                    dom_epoch: None,
+                    page: None,
+                    focused: None,
+                    text: None,
+                    selection: None,
+                    point: Some(point),
+                    hints: Vec::new(),
+                    hint_error: None,
+                    found: None,
+                    match_count: None,
+                    download: None,
+                    downloads: Vec::new(),
+                    dialog: None,
+                    dialogs: Vec::new(),
+                }))
+            }
             ServeRequest::ClickHint {
                 hint_id, dom_epoch, ..
             } => {
@@ -1696,6 +1734,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     focused: None,
                     text: Some(snapshot),
                     selection: None,
+                    point: None,
                     hints: Vec::new(),
                     hint_error: None,
                     found: None,
@@ -1718,6 +1757,7 @@ impl<R: Renderer> ServeRuntime<R> {
                     focused: None,
                     text: None,
                     selection: Some(selection.text),
+                    point: None,
                     hints: Vec::new(),
                     hint_error: None,
                     found: None,
@@ -1798,6 +1838,7 @@ impl<R: Renderer> ServeRuntime<R> {
             focused,
             text: None,
             selection: None,
+            point: None,
             hints,
             hint_error,
             found: None,
@@ -1848,6 +1889,7 @@ impl<R: Renderer> ServeRuntime<R> {
             focused,
             text: None,
             selection: None,
+            point: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -1910,6 +1952,7 @@ impl ServeRequest {
             | ServeRequest::RightClickPoint { id, .. }
             | ServeRequest::HoverPoint { id, .. }
             | ServeRequest::WheelPoint { id, .. }
+            | ServeRequest::PointInfo { id, .. }
             | ServeRequest::ClickHint { id, .. }
             | ServeRequest::RightClickHint { id, .. }
             | ServeRequest::FocusHint { id, .. }
@@ -2058,6 +2101,7 @@ fn serve_stdio(options: ServeOptions) -> Result<(), Box<dyn std::error::Error>> 
                         focused: None,
                         text: None,
                         selection: None,
+                        point: None,
                         hints: Vec::new(),
                         hint_error: None,
                         found: None,
@@ -2529,6 +2573,7 @@ mod tests {
         right_clicked_points: Vec<(f64, f64)>,
         hovered_points: Vec<(f64, f64)>,
         wheeled_points: Vec<(f64, f64, f64, f64)>,
+        point_info_points: Vec<(f64, f64)>,
         dragged_points: Vec<(f64, f64, f64, f64)>,
         find_queries: Vec<String>,
         find_directions: Vec<bool>,
@@ -2584,6 +2629,7 @@ mod tests {
                 right_clicked_points: Vec::new(),
                 hovered_points: Vec::new(),
                 wheeled_points: Vec::new(),
+                point_info_points: Vec::new(),
                 dragged_points: Vec::new(),
                 find_queries: Vec::new(),
                 find_directions: Vec::new(),
@@ -3068,6 +3114,19 @@ mod tests {
             Ok(InputResult {
                 session_id: request.session_id,
                 page_id: request.page_id,
+            })
+        }
+
+        fn point_info(&mut self, request: PointInfoRequest) -> Result<PointInfo, RendererError> {
+            self.operations.push("point_info");
+            self.point_info_points.push((request.x, request.y));
+            Ok(PointInfo {
+                session_id: request.session_id,
+                page_id: request.page_id,
+                tag: Some("a".to_string()),
+                label: Some("Docs".to_string()),
+                href: Some("https://example.com/docs".to_string()),
+                target: Some("_blank".to_string()),
             })
         }
 
@@ -4011,6 +4070,15 @@ mod tests {
             ServeRequest::SelectionText { id: 14 }
         );
         assert_eq!(
+            parse_serve_request(r#"{"type":"point_info","id":19,"x":120.5,"y":240.25}"#)
+                .expect("point info request should parse"),
+            ServeRequest::PointInfo {
+                id: 19,
+                x: 120.5,
+                y: 240.25,
+            }
+        );
+        assert_eq!(
             parse_serve_request(r#"{"type":"screenshot","id":15,"path":"/tmp/page.png"}"#)
                 .expect("screenshot request should parse"),
             ServeRequest::Screenshot {
@@ -4037,6 +4105,7 @@ mod tests {
             focused: None,
             text: None,
             selection: None,
+            point: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -4071,6 +4140,7 @@ mod tests {
             focused: None,
             text: None,
             selection: None,
+            point: None,
             hints: vec![ElementHint {
                 id: 1,
                 kind: ElementHintKind::Link,
@@ -4119,6 +4189,7 @@ mod tests {
             focused: None,
             text: None,
             selection: None,
+            point: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -4153,6 +4224,7 @@ mod tests {
             focused: None,
             text: None,
             selection: None,
+            point: None,
             hints: Vec::new(),
             hint_error: None,
             found: Some(true),
@@ -4187,6 +4259,7 @@ mod tests {
             focused: None,
             text: None,
             selection: None,
+            point: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -4221,6 +4294,7 @@ mod tests {
             focused: None,
             text: None,
             selection: None,
+            point: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -4261,6 +4335,7 @@ mod tests {
             focused: None,
             text: None,
             selection: None,
+            point: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -4309,6 +4384,7 @@ mod tests {
             focused: None,
             text: None,
             selection: None,
+            point: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -4345,6 +4421,7 @@ mod tests {
             focused: None,
             text: None,
             selection: None,
+            point: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -4386,6 +4463,7 @@ mod tests {
             })),
             text: None,
             selection: None,
+            point: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -4420,6 +4498,7 @@ mod tests {
             focused: Some(None),
             text: None,
             selection: None,
+            point: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -4461,6 +4540,7 @@ mod tests {
                 truncated: false,
             }),
             selection: None,
+            point: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -4495,6 +4575,7 @@ mod tests {
             focused: None,
             text: None,
             selection: Some("selected text".to_string()),
+            point: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -4509,6 +4590,48 @@ mod tests {
         assert_eq!(
             encode_serve_response(&response),
             r#"{"id":16,"status":"ok","url":"https://example.com","title":"Example","selection":"selected text"}"#
+        );
+    }
+
+    #[test]
+    fn serve_response_encodes_point_info_when_present() {
+        let response = ServeResponse {
+            id: 19,
+            status: ServeStatus::Ok,
+            runtime: None,
+            payload: None,
+            dom_epoch: None,
+            url: Some("https://example.com".to_string()),
+            display_url: None,
+            title: Some("Example".to_string()),
+            page: None,
+            history: None,
+
+            focused: None,
+            text: None,
+            selection: None,
+            point: Some(PointInfo {
+                session_id: SessionId::new(1),
+                page_id: PageId::new(1),
+                tag: Some("a".to_string()),
+                label: Some("Docs".to_string()),
+                href: Some("https://example.com/docs".to_string()),
+                target: Some("_blank".to_string()),
+            }),
+            hints: Vec::new(),
+            hint_error: None,
+            found: None,
+            match_count: None,
+            download: None,
+            downloads: Vec::new(),
+            dialog: None,
+            dialogs: Vec::new(),
+            error: None,
+        };
+
+        assert_eq!(
+            encode_serve_response(&response),
+            r#"{"id":19,"status":"ok","url":"https://example.com","title":"Example","point":{"session_id":1,"page_id":1,"tag":"a","label":"Docs","href":"https://example.com/docs","target":"_blank"}}"#
         );
     }
 
@@ -4543,6 +4666,7 @@ mod tests {
             focused: None,
             text: None,
             selection: None,
+            point: None,
             hints: Vec::new(),
             hint_error: None,
             found: None,
@@ -4556,7 +4680,7 @@ mod tests {
 
         assert_eq!(
             encode_serve_response(&response),
-            r#"{"id":15,"status":"ok","runtime":{"protocol_version":26,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
+            r#"{"id":15,"status":"ok","runtime":{"protocol_version":27,"transport":"stdio-jsonl","renderer":"chromium-cdp","output":"kitty-unicode","cells":{"columns":80,"rows":24},"viewport":{"width":800,"height":480,"device_scale_factor":1.0}},"payload":"frame","url":"https://example.com","title":"Example"}"#
         );
     }
 
@@ -6579,6 +6703,53 @@ mod tests {
         assert!(response.hints.is_empty());
         assert_eq!(response.selection.as_deref(), Some("selected text"));
         assert_eq!(runtime.renderer.operations, vec!["selection_text"]);
+        assert_eq!(runtime.renderer.captures, 0);
+    }
+
+    #[test]
+    fn serve_runtime_reads_point_info_without_capturing_frame() {
+        let mut runtime = ServeRuntime::new(
+            FakeRenderer::new(),
+            ServeOptions {
+                output: ImageOutput::Ansi,
+                columns: 1,
+                rows: 1,
+                viewport: Viewport::new(10, 10),
+                initial_url: None,
+                markdown_preview: None,
+                image_preview: None,
+                cdp_ws_url: None,
+                user_data_dir: None,
+                download_dir: None,
+                navigation_timeout_ms: None,
+            },
+        );
+        let navigate = runtime.handle(ServeRequest::Navigate {
+            id: 3,
+            url: "https://example.com".to_string(),
+        });
+        assert_eq!(navigate.status, ServeStatus::Ok);
+        runtime.renderer.operations.clear();
+        runtime.renderer.captures = 0;
+
+        let response = runtime.handle(ServeRequest::PointInfo {
+            id: 19,
+            x: 120.5,
+            y: 240.25,
+        });
+
+        assert_eq!(response.status, ServeStatus::Ok);
+        assert!(response.payload.is_none());
+        assert!(response.hints.is_empty());
+        assert_eq!(
+            response
+                .point
+                .as_ref()
+                .and_then(|point| point.href.as_deref()),
+            Some("https://example.com/docs")
+        );
+        assert_eq!(runtime.renderer.operations, vec!["point_info"]);
+        assert_eq!(runtime.renderer.point_info_points, vec![(120.5, 240.25)]);
         assert_eq!(runtime.renderer.captures, 0);
     }
 

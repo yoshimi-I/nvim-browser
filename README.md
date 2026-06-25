@@ -109,6 +109,7 @@ With lazy.nvim:
     "NBrowserYankPageText",
     "NBrowserYankUrl",
     "NBrowserYankHintUrl",
+    "NBrowserYankPointUrl",
     "NBrowserScreenshot",
     "NBrowserInputMode",
     "NBrowserTextMode",
@@ -125,6 +126,7 @@ With lazy.nvim:
     "NBrowserDoubleClickHere",
     "NBrowserRightClickHere",
     "NBrowserHoverHere",
+    "NBrowserPointInfo",
     "NBrowserWheelDownHere",
     "NBrowserWheelUpHere",
     "NBrowserHints",
@@ -464,6 +466,7 @@ Then run:
 :NBrowserYankPageText +
 :NBrowserYankUrl +
 :NBrowserYankHintUrl a +
+:NBrowserYankPointUrl +
 :NBrowserScreenshot /tmp/page.png
 :NBrowserKey Enter
 :NBrowserKey A ctrl
@@ -472,6 +475,7 @@ Then run:
 :NBrowserClickHere
 :NBrowserRightClickHere
 :NBrowserHoverHere
+:NBrowserPointInfo
 :NBrowserWheelDownHere
 :NBrowserWheelUpHere 240
 :NBrowserHints
@@ -545,6 +549,11 @@ tooltips without leaving Neovim. Preview scroll-wheel events are also sent as
 native Chromium mouse-wheel input at the mouse position when the preview is
 cursor-addressable, then fall back to page-level scrolling if coordinates are
 not available.
+`:NBrowserPointInfo` asks Chromium for the DOM element under the preview cursor
+and echoes the tag, label, link URL, and target when available.
+`:NBrowserYankPointUrl [register]` uses the same point inspection path and
+writes the link URL under the preview cursor into a Neovim register. Both
+commands require an ANSI or Kitty Unicode cursor-addressable browser preview.
 `:NBrowserWheelDownHere [pixels]` and `:NBrowserWheelUpHere [pixels]` send
 native Chromium mouse-wheel input at the preview cursor. The default delta is
 120 pixels. Use them for nested scroll containers without moving focus out of
@@ -705,6 +714,9 @@ current browser selection and Visual `y` yanks the Visual preview region.
 `:NBrowserYankUrl [register]` writes the active browser page URL into a Neovim
 register without recapturing the page. `:NBrowserYankHintUrl {id-or-label}
 [register]` writes a hinted link destination from the latest frame.
+`:NBrowserYankPointUrl [register]` inspects the live DOM at the preview cursor
+and writes the link URL under that point. It requires an ANSI or Kitty Unicode
+cursor-addressable browser preview.
 `:NBrowserScreenshot [path]` captures the active browser session viewport to a
 PNG file without replacing the Neovim preview frame. Without a path, it writes a
 timestamped PNG under Neovim's cache directory.

@@ -2030,6 +2030,14 @@ function M.yank_hint_url(id, register)
   return terminal.yank_hint_url(id, register or '"')
 end
 
+function M.point_info_here(on_response)
+  return terminal.point_info_here(on_response)
+end
+
+function M.yank_point_url_here(register)
+  return terminal.yank_point_url_here(register or '"')
+end
+
 local function screenshot_slug(value)
   value = value ~= nil and tostring(value) or ""
   value = value:gsub("^%s+", ""):gsub("%s+$", "")

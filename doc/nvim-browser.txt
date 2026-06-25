@@ -67,6 +67,7 @@ Example lazy.nvim setup:
     "NBrowserYankPageText",
     "NBrowserYankUrl",
     "NBrowserYankHintUrl",
+    "NBrowserYankPointUrl",
     "NBrowserScreenshot",
     "NBrowserInputMode",
     "NBrowserTextMode",
@@ -83,6 +84,7 @@ Example lazy.nvim setup:
     "NBrowserDoubleClickHere",
     "NBrowserRightClickHere",
     "NBrowserHoverHere",
+    "NBrowserPointInfo",
     "NBrowserWheelDownHere",
     "NBrowserWheelUpHere",
     "NBrowserHints",
@@ -465,6 +467,12 @@ COMMANDS                                           *nvim-browser-commands*
 	Write a hinted link destination from the latest browser frame into a Neovim
 	register. Defaults to the unnamed register.
 
+							*:NBrowserYankPointUrl*
+:NBrowserYankPointUrl [register]
+	Inspect the live DOM at the preview cursor and write the link URL under
+	that point into a Neovim register. This requires an ANSI or Kitty Unicode
+	cursor-addressable browser preview. Defaults to the unnamed register.
+
 							*:NBrowserScreenshot*
 :NBrowserScreenshot [path]
 	Capture the active browser session viewport to a PNG file without replacing
@@ -518,6 +526,12 @@ COMMANDS                                           *nvim-browser-commands*
 	Move the Chromium mouse cursor to the viewport point under the preview
 	cursor and capture a fresh frame. This can reveal CSS hover menus and
 	tooltips. The preview footer row is ignored.
+
+							*:NBrowserPointInfo*
+:NBrowserPointInfo
+	Inspect the live DOM element under the preview cursor and echo its tag,
+	label, link URL, and target when available. This requires an ANSI or Kitty
+	Unicode cursor-addressable browser preview.
 
 							*:NBrowserWheelDownHere*
 :NBrowserWheelDownHere [pixels]

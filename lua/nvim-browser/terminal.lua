@@ -2018,6 +2018,29 @@ local function cell_within_geometry(row, column, geometry)
   return row > 0 and column > 0 and row <= geometry.rows and column <= geometry.columns
 end
 
+function M._viewport_point_under_cursor()
+  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+    return nil
+  end
+
+  local cursor = vim.api.nvim_win_get_cursor(state.winid)
+  local geometry = current_preview_geometry()
+  if cursor[1] > geometry.rows then
+    return nil
+  end
+  local column = vim.api.nvim_win_call(state.winid, function()
+    return vim.fn.virtcol(".")
+  end)
+  if column > geometry.columns then
+    return nil
+  end
+  geometry = current_rendered_frame_geometry()
+  if geometry == nil then
+    return nil
+  end
+  return M.viewport_point_for_cell(cursor[1], column, geometry)
+end
+
 local function hint_label_width(count)
   local base = #hint_label_keys
   local width = 1
@@ -2266,16 +2289,16 @@ local function preview_footer_line(width)
     table.insert(parts, runtime)
   end
 
-  local title = state.current_title ~= nil and state.current_title ~= "" and state.current_title or nil
+  local title = state.current_title ~= nil and state.current_title ~= vim.NIL and state.current_title ~= "" and state.current_title or nil
   local url = state.serve_exit ~= nil
       and state.serve_exit.target
     or state.stopped_operation ~= nil
       and state.stopped_operation.target
-    or state.current_url ~= nil and state.current_url ~= "" and state.current_url
+    or state.current_url ~= nil and state.current_url ~= vim.NIL and state.current_url ~= "" and state.current_url
     or state.last_target
   if title ~= nil then
     table.insert(parts, title)
-  elseif url ~= nil and url ~= "" then
+  elseif url ~= nil and url ~= vim.NIL and url ~= "" then
     table.insert(parts, url)
     url = nil
   end
@@ -2314,7 +2337,7 @@ local function preview_footer_line(width)
     table.insert(parts, runtime)
   end
 
-  if url ~= nil and url ~= "" then
+  if url ~= nil and url ~= vim.NIL and url ~= "" then
     table.insert(parts, url)
   end
 
@@ -4106,6 +4129,40 @@ function M.yank_current_url(register)
   return set_register(register, state.current_url)
 end
 
+function M.point_info_here(on_response)
+  local point = M._viewport_point_under_cursor()
+  if point == nil then
+    return false
+  end
+  return send_pending_request({
+    type = "point_info",
+    x = point.x,
+    y = point.y,
+  }, state.current_url or state.last_target or "inspect", "inspect", on_response)
+end
+
+function M.yank_point_url_here(register)
+  register = register or '"'
+  if not valid_register(register) then
+    return false
+  end
+  return M.point_info_here(function(response)
+    if response.status ~= "ok" or type(response.point) ~= "table" then
+      vim.api.nvim_echo({ { "nvim-browser: cursor URL yank failed or no link is under the browser cursor", "WarningMsg" } }, false, {})
+      return
+    end
+    local href = response.point.href
+    if href == nil or href == vim.NIL or href == "" then
+      vim.api.nvim_echo({ { "nvim-browser: cursor URL yank failed or no link is under the browser cursor", "WarningMsg" } }, false, {})
+      return
+    end
+    local ok = pcall(vim.fn.setreg, register, tostring(href), "v")
+    if not ok then
+      vim.api.nvim_echo({ { "nvim-browser: cursor URL yank failed or no link is under the browser cursor", "WarningMsg" } }, false, {})
+    end
+  end)
+end
+
 function M.screenshot(path, opts)
   opts = opts or {}
   if path == nil or path == "" then
@@ -4152,26 +4209,10 @@ function M.reader_follow()
 end
 
 function M.click_here()
-  if state.mode ~= "serve" or not is_valid_window() or not state.cursor_addressable_preview then
+  local point = M._viewport_point_under_cursor()
+  if point == nil then
     return false
   end
-
-  local cursor = vim.api.nvim_win_get_cursor(state.winid)
-  local geometry = current_preview_geometry()
-  if cursor[1] > geometry.rows then
-    return false
-  end
-  local column = vim.api.nvim_win_call(state.winid, function()
-    return vim.fn.virtcol(".")
-  end)
-  if column > geometry.columns then
-    return false
-  end
-  geometry = current_rendered_frame_geometry()
-  if geometry == nil then
-    return false
-  end
-  local point = M.viewport_point_for_cell(cursor[1], column, geometry)
   return M.click_point(point.x, point.y)
 end
 

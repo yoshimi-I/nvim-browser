@@ -3,7 +3,7 @@ local terminal = require("nvim-browser.terminal")
 
 local M = {}
 
-local EXPECTED_SERVE_PROTOCOL_VERSION = 26
+local EXPECTED_SERVE_PROTOCOL_VERSION = 27
 
 local function command_output(command)
   for index, value in ipairs(command) do

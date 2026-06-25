@@ -409,7 +409,7 @@ fn doctor_outputs_backend_json_without_launching_chrome() {
     );
     assert_eq!(json["backend"]["user_data_dir"], "/tmp/nvbrowser-profile");
     assert_eq!(
-        json["protocol"]["serve"], 26,
+        json["protocol"]["serve"], 27,
         "doctor JSON should expose the serve protocol version"
     );
 }
@@ -2724,16 +2724,22 @@ fn opt_in_e2e_serve_loop_hints_open_shadow_dom_and_same_origin_iframes() {
         .find(|hint| hint["kind"] == "file" && hint["label"] == "Shadow Upload")
         .and_then(|hint| hint["id"].as_u64())
         .expect("open shadow root file input should be hinted");
-    assert!(
-        hints.iter().any(|hint| {
+    let frame_docs_hint = hints
+        .iter()
+        .find(|hint| {
             hint["kind"] == "link"
                 && hint["label"] == "Frame Docs"
                 && hint["href"]
                     .as_str()
                     .is_some_and(|href| href.ends_with("#frame-docs"))
-        }),
-        "same-origin iframe links should be hinted with hrefs; hints={hints:?}"
-    );
+        })
+        .expect("same-origin iframe links should be hinted with hrefs");
+    let frame_docs_x = frame_docs_hint["x"]
+        .as_f64()
+        .expect("iframe link hint should include viewport x");
+    let frame_docs_y = frame_docs_hint["y"]
+        .as_f64()
+        .expect("iframe link hint should include viewport y");
     let frame_button_id = hints
         .iter()
         .find(|hint| hint["kind"] == "button" && hint["label"] == "Frame Go")
@@ -2744,6 +2750,27 @@ fn opt_in_e2e_serve_loop_hints_open_shadow_dom_and_same_origin_iframes() {
         .find(|hint| hint["kind"] == "file" && hint["label"] == "Frame Upload")
         .and_then(|hint| hint["id"].as_u64())
         .expect("same-origin iframe file input should be hinted");
+
+    let frame_docs_point = serve.request(serde_json::json!({
+        "id": 41,
+        "type": "point_info",
+        "x": frame_docs_x,
+        "y": frame_docs_y
+    }));
+    assert_eq!(
+        frame_docs_point["status"], "ok",
+        "point_info should inspect same-origin iframe links; response={frame_docs_point:?}"
+    );
+    assert_eq!(
+        frame_docs_point["point"]["label"], "Frame Docs",
+        "point_info should report the same-origin iframe link label; response={frame_docs_point:?}"
+    );
+    assert!(
+        frame_docs_point["point"]["href"]
+            .as_str()
+            .is_some_and(|href| href.ends_with("#frame-docs")),
+        "point_info should resolve same-origin iframe hrefs; response={frame_docs_point:?}"
+    );
 
     let shadow_clicked = serve.request(serde_json::json!({
         "id": 1,

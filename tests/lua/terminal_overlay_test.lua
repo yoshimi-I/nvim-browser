@@ -4151,7 +4151,7 @@ terminal._test.apply_serve_response({
   display_url = "file:///tmp/README.md",
   title = "README",
   runtime = {
-    protocol_version = 26,
+    protocol_version = 27,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",
@@ -4188,6 +4188,85 @@ assert(#sent_requests == 0, "hint URL yank should not send backend requests")
 vim.fn.setreg("b", "before-numeric-hint-yank")
 assert(terminal.yank_hint_url(1, "b") == true, "hint URL yank should match numeric backend ids")
 assert(vim.fn.getreg("b") == "https://example.com/docs", "numeric hint URL yank should write the hinted href")
+
+_G.nvim_browser_point_info_winid = terminal.state().winid
+assert(_G.nvim_browser_point_info_winid ~= nil and vim.api.nvim_win_is_valid(_G.nvim_browser_point_info_winid), "browser preview window should exist for point inspection")
+_G.nvim_browser_point_info_geometry = terminal.state().current_preview_geometry
+terminal._test.apply_serve_response({
+  id = 32,
+  status = "ok",
+  payload = "point info frame",
+  url = "https://example.com",
+  runtime = {
+    protocol_version = 27,
+    transport = "stdio-jsonl",
+    renderer = "chromium-cdp",
+    output = "ansi",
+    cells = { columns = _G.nvim_browser_point_info_geometry.columns, rows = _G.nvim_browser_point_info_geometry.rows },
+    viewport = { width = _G.nvim_browser_point_info_geometry.width, height = _G.nvim_browser_point_info_geometry.height, device_scale_factor = 1 },
+  },
+})
+vim.api.nvim_win_set_cursor(_G.nvim_browser_point_info_winid, { 1, 0 })
+sent_requests = {}
+_G.nvim_browser_observed_point_response = nil
+assert(terminal.point_info_here(function(response)
+  _G.nvim_browser_observed_point_response = response
+end) == true, "point info should send a cursor-position inspection request")
+_G.nvim_browser_point_info_request = last_request_of_type("point_info")
+assert(_G.nvim_browser_point_info_request ~= nil, "point info should use the point_info serve request")
+_G.nvim_browser_expected_point = terminal.viewport_point_for_cell(1, 1, terminal.state().rendered_frame_geometry)
+assert(_G.nvim_browser_point_info_request.x == _G.nvim_browser_expected_point.x, "point info should send the cursor cell viewport x")
+assert(_G.nvim_browser_point_info_request.y == _G.nvim_browser_expected_point.y, "point info should send the cursor cell viewport y")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_point_info_request.id,
+  status = "ok",
+  point = {
+    tag = "a",
+    label = "Docs",
+    href = "https://example.com/docs",
+    target = "_blank",
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return _G.nvim_browser_observed_point_response ~= nil
+end), "point info responses should reach the caller callback")
+assert(_G.nvim_browser_observed_point_response.point.href == "https://example.com/docs", "point info callback should receive href metadata")
+
+vim.fn.setreg("b", "before-point-url-yank")
+sent_requests = {}
+assert(terminal.yank_point_url_here("b") == true, "cursor URL yank should send a point_info request")
+_G.nvim_browser_point_yank_request = last_request_of_type("point_info")
+assert(_G.nvim_browser_point_yank_request ~= nil, "cursor URL yank should use point_info")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_point_yank_request.id,
+  status = "ok",
+  point = {
+    tag = "span",
+    label = "Docs",
+    href = "https://example.com/docs",
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return vim.fn.getreg("b") == "https://example.com/docs"
+end), "cursor URL yank should write the inspected href")
+
+vim.fn.setreg("b", "preserve-empty-point-url")
+sent_requests = {}
+assert(terminal.yank_point_url_here("b") == true, "cursor URL yank should still request point info before detecting missing href")
+_G.nvim_browser_empty_point_yank_request = last_request_of_type("point_info")
+serve_stdout(nil, { vim.json.encode({
+  id = _G.nvim_browser_empty_point_yank_request.id,
+  status = "ok",
+  point = {
+    tag = "button",
+    label = "Search",
+  },
+}), "" })
+assert(vim.wait(1000, function()
+  return #warnings > 0
+end), "cursor URL yank should warn when no href is under the cursor")
+assert(vim.fn.getreg("b") == "preserve-empty-point-url", "cursor URL yank should not overwrite registers without href")
+assert(terminal.yank_point_url_here("bb") == false, "cursor URL yank should reject invalid register names")
 
 vim.fn.setreg("b", "preserve-missing-hint")
 assert(terminal.yank_hint_url("missing", "b") == false, "hint URL yank should reject missing hints")
@@ -4320,7 +4399,7 @@ serve_stdout(nil, { vim.json.encode({
   url = "https://example.com/docs",
   title = "Stopped Page",
   runtime = {
-    protocol_version = 26,
+    protocol_version = 27,
     transport = "stdio-jsonl",
     renderer = "chromium-cdp",
     output = "ansi",
