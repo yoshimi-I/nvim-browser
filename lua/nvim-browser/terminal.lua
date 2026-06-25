@@ -2405,6 +2405,14 @@ local function emit_terminal_graphics(payload, winid)
   send_terminal_escape(payload)
 end
 
+local function send_kitty_unicode_frame(payload)
+  if payload == nil or payload == "" then
+    return
+  end
+  vim.cmd("redraw")
+  send_terminal_escape(payload)
+end
+
 local function preview_lines(message, target)
   local lines = {
     message,
@@ -2617,7 +2625,7 @@ function M.open(command)
           if uses_kitty then
             emit_terminal_graphics(response.payload, state.winid)
           elseif uses_kitty_unicode then
-            send_terminal_escape(response.payload)
+            send_kitty_unicode_frame(response.payload)
           end
           if state.cursor_addressable_preview and geometry ~= nil then
             hints_overlay.apply(bufnr, state.element_hints, state.element_hints_geometry)
@@ -2791,8 +2799,7 @@ function M.open(command)
           if code == 0 and uses_kitty then
             emit_terminal_graphics(payload, is_valid_window_id(state.winid) and state.winid or winid)
           elseif code == 0 and uses_kitty_unicode then
-            send_terminal_escape(payload)
-            vim.cmd("redraw")
+            send_kitty_unicode_frame(payload)
           end
         end)
       end,
@@ -2813,8 +2820,7 @@ function M.focus()
 
   vim.api.nvim_set_current_win(state.winid)
   if state.last_payload_is_unicode and state.last_payload ~= nil then
-    send_terminal_escape(state.last_payload)
-    vim.cmd("redraw")
+    send_kitty_unicode_frame(state.last_payload)
   else
     emit_terminal_graphics(state.last_payload, state.winid)
   end
@@ -4393,7 +4399,7 @@ function M.toggle()
     create_window()
     vim.api.nvim_win_set_buf(state.winid, state.bufnr)
     if state.last_payload_is_unicode and state.last_payload ~= nil then
-      send_terminal_escape(state.last_payload)
+      send_kitty_unicode_frame(state.last_payload)
     else
       emit_terminal_graphics(state.last_payload, state.winid)
     end

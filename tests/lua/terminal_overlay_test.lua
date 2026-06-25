@@ -1880,6 +1880,22 @@ function _G.nvim_browser_count_substrings(value, needle)
   end
 end
 
+function _G.nvim_browser_assert_redraw_before_payload(marker, label)
+  _G.nvim_browser_payload_event_index = nil
+  _G.nvim_browser_redraw_before_payload = false
+  for index, event in ipairs(_G.nvim_browser_serve_egress_events) do
+    if event == "redraw" and _G.nvim_browser_payload_event_index == nil then
+      _G.nvim_browser_redraw_before_payload = true
+    end
+    if type(event) == "string" and event:find(marker, 1, true) then
+      _G.nvim_browser_payload_event_index = index
+      break
+    end
+  end
+  assert(_G.nvim_browser_payload_event_index ~= nil, label .. " should emit a kitty-unicode payload")
+  assert(_G.nvim_browser_redraw_before_payload, label .. " should redraw before emitting the kitty-unicode payload")
+end
+
 function _G.nvim_browser_request_sequence()
   local sequence = {}
   for _, request in ipairs(sent_requests) do
@@ -1929,16 +1945,26 @@ assert(fake_timers[1].starts[1].repeat_ms == 1500, "live refresh should repeat a
 
 _G.nvim_browser_original_tmux_for_serve_egress = vim.env.TMUX
 _G.nvim_browser_serve_egress_payloads = {}
+_G.nvim_browser_serve_egress_events = {}
+_G.nvim_browser_original_vim_cmd_for_serve_egress = vim.cmd
 vim.env.TMUX = "/tmp/tmux-501/default,123,0"
+vim.cmd = function(command)
+  if command == "redraw" then
+    table.insert(_G.nvim_browser_serve_egress_events, "redraw")
+  end
+  return _G.nvim_browser_original_vim_cmd_for_serve_egress(command)
+end
 vim.api.nvim_chan_send = function(channel, payload)
   if channel == vim.v.stderr then
     table.insert(_G.nvim_browser_serve_egress_payloads, payload)
+    table.insert(_G.nvim_browser_serve_egress_events, payload)
     return 0
   end
   return original_nvim_chan_send(channel, payload)
 end
 terminal.open({ "nvbrowser", "serve", "--output", "kitty-unicode", "--url", "https://example.com/tmux" })
 _G.nvim_browser_serve_egress_payloads = {}
+_G.nvim_browser_serve_egress_events = {}
 _G.nvim_browser_raw_unicode_payload = "\27_Ga=T,f=100,m=0;unicode-frame\27\\"
 _G.nvim_browser_tmx_preview_geometry = terminal.state().current_preview_geometry
 serve_stdout(nil, { vim.json.encode({
@@ -2006,12 +2032,18 @@ terminal._test.apply_serve_response({
 assert(terminal.state().calibration_state == nil, "non-calibration page_text should clear stale calibration state")
 assert(#_G.nvim_browser_serve_egress_payloads == 1, "kitty-unicode serve frames should emit exactly one terminal payload")
 _G.nvim_browser_wrapped_unicode_payload = _G.nvim_browser_serve_egress_payloads[1]
+_G.nvim_browser_assert_redraw_before_payload("unicode-frame", "kitty-unicode serve frame")
 assert(nvim_browser_count_substrings(_G.nvim_browser_wrapped_unicode_payload, "\27Ptmux;") == 1, "serve payload should be wrapped in tmux passthrough exactly once")
 assert(
   _G.nvim_browser_wrapped_unicode_payload == "\27Ptmux;\27\27_Ga=T,f=100,m=0;unicode-frame\27\27\\\27\\",
   "serve payload should double raw Kitty escapes inside the tmux passthrough wrapper"
 )
 _G.nvim_browser_serve_egress_payloads = {}
+_G.nvim_browser_serve_egress_events = {}
+assert(terminal.focus() == true, "focus should replay the active kitty-unicode preview")
+_G.nvim_browser_assert_redraw_before_payload("unicode-frame", "kitty-unicode focus replay")
+_G.nvim_browser_serve_egress_payloads = {}
+_G.nvim_browser_serve_egress_events = {}
 assert(terminal.toggle() == false, "first toggle should close the active preview window")
 assert(terminal.toggle() == true, "second toggle should reopen the preview window")
 _G.nvim_browser_replayed_unicode_payloads = 0
@@ -2025,7 +2057,25 @@ assert(
   _G.nvim_browser_serve_egress_payloads[#_G.nvim_browser_serve_egress_payloads] == _G.nvim_browser_wrapped_unicode_payload,
   "replayed kitty-unicode payload should be wrapped at egress instead of storing tmux-wrapped data"
 )
+_G.nvim_browser_assert_redraw_before_payload("unicode-frame", "kitty-unicode toggle replay")
+_G.nvim_browser_serve_egress_payloads = {}
+_G.nvim_browser_serve_egress_events = {}
+terminal.open({ "nvbrowser", "browse", "https://example.com/capture", "--output", "kitty-unicode" })
+_G.nvim_browser_serve_egress_payloads = {}
+_G.nvim_browser_serve_egress_events = {}
+serve_stdout(nil, { "\27_Ga=T,f=100,m=0;browse-unicode-frame\27\\", "" })
+serve_exit(nil, 0)
+assert(vim.wait(1000, function()
+  for _, payload in ipairs(_G.nvim_browser_serve_egress_payloads) do
+    if payload:find("browse-unicode-frame", 1, true) then
+      return true
+    end
+  end
+  return false
+end), "kitty-unicode browse preview should emit one terminal payload")
+_G.nvim_browser_assert_redraw_before_payload("browse-unicode-frame", "kitty-unicode browse frame")
 vim.env.TMUX = _G.nvim_browser_original_tmux_for_serve_egress
+vim.cmd = _G.nvim_browser_original_vim_cmd_for_serve_egress
 vim.api.nvim_chan_send = function(channel, payload)
   if channel == vim.v.stderr then
     return 0
