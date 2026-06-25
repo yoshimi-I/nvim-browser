@@ -1976,6 +1976,22 @@ terminal.point_info_here = function(callback)
   })
   return true
 end
+terminal.click_point = function(x, y, opts)
+  table.insert(_G.nvim_browser_smoke_calls, "click_point:" .. tostring(x) .. ":" .. tostring(y))
+  if tonumber(x) == 120 and tonumber(y) == 160 then
+    _G.nvim_browser_smoke_focused = {
+      kind = "input",
+      label = "Smoke input",
+      value = "",
+      submittable = true,
+    }
+    if type(opts) == "table" and type(opts.on_response) == "function" then
+      opts.on_response({ status = "ok" })
+    end
+    return true
+  end
+  return false
+end
 terminal.type_point = function(x, y, text, opts)
   table.insert(
     _G.nvim_browser_smoke_calls,
@@ -2030,6 +2046,27 @@ terminal.input_text = function(text)
   end
   return false
 end
+terminal.press_key = function(key, opts)
+  table.insert(_G.nvim_browser_smoke_calls, "key:" .. tostring(key) .. ":" .. tostring(opts ~= nil and opts.capture == true))
+  return true
+end
+terminal.start_text_mode = function(opts)
+  table.insert(_G.nvim_browser_smoke_calls, "text_mode")
+  local input = {}
+  while true do
+    local key = opts.getcharstr()
+    if key == vim.keycode("<Esc>") then
+      break
+    end
+    if key == "\r" then
+      terminal.input_text(table.concat(input))
+      terminal.press_key("Enter", { capture = true })
+      break
+    end
+    table.insert(input, key)
+  end
+  return true
+end
 vim.defer_fn = function(callback)
   callback()
 end
@@ -2068,8 +2105,11 @@ assert(browser.last_target() == _G.nvim_browser_last_target_before_smoke, "smoke
 assert(_G.nvim_browser_smoke_report ~= nil and _G.nvim_browser_smoke_report.ok == true, "smoke should report a healthy interaction")
 assert(vim.deep_equal(_G.nvim_browser_smoke_calls, {
   "click_here",
-  "type_point:120:160:nvim-browser interaction:true",
-}), "smoke should type through smart cursor activation after cursor focus")
+  "click_point:120:160",
+  "text_mode",
+  "input:nvim-browser interaction",
+  "key:Enter:true",
+}), "smoke should type through smart cursor activation text mode after cursor focus")
 _G.nvim_browser_smoke_report_lines = table.concat(_G.nvim_browser_smoke_report.lines, "\n")
 assert(_G.nvim_browser_smoke_report_lines:find("output: ANSI fallback", 1, true), "smoke report should include effective fallback output")
 assert(_G.nvim_browser_smoke_report_lines:find("interaction: ok", 1, true), "smoke report should include interaction status")
@@ -2957,7 +2997,8 @@ terminal.click_point = function(x, y, opts)
   end
   return true
 end
-terminal.start_text_mode = function()
+terminal.start_text_mode = function(opts)
+  _G.nvim_browser_activate_text_mode_opts = opts
   table.insert(_G.nvim_browser_activate_calls, "text-mode")
   return true
 end
@@ -3009,6 +3050,30 @@ assert(
 assert(
   _G.nvim_browser_activate_calls[_G.nvim_browser_before_input_text_mode_calls + 2] == "text-mode",
   "activate_here should enter browser text mode after editable focus succeeds"
+)
+assert(
+  type(_G.nvim_browser_activate_text_mode_opts) == "table" and _G.nvim_browser_activate_text_mode_opts.warn == false,
+  "activate_here should suppress nested text-mode warnings for editable activation"
+)
+
+_G.nvim_browser_activate_point = { kind = "text_area", label = "Notes", x = 15, y = 25 }
+_G.nvim_browser_activate_text_mode_opts = nil
+_G.nvim_browser_text_mode_getchar = function()
+  return vim.keycode("<Esc>")
+end
+assert(browser.activate_here({
+  text_mode = {
+    getcharstr = _G.nvim_browser_text_mode_getchar,
+  },
+}) == true, "activate_here should allow testable browser text mode options")
+assert(
+  type(_G.nvim_browser_activate_text_mode_opts) == "table"
+    and _G.nvim_browser_activate_text_mode_opts.getcharstr == _G.nvim_browser_text_mode_getchar,
+  "activate_here should pass text mode options to editable activation"
+)
+assert(
+  _G.nvim_browser_activate_text_mode_opts.warn == false,
+  "activate_here should keep nested text-mode warnings suppressed when passing text mode options"
 )
 
 _G.nvim_browser_activate_point = { kind = "input", label = "Search", x = 14, y = 24 }

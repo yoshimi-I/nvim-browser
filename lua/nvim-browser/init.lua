@@ -714,6 +714,7 @@ local smoke_output_label
 local smoke_report
 local emit_smoke_report
 local find_smoke_input_hint
+local smoke_text_mode_getchar
 local smoke_cursor_for_hint
 local smoke_place_cursor_on_hint
 
@@ -851,11 +852,10 @@ function M.smoke(opts)
           end
           local activated = M.activate_here({
             point = input_hint,
-            submit = true,
             warn = false,
-            input = function()
-              return interaction_text
-            end,
+            text_mode = {
+              getcharstr = smoke_text_mode_getchar(interaction_text),
+            },
           })
           if activated then
             details.activate = true
@@ -1326,6 +1326,19 @@ smoke_output_label = function(runtime, terminal_state)
     or terminal_state.serve_output_label
     or terminal_state.serve_output
     or "unknown"
+end
+
+smoke_text_mode_getchar = function(text)
+  local keys = {}
+  for _, char in ipairs(vim.fn.split(tostring(text or ""), "\\zs")) do
+    table.insert(keys, char)
+  end
+  table.insert(keys, "\r")
+  local index = 0
+  return function()
+    index = index + 1
+    return keys[index] or vim.keycode("<Esc>")
+  end
 end
 
 smoke_report = function(status, reason, details)
@@ -2953,7 +2966,8 @@ local function activate_point(point, opts)
     local ok = terminal.click_point(x, y, {
       on_response = function(response)
         if type(response) == "table" and response.status == "ok" then
-          local text_mode_ok = terminal.start_text_mode({ warn = false })
+          local text_mode_opts = vim.tbl_extend("force", opts.text_mode or {}, { warn = false })
+          local text_mode_ok = terminal.start_text_mode(text_mode_opts)
           if not text_mode_ok and should_warn_activate(opts) then
             warn_activate_here("cursor activation failed for " .. activate_failure_kind(kind))
           end
