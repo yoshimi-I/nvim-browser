@@ -5629,7 +5629,7 @@ serve_stdout(nil, { vim.json.encode({
   id = terminal.state().live_refresh_request_id,
   status = "ok",
   payload = "fresh frame after quiet reset",
-  url = "https://example.com/quiet-reset",
+  url = "https://example.com/quiet-next",
   title = "Quiet Reset",
 }), "" })
 assert(vim.wait(1000, function()
@@ -5650,10 +5650,24 @@ assert(
   terminal.state().status_error == "browser exited 3",
   "serve exit after a good frame should keep the exit reason in status"
 )
+assert(terminal.state().serve_exit ~= nil, "serve exit after a good frame should expose restart metadata")
+assert(terminal.state().serve_exit.code == 3, "serve exit restart metadata should expose the exit code")
+assert(terminal.state().serve_exit.target == "https://example.com/quiet-next", "serve exit restart metadata should use the last rendered URL")
+assert(terminal.state().serve_exit.restartable == true, "serve exit after a good frame should be explicitly restartable")
+assert(
+  _G.nvim_browser_post_frame_exit_text:find("exited", 1, true)
+    and _G.nvim_browser_post_frame_exit_text:find("NBrowserRefresh", 1, true),
+  "serve exit after a good frame should show a recoverable exited footer"
+)
 assert(
   not _G.nvim_browser_post_frame_exit_text:find("Browser startup failed", 1, true),
   "serve exit after a good frame should not be treated as a startup failure"
 )
+jobstart_calls = {}
+sent_requests = {}
+assert(terminal.refresh() == true, "refresh after post-frame serve exit should restart the serve session")
+assert(#jobstart_calls == 1, "post-frame exit refresh should start one replacement serve job")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == "https://example.com/quiet-next", "post-frame exit refresh should target the last rendered URL")
 
 terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/preserve-exit-frame" })
 serve_stdout(nil, { vim.json.encode({
@@ -5696,6 +5710,117 @@ assert(
   terminal.state().status_error == "browser exited 5",
   "ANSI serve exit after a good frame should keep the exit reason in status"
 )
+
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--markdown", "/tmp/post-frame-exit.md" })
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "markdown post-frame exit",
+  url = "file:///tmp/nvbrowser-post-frame-exit-wrapper.html",
+  display_url = "file:///tmp/post-frame-exit.md",
+  title = "Post Frame Markdown",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Post Frame Markdown"
+end), "test setup should render a Markdown wrapper frame before serve exit")
+serve_exit(nil, 6)
+assert(vim.wait(1000, function()
+  return terminal.state().mode == nil and terminal.state().serve_exit ~= nil
+end), "Markdown post-frame serve exit should expose restart metadata")
+jobstart_calls = {}
+sent_requests = {}
+assert(terminal.refresh() == true, "refresh after Markdown post-frame exit should restart the serve session")
+assert(#jobstart_calls == 1, "Markdown post-frame exit refresh should start one replacement serve job")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == nil, "Markdown post-frame exit refresh should not restart as a raw URL")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--markdown") == "/tmp/post-frame-exit.md", "Markdown post-frame exit refresh should preserve the Markdown wrapper target")
+
+terminal.close()
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--markdown", "/tmp/post-frame-start.md" })
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "markdown navigated to image",
+  url = "file:///tmp/nvbrowser-post-frame-image-wrapper.html",
+  display_url = "file:///tmp/post-frame-exit.png",
+  title = "Post Frame Image",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Post Frame Image"
+end), "test setup should render an image display URL from a Markdown-origin serve")
+serve_exit(nil, 7)
+assert(vim.wait(1000, function()
+  return terminal.state().mode == nil and terminal.state().serve_exit ~= nil
+end), "Markdown-to-image post-frame serve exit should expose restart metadata")
+jobstart_calls = {}
+assert(terminal.refresh() == true, "refresh after Markdown-to-image post-frame exit should restart the serve session")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--markdown") == nil, "Markdown-to-image restart should drop the old Markdown wrapper")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--image") == "/tmp/post-frame-exit.png", "Markdown-to-image restart should use an image wrapper")
+
+terminal.close()
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--image", "/tmp/post-frame-start.png" })
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "image navigated to markdown",
+  url = "file:///tmp/nvbrowser-post-frame-markdown-wrapper.html",
+  display_url = "file:///tmp/post-frame-exit.md",
+  title = "Post Frame Markdown From Image",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "Post Frame Markdown From Image"
+end), "test setup should render a Markdown display URL from an image-origin serve")
+serve_exit(nil, 8)
+assert(vim.wait(1000, function()
+  return terminal.state().mode == nil and terminal.state().serve_exit ~= nil
+end), "Image-to-Markdown post-frame serve exit should expose restart metadata")
+jobstart_calls = {}
+assert(terminal.refresh() == true, "refresh after image-to-Markdown post-frame exit should restart the serve session")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--image") == nil, "image-to-Markdown restart should drop the old image wrapper")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--markdown") == "/tmp/post-frame-exit.md", "image-to-Markdown restart should use a Markdown wrapper")
+
+terminal.close()
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/post-frame-start" })
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "url navigated to markdown",
+  url = "file:///tmp/nvbrowser-url-post-frame-markdown-wrapper.html",
+  display_url = "file:///tmp/url-post-frame-exit.md",
+  title = "URL Post Frame Markdown",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "URL Post Frame Markdown"
+end), "test setup should render a Markdown display URL from a URL-origin serve")
+serve_exit(nil, 9)
+assert(vim.wait(1000, function()
+  return terminal.state().mode == nil and terminal.state().serve_exit ~= nil
+end), "URL-to-Markdown post-frame serve exit should expose restart metadata")
+jobstart_calls = {}
+assert(terminal.refresh() == true, "refresh after URL-to-Markdown post-frame exit should restart the serve session")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == nil, "URL-to-Markdown restart should drop the old URL target")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--markdown") == "/tmp/url-post-frame-exit.md", "URL-to-Markdown restart should use a Markdown wrapper")
+
+terminal.close()
+terminal.open({ "nvbrowser", "serve", "--output", "ansi", "--url", "https://example.com/post-frame-image-start" })
+serve_stdout(nil, { vim.json.encode({
+  id = 1,
+  status = "ok",
+  payload = "url navigated to image",
+  url = "file:///tmp/nvbrowser-url-post-frame-image-wrapper.html",
+  display_url = "file:///tmp/url-post-frame-exit.png",
+  title = "URL Post Frame Image",
+}), "" })
+assert(vim.wait(1000, function()
+  return terminal.state().current_title == "URL Post Frame Image"
+end), "test setup should render an image display URL from a URL-origin serve")
+serve_exit(nil, 10)
+assert(vim.wait(1000, function()
+  return terminal.state().mode == nil and terminal.state().serve_exit ~= nil
+end), "URL-to-image post-frame serve exit should expose restart metadata")
+jobstart_calls = {}
+assert(terminal.refresh() == true, "refresh after URL-to-image post-frame exit should restart the serve session")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--url") == nil, "URL-to-image restart should drop the old URL target")
+assert(_G.nvim_browser_command_option(jobstart_calls[1], "--image") == "/tmp/url-post-frame-exit.png", "URL-to-image restart should use an image wrapper")
 
 local reused_bufnr = second_state.bufnr
 terminal.open({ "nvbrowser", "show-image", "/tmp/image.png", "--output", "ansi" })

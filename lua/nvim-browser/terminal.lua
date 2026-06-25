@@ -57,6 +57,7 @@ local state = {
   scroll_coalesce_timer = nil,
   scroll_coalesce_request = nil,
   stopped_operation = nil,
+  serve_exit = nil,
   canceled_request_ids = {},
   quiet_request_ids = {},
   latest_applied_response_id = 0,
@@ -465,6 +466,14 @@ local function wrapper_navigation_request_for_url(url)
   return nil
 end
 
+local function post_frame_exit_restart_target(open_target)
+  local path = file_url_to_path(state.current_url)
+  if path ~= nil and (is_markdown_path(path) or is_raster_image_path(path)) then
+    return path
+  end
+  return state.rendered_frame_url or state.current_url or open_target or state.last_target
+end
+
 local function command_has_flag(command, flag)
   if type(command) ~= "table" then
     return false
@@ -494,10 +503,10 @@ local function command_with_target(command, target)
   end
   local image_index = nil
   local markdown_index = nil
+  local url_index = nil
   for index, value in ipairs(adjusted) do
     if value == "--url" then
-      adjusted[index + 1] = target
-      return adjusted
+      url_index = index
     end
     if value == "--markdown" then
       markdown_index = index
@@ -506,7 +515,7 @@ local function command_with_target(command, target)
       image_index = index
     end
   end
-  if markdown_index ~= nil and not target:match("^%a[%w+.-]*:") then
+  if markdown_index ~= nil and is_markdown_path(target) then
     adjusted[markdown_index + 1] = target
     return adjusted
   end
@@ -514,8 +523,12 @@ local function command_with_target(command, target)
     adjusted[image_index + 1] = target
     return adjusted
   end
+  if url_index ~= nil and not is_markdown_path(target) and not is_raster_image_path(target) then
+    adjusted[url_index + 1] = target
+    return adjusted
+  end
   for index, value in ipairs(adjusted) do
-    if value == "--markdown" or value == "--image" then
+    if value == "--url" or value == "--markdown" or value == "--image" then
       table.remove(adjusted, index + 1)
       table.remove(adjusted, index)
       break
@@ -527,6 +540,16 @@ local function command_with_target(command, target)
       table.remove(adjusted, index)
       break
     end
+  end
+  if is_markdown_path(target) then
+    table.insert(adjusted, "--markdown")
+    table.insert(adjusted, target)
+    return adjusted
+  end
+  if is_raster_image_path(target) then
+    table.insert(adjusted, "--image")
+    table.insert(adjusted, target)
+    return adjusted
   end
   table.insert(adjusted, "--url")
   table.insert(adjusted, target)
@@ -2110,10 +2133,13 @@ local function preview_footer_line(width)
   end
 
   local stopped_label = state.stopped_operation ~= nil and (state.stopped_operation.reason or "stopped") or nil
-  table.insert(parts, state.text_mode_active and "text" or stopped_label or state.status or "idle")
+  local exited_label = state.serve_exit ~= nil and "exited" or nil
+  table.insert(parts, state.text_mode_active and "text" or stopped_label or exited_label or state.status or "idle")
 
   local title = state.current_title ~= nil and state.current_title ~= "" and state.current_title or nil
-  local url = state.stopped_operation ~= nil
+  local url = state.serve_exit ~= nil
+      and state.serve_exit.target
+    or state.stopped_operation ~= nil
       and state.stopped_operation.target
     or state.current_url ~= nil and state.current_url ~= "" and state.current_url
     or state.last_target
@@ -2161,6 +2187,10 @@ local function preview_footer_line(width)
 
   if url ~= nil and url ~= "" then
     table.insert(parts, url)
+  end
+
+  if state.serve_exit ~= nil and state.serve_exit.restartable then
+    table.insert(parts, ":NBrowserRefresh to restart")
   end
 
   if state.status_error ~= nil and state.status_error ~= vim.NIL and state.status_error ~= "" then
@@ -2590,6 +2620,7 @@ function M.open(command)
   state.status_error = nil
   state.hint_error = nil
   state.pending_operation = nil
+  state.serve_exit = nil
   state.live_refresh_request_id = nil
   state.live_refresh_request_type = nil
   stop_adaptive_capture_timer()
@@ -2835,6 +2866,7 @@ function M.open(command)
             return
           end
           local had_rendered_frame = state.has_rendered_frame
+          local exit_target = post_frame_exit_restart_target(target)
           state.job_id = nil
           stop_text_mode_flush_timer()
           stop_resize_timer()
@@ -2844,6 +2876,7 @@ function M.open(command)
           state.serve_output = nil
           state.pending_operation = nil
           state.stopped_operation = nil
+          state.serve_exit = nil
           state.live_refresh_request_id = nil
           state.scroll_coalesce_request = nil
           state.response_handlers = {}
@@ -2886,9 +2919,14 @@ function M.open(command)
                 end
               end
               if had_rendered_frame then
+                state.serve_exit = {
+                  code = code,
+                  target = exit_target,
+                  restartable = state.last_serve_command ~= nil,
+                }
                 local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
                 if #lines > 0 then
-                  local width = math.max(1, vim.fn.strdisplaywidth(lines[#lines]))
+                  local width = math.max(80, vim.fn.strdisplaywidth(lines[#lines]))
                   lines[#lines] = preview_footer_line(width)
                   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
                 end
@@ -3050,6 +3088,7 @@ function M.close()
   state.status_error = nil
   state.hint_error = nil
   state.pending_operation = nil
+  state.serve_exit = nil
   state.live_refresh_request_id = nil
   state.live_refresh_request_type = nil
   stop_adaptive_capture_timer()
@@ -3092,6 +3131,7 @@ local function restart_stopped_serve(target)
   end
   target = target
     or (state.stopped_operation and state.stopped_operation.target)
+    or (state.serve_exit and state.serve_exit.restartable and state.serve_exit.target)
     or state.current_url
     or state.last_target
   M.open(command_with_target(command, target))
@@ -4674,6 +4714,7 @@ function M.state()
     pending_operation = state.pending_operation,
     live_refresh_request_id = state.live_refresh_request_id,
     stopped_operation = state.stopped_operation,
+    serve_exit = state.serve_exit,
     last_find_found = state.last_find_found,
     last_find_match_count = state.last_find_match_count,
     last_find_query = state.last_find_query,
